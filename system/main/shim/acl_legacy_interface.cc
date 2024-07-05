@@ -45,6 +45,57 @@ namespace shim {
 namespace legacy {
 
 const acl_interface_t& GetAclInterface() {
+#ifdef _MSC_VER
+  static acl_interface_t acl_interface;
+  acl_interface.on_send_data_upwards = acl_rcv_acl_data;
+  acl_interface.on_packets_completed = acl_packets_completed;
+
+  acl_interface.connection.classic.on_connected = on_acl_br_edr_connected;
+  acl_interface.connection.classic.on_connect_request = btm_connection_request;
+  acl_interface.connection.classic.on_failed = on_acl_br_edr_failed;
+  acl_interface.connection.classic.on_disconnected = btm_acl_disconnected;
+
+  acl_interface.connection.le.on_connected =
+    acl_ble_enhanced_connection_complete_from_shim;
+  acl_interface.connection.le.on_failed = acl_ble_connection_fail;
+  acl_interface.connection.le.on_disconnected = btm_acl_disconnected;
+
+  acl_interface.link.classic.on_authentication_complete = btm_sec_auth_complete;
+  acl_interface.link.classic.on_central_link_key_complete = nullptr;
+  acl_interface.link.classic.on_change_connection_link_key_complete = nullptr;
+  acl_interface.link.classic.on_encryption_change = nullptr;
+  acl_interface.link.classic.on_flow_specification_complete = nullptr;
+  acl_interface.link.classic.on_flush_occurred = nullptr;
+  acl_interface.link.classic.on_mode_change = btm_pm_on_mode_change;
+  acl_interface.link.classic.on_packet_type_changed = nullptr;
+  acl_interface.link.classic.on_qos_setup_complete = nullptr;
+  acl_interface.link.classic.on_read_afh_channel_map_complete = nullptr;
+  acl_interface.link.classic.on_read_automatic_flush_timeout_complete = nullptr;
+  acl_interface.link.classic.on_sniff_subrating = btm_pm_on_sniff_subrating;
+  acl_interface.link.classic.on_read_clock_complete = nullptr;
+  acl_interface.link.classic.on_read_clock_offset_complete = nullptr;
+  acl_interface.link.classic.on_read_failed_contact_counter_complete = nullptr;
+  acl_interface.link.classic.on_read_link_policy_settings_complete = nullptr;
+  acl_interface.link.classic.on_read_link_quality_complete = nullptr;
+  acl_interface.link.classic.on_read_link_supervision_timeout_complete = nullptr;
+  acl_interface.link.classic.on_read_remote_version_information_complete =
+    btm_read_remote_version_complete;
+  acl_interface.link.classic.on_read_remote_supported_features_complete =
+    acl_process_supported_features;
+  acl_interface.link.classic.on_read_remote_extended_features_complete =
+    acl_process_extended_features;
+  acl_interface.link.classic.on_read_rssi_complete = nullptr;
+  acl_interface.link.classic.on_read_transmit_power_level_complete = nullptr;
+  acl_interface.link.classic.on_role_change = btm_acl_role_changed;
+  acl_interface.link.classic.on_role_discovery_complete = nullptr;
+
+  acl_interface.link.le.on_connection_update = acl_ble_update_event_received;
+  acl_interface.link.le.on_data_length_change = acl_ble_data_length_change_event;
+  acl_interface.link.le.on_read_remote_version_information_complete =
+    btm_read_remote_version_complete;
+  acl_interface.link.le.on_phy_update = gatt_notify_phy_updated;
+  acl_interface.link.le.on_le_subrate_change = on_le_subrate_change;
+#else
   static acl_interface_t acl_interface{
       .on_send_data_upwards = acl_rcv_acl_data,
       .on_packets_completed = acl_packets_completed,
@@ -95,6 +146,7 @@ const acl_interface_t& GetAclInterface() {
       .link.le.on_phy_update = gatt_notify_phy_updated,
       .link.le.on_le_subrate_change = on_le_subrate_change,
   };
+#endif
   return acl_interface;
 }
 

@@ -62,6 +62,12 @@
 #include "types/ble_address_with_type.h"
 #include "types/raw_address.h"
 
+#define DO_NOT_DEFINE_TIME_VAL
+#include <utils/Timers.h>
+#ifdef interface
+#undef interface
+#endif
+
 extern tBTM_CB btm_cb;
 
 using namespace bluetooth;

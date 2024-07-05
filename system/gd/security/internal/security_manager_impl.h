@@ -249,14 +249,14 @@ class SecurityManagerImpl : public channel::ISecurityManagerChannelListener, pub
   void ConnectionIsReadyStartPairing(LeFixedChannelEntry* stored_channel);
   void WipeLePairingHandler();
 
-  os::Handler* security_handler_ __attribute__((unused));
-  l2cap::le::L2capLeModule* l2cap_le_module_ __attribute__((unused));
+  os::Handler* security_handler_ /*__attribute__((unused))*/;
+  l2cap::le::L2capLeModule* l2cap_le_module_ /*__attribute__((unused))*/;
   std::unique_ptr<l2cap::le::FixedChannelManager> l2cap_manager_le_;
-  hci::LeSecurityInterface* hci_security_interface_le_ __attribute__((unused));
+  hci::LeSecurityInterface* hci_security_interface_le_ /*__attribute__((unused))*/;
   channel::SecurityManagerChannel* security_manager_channel_;
   hci::AclManager* acl_manager_;
   hci::Controller* controller_;
-  storage::StorageModule* storage_module_ __attribute__((unused));
+  storage::StorageModule* storage_module_ /*__attribute__((unused))*/;
   record::SecurityRecordStorage security_record_storage_;
   record::SecurityRecordDatabase security_database_;
   neighbor::NameDbModule* name_db_module_;

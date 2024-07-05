@@ -22,12 +22,14 @@
 
 #include <bluetooth/log.h>
 #include <malloc.h>
+#ifndef _MSC_VER
 #include <pthread.h>
 #include <string.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <unistd.h>
+#endif
 
 #include <atomic>
 #include <cerrno>
@@ -38,6 +40,8 @@
 #include "osi/include/fixed_queue.h"
 #include "osi/include/reactor.h"
 #include "osi/semaphore.h"
+
+#include <cutils\threads.h>
 
 using namespace bluetooth;
 
@@ -150,13 +154,14 @@ void thread_stop(thread_t* thread) {
 
 bool thread_set_priority(thread_t* thread, int priority) {
   if (!thread) return false;
-
+#ifndef _MSC_VER
   const int rc = setpriority(PRIO_PROCESS, thread->tid, priority);
   if (rc < 0) {
     log::error("unable to set thread priority {} for tid {}, error {}",
                priority, thread->tid, rc);
     return false;
   }
+#endif
 
   return true;
 }
@@ -179,7 +184,11 @@ bool thread_set_rt_priority(thread_t* thread, int priority) {
 
 bool thread_is_self(const thread_t* thread) {
   log::assert_that(thread != NULL, "assert failed: thread != NULL");
+#ifdef _MSC_VER
+  return gettid() == thread->tid;
+#else
   return !!pthread_equal(pthread_self(), thread->pthread);
+#endif
 }
 
 reactor_t* thread_get_reactor(const thread_t* thread) {
@@ -199,13 +208,16 @@ static void* run_thread(void* start_arg) {
   thread_t* thread = start->thread;
 
   log::assert_that(thread != NULL, "assert failed: thread != NULL");
-
+#ifdef _MSC_VER
+  pthread_setname_np( 0, thread->name );
+#else
   if (prctl(PR_SET_NAME, (unsigned long)thread->name) == -1) {
     log::error("unable to set thread name: {}", strerror(errno));
     start->error = errno;
     semaphore_post(start->start_sem);
     return NULL;
   }
+#endif
   thread->tid = gettid();
 
   log::info("thread id {}, thread name {} started", thread->tid, thread->name);

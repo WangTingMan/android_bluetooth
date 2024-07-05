@@ -23,7 +23,11 @@
 #include <bluetooth/log.h>
 #include <hardware/bluetooth.h>
 #include <hardware/bt_hh.h>
+#ifndef _WIN32
 #include <pthread.h>
+#else
+#include <cutils/threads.h>
+#endif
 #include <stdint.h>
 
 #include "bta/include/bta_hh_api.h"

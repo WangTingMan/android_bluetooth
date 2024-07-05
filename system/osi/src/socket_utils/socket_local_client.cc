@@ -17,11 +17,22 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _MSC_VER
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
+#endif
+
+#ifdef _MSC_VER 
+#include <WinSock2.h>
+#include <ws2def.h>
+#include <afunix.h>
+#include <cutils/sockets.h>
+#include <corecrt_io.h>
+#define AF_LOCAL 0
+#endif
 
 #include "osi/include/osi.h"
 #include "osi/include/socket_utils/socket_local.h"

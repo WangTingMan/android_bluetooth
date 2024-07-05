@@ -44,6 +44,8 @@
 #include "stack/include/btm_api.h"
 #include "stack/include/btm_ble_api.h"
 
+#include <utils/Timers.h>
+
 namespace bluetooth {
 namespace bqr {
 
@@ -168,9 +170,9 @@ void BqrVseSubEvt::WriteLmpLlTraceLogFile(int fd, uint8_t length,
          << std::put_time(&tm_timestamp_, "%m-%d %H:%M:%S ")
          << "Handle: " << loghex(bqr_log_dump_event_.connection_handle)
          << " VSP: ";
-
-  TEMP_FAILURE_RETRY(write(fd, ss_log.str().c_str(), ss_log.str().size()));
-  TEMP_FAILURE_RETRY(
+  int r = 0;
+  TEMP_FAILURE_RETRY(r, write(fd, ss_log.str().c_str(), ss_log.str().size()));
+  TEMP_FAILURE_RETRY( r,
       write(fd, bqr_log_dump_event_.vendor_specific_parameter, length));
   LmpLlMessageTraceCounter++;
 }
@@ -190,9 +192,9 @@ void BqrVseSubEvt::WriteBtSchedulingTraceLogFile(int fd, uint8_t length,
          << std::put_time(&tm_timestamp_, "%m-%d %H:%M:%S ")
          << "Handle: " << loghex(bqr_log_dump_event_.connection_handle)
          << " VSP: ";
-
-  TEMP_FAILURE_RETRY(write(fd, ss_log.str().c_str(), ss_log.str().size()));
-  TEMP_FAILURE_RETRY(
+  int r = 0;
+  TEMP_FAILURE_RETRY(r, write(fd, ss_log.str().c_str(), ss_log.str().size()));
+  TEMP_FAILURE_RETRY(r,
       write(fd, bqr_log_dump_event_.vendor_specific_parameter, length));
   BtSchedulingTraceCounter++;
 }
@@ -751,12 +753,16 @@ static int OpenLmpLlTraceLogFile() {
     log::error("Unable to rename '{}' to '{}' : {}", kpLmpLlMessageTraceLogPath,
                kpLmpLlMessageTraceLastLogPath, strerror(errno));
   }
-
+#ifdef _MSC_VER
+  int logfile_fd =
+    open( kpLmpLlMessageTraceLogPath, O_WRONLY | O_CREAT | O_TRUNC );
+#else
   mode_t prevmask = umask(0);
   int logfile_fd =
       open(kpLmpLlMessageTraceLogPath, O_WRONLY | O_CREAT | O_TRUNC,
            S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
   umask(prevmask);
+#endif
   if (logfile_fd == INVALID_FD) {
     log::error("Unable to open '{}' : {}", kpLmpLlMessageTraceLogPath,
                strerror(errno));
@@ -799,11 +805,16 @@ static int OpenBtSchedulingTraceLogFile() {
                kpBtSchedulingTraceLastLogPath, strerror(errno));
   }
 
+#ifdef _MSC_VER
+  int logfile_fd =
+    open( kpBtSchedulingTraceLogPath, O_WRONLY | O_CREAT | O_TRUNC );
+#else
   mode_t prevmask = umask(0);
   int logfile_fd =
       open(kpBtSchedulingTraceLogPath, O_WRONLY | O_CREAT | O_TRUNC,
            S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
   umask(prevmask);
+#endif
   if (logfile_fd == INVALID_FD) {
     log::error("Unable to open '{}' : {}", kpBtSchedulingTraceLogPath,
                strerror(errno));

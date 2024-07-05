@@ -21,7 +21,9 @@
 #ifndef A2DP_VENDOR_H
 #define A2DP_VENDOR_H
 
+#if __has_include(<dlfcn.h>)
 #include <dlfcn.h>
+#endif
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>

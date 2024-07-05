@@ -29,6 +29,11 @@
 #include "codec_status_aidl.h"
 #include "transport_instance.h"
 
+#ifdef _MSC_VER
+#define DO_NOT_DEFINE_TIME_VAL
+#include <utils/Timers.h>
+#endif
+
 namespace fmt {
 template <>
 struct formatter<tA2DP_CTRL_CMD> : enum_formatter<tA2DP_CTRL_CMD> {};
@@ -74,7 +79,7 @@ tA2DP_CTRL_CMD A2dpTransport::a2dp_pending_cmd_ = A2DP_CTRL_CMD_NONE;
 uint16_t A2dpTransport::remote_delay_report_ = 0;
 
 A2dpTransport::A2dpTransport(SessionType sessionType)
-    : IBluetoothSinkTransportInstance(sessionType, (AudioConfiguration){}),
+    : IBluetoothSinkTransportInstance(sessionType, AudioConfiguration{}),
       total_bytes_read_(0),
       data_position_({}) {
   a2dp_pending_cmd_ = A2DP_CTRL_CMD_NONE;

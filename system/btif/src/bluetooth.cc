@@ -47,7 +47,9 @@
 #include <hardware/bt_vc.h>
 #include <stdlib.h>
 #include <string.h>
+#if __has_include(<unistd.h>)
 #include <unistd.h>
+#endif
 
 #include "audio_hal_interface/a2dp_encoding.h"
 #include "bta/hh/bta_hh_int.h"  // for HID HACK profile methods
@@ -1156,8 +1158,8 @@ static void interop_database_add_remove_name(bool do_add,
   }
 }
 
-EXPORT_SYMBOL bt_interface_t bluetoothInterface = {
-    sizeof(bluetoothInterface),
+/*EXPORT_SYMBOL*/ bt_interface_t bluetoothInterface = {
+    .size = sizeof(bluetoothInterface),
     .init = init,
     .enable = enable,
     .disable = disable,

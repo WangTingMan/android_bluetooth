@@ -224,7 +224,7 @@ uint16_t AVCT_RemoveConn(uint8_t handle) {
 uint16_t AVCT_CreateBrowse(uint8_t handle, uint8_t role) {
   uint16_t result = AVCT_SUCCESS;
   tAVCT_CCB* p_ccb;
-  tAVCT_BCB* p_bcb;
+  tAVCT_BCB* p_bcb = nullptr;
   int index;
 
   log::verbose("AVCT_CreateBrowse: {}", role);

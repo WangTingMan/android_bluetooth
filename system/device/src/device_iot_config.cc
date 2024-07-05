@@ -25,7 +25,9 @@
 #include <ctype.h>
 #include <string.h>
 #include <time.h>
+#if __has_include(<unistd.h>)
 #include <unistd.h>
+#endif
 
 #include <mutex>
 #include <string>

@@ -100,13 +100,13 @@ class ClassicPairingHandler : public PairingHandler {
   void UserClickedYes();
   void UserClickedNo();
 
-  os::Handler* security_handler_ __attribute__((unused));
+  os::Handler* security_handler_ /*__attribute__((unused))*/;
   hci::IoCapability remote_io_capability_;
-  hci::OobDataPresent remote_oob_present_ __attribute__((unused));
-  hci::AuthenticationRequirements remote_authentication_requirements_ __attribute__((unused));
+  hci::OobDataPresent remote_oob_present_ /*__attribute__((unused))*/;
+  hci::AuthenticationRequirements remote_authentication_requirements_ /*__attribute__((unused))*/;
   hci::IoCapability local_io_capability_;
-  hci::OobDataPresent local_oob_present_ __attribute__((unused));
-  hci::AuthenticationRequirements local_authentication_requirements_ __attribute__((unused));
+  hci::OobDataPresent local_oob_present_ /*__attribute__((unused))*/;
+  hci::AuthenticationRequirements local_authentication_requirements_ /*__attribute__((unused))*/;
   OobData remote_p192_oob_data_;
   OobData remote_p256_oob_data_;
   common::OnceCallback<void(hci::Address, PairingResultOrFailure)> complete_callback_;

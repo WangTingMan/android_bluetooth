@@ -19,7 +19,11 @@
 #include "a2dp_vendor_opus_encoder.h"
 
 #include <bluetooth/log.h>
+#if __has_include(<dlfcn.h>)
 #include <dlfcn.h>
+#else
+#include <cutils/memory.h>
+#endif
 #include <opus.h>
 #include <string.h>
 
@@ -366,9 +370,17 @@ static void a2dp_opus_encode_frames(uint8_t nb_frame) {
   unsigned char* packet;
   uint8_t remain_nb_frame = nb_frame;
   uint16_t opus_frame_size = p_encoder_params->framesize;
+#ifdef _MSC_VER
+  std::vector<uint8_t> buffer;
+  buffer.resize( p_encoder_params->framesize *
+                 p_encoder_params->pcm_wlength *
+                 p_encoder_params->channel_mode );
+  uint8_t* read_buffer = buffer.data();
+#else
   uint8_t read_buffer[p_encoder_params->framesize *
                       p_encoder_params->pcm_wlength *
                       p_encoder_params->channel_mode];
+#endif
 
   int32_t out_frames = 0;
   int32_t written = 0;

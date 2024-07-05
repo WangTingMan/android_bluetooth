@@ -80,7 +80,8 @@ typedef struct {
 #define BTM_BLE_ISVALID_PARAM(x, min, max) \
   (((x) >= (min) && (x) <= (max)) || ((x) == BTM_BLE_CONN_PARAM_UNDEF))
 
-typedef struct {
+struct tBTM_BLE_INQ_CB
+{
   uint16_t discoverable_mode;
   uint16_t connectable_mode;
   uint16_t scan_window;
@@ -113,7 +114,7 @@ typedef struct {
   alarm_t* inquiry_timer;
   bool scan_rsp;
   uint8_t state; /* Current state that the inquiry process is in */
-} tBTM_BLE_INQ_CB;
+};
 
 /* random address resolving complete callback */
 typedef void(tBTM_BLE_RESOLVE_CBACK)(void* match_rec, void* p);
@@ -166,12 +167,13 @@ typedef uint16_t tBTM_BLE_STATE_MASK;
 #define BTM_BLE_STATE_ALL_CONN_MASK \
   (BTM_BLE_STATE_CENTRAL_BIT | BTM_BLE_STATE_PERIPHERAL_BIT)
 
-typedef struct {
+struct tBTM_BLE_RESOLVE_Q
+{
   RawAddress* resolve_q_random_pseudo{nullptr};
   uint8_t* resolve_q_action{nullptr};
   uint8_t q_next;
   uint8_t q_pending;
-} tBTM_BLE_RESOLVE_Q;
+};
 
 /* BLE privacy mode */
 #define BTM_PRIVACY_NONE 0 /* BLE no privacy */
@@ -187,7 +189,8 @@ constexpr uint8_t kBTM_BLE_INQUIRY_ACTIVE = 0x10;
 constexpr uint8_t kBTM_BLE_OBSERVE_ACTIVE = 0x80;
 constexpr size_t kCentralAndPeripheralCount = 2;
 
-typedef struct {
+struct tBTM_BLE_CB
+{
  private:
   uint8_t scan_activity_; /* LE scan activity mask */
 
@@ -260,6 +263,6 @@ typedef struct {
 
   uint8_t link_count[kCentralAndPeripheralCount]; /* total link count central
                                                      and peripheral*/
-} tBTM_BLE_CB;
+};
 
 #endif  // BTM_BLE_INT_TYPES_H

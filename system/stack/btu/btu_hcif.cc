@@ -65,6 +65,8 @@
 #include "types/hci_role.h"
 #include "types/raw_address.h"
 
+#define FALLTHROUGH_INTENDED [[fallthrough]]
+
 using namespace bluetooth;
 using base::Location;
 using bluetooth::hci::IsoManager;

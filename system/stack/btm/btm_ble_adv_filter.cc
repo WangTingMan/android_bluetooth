@@ -334,7 +334,10 @@ void BTM_BleAdvFilterParamSetup(
   tBTM_BLE_PF_COUNT* p_bda_filter = NULL;
   uint8_t len = BTM_BLE_ADV_FILT_META_HDR_LENGTH +
                 BTM_BLE_ADV_FILT_FEAT_SELN_LEN + BTM_BLE_ADV_FILT_TRACK_NUM;
-  uint8_t param[len], *p;
+  uint8_t /*param[len],*/ *p;
+  std::vector<uint8_t> buffer;
+  buffer.resize( len );
+  uint8_t* param = buffer.data();
 
   if (!is_filtering_supported()) {
     cb.Run(0, BTM_BLE_PF_ENABLE, btm_status_value(BTM_MODE_UNSUPPORTED));

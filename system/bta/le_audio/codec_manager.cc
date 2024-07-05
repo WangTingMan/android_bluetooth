@@ -655,7 +655,7 @@ struct codec_manager_impl {
 
     uint16_t max_sdu_octets = 0;
     for (auto [_, allocation] : offload_config->stream_map) {
-      auto alloc_channels_per_bis = std::bitset<32>{allocation}.count() ?: 1;
+      auto alloc_channels_per_bis = std::bitset<32>{allocation}.count() ? std::bitset<32>{allocation}.count() : 1;
       auto sdu_octets = offload_config->octets_per_frame *
                         offload_config->blocks_per_sdu * alloc_channels_per_bis;
       if (max_sdu_octets < sdu_octets) max_sdu_octets = sdu_octets;

@@ -39,6 +39,8 @@
 #include "stack/include/l2cdefs.h"
 #include "types/bluetooth/uuid.h"
 
+#define FALLTHROUGH_INTENDED [[fallthrough]]
+
 #define GATT_MTU_REQ_MIN_LEN 2
 #define L2CAP_PKT_OVERHEAD 4
 
@@ -163,7 +165,7 @@ static void build_read_multi_rsp(tGATT_SR_CMD* p_cmd, uint16_t mtu) {
   bool is_overflow = false;
 
   len = sizeof(BT_HDR) + L2CAP_MIN_OFFSET + mtu;
-  BT_HDR* p_buf = (BT_HDR*)osi_calloc(len);
+  BT_HDR* p_buf = (BT_HDR*)osi_malloc(len);
   p_buf->offset = L2CAP_MIN_OFFSET;
   p = (uint8_t*)(p_buf + 1) + p_buf->offset;
 
@@ -747,7 +749,7 @@ void gatts_process_primary_service_req(tGATT_TCB& tcb, uint16_t cid,
 
   uint16_t msg_len =
       (uint16_t)(sizeof(BT_HDR) + payload_size + L2CAP_MIN_OFFSET);
-  BT_HDR* p_msg = (BT_HDR*)osi_calloc(msg_len);
+  BT_HDR* p_msg = (BT_HDR*)osi_malloc(msg_len);
   reason = gatt_build_primary_service_rsp(p_msg, tcb, cid, op_code, s_hdl,
                                           e_hdl, p_data, value);
   if (reason != GATT_SUCCESS) {
@@ -783,7 +785,7 @@ static void gatts_process_find_info(tGATT_TCB& tcb, uint16_t cid,
   uint16_t buf_len =
       (uint16_t)(sizeof(BT_HDR) + payload_size + L2CAP_MIN_OFFSET);
 
-  BT_HDR* p_msg = (BT_HDR*)osi_calloc(buf_len);
+  BT_HDR* p_msg = (BT_HDR*)osi_malloc(buf_len);
   reason = GATT_NOT_FOUND;
 
   uint8_t* p = (uint8_t*)(p_msg + 1) + L2CAP_MIN_OFFSET;
@@ -922,7 +924,7 @@ static void gatts_process_read_by_type_req(tGATT_TCB& tcb, uint16_t cid,
   uint16_t payload_size = gatt_tcb_get_payload_size(tcb, cid);
 
   size_t msg_len = sizeof(BT_HDR) + payload_size + L2CAP_MIN_OFFSET;
-  BT_HDR* p_msg = (BT_HDR*)osi_calloc(msg_len);
+  BT_HDR* p_msg = (BT_HDR*)osi_malloc(msg_len);
   uint8_t* p = (uint8_t*)(p_msg + 1) + L2CAP_MIN_OFFSET;
 
   *p++ = op_code + 1;
@@ -1078,7 +1080,7 @@ static void gatts_process_read_req(tGATT_TCB& tcb, uint16_t cid,
     return;
   }
 
-  BT_HDR* p_msg = (BT_HDR*)osi_calloc(buf_len);
+  BT_HDR* p_msg = (BT_HDR*)osi_malloc(buf_len);
 
   if (op_code == GATT_REQ_READ_BLOB) STREAM_TO_UINT16(offset, p_data);
 

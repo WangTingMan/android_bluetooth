@@ -28,20 +28,30 @@
 
 #include "btif_sock_thread.h"
 
+#ifndef _MSC_VER
 #include <alloca.h>
+#endif
 #include <bluetooth/log.h>
 #include <fcntl.h>
+#ifndef _MSC_VER
 #include <features.h>
 #include <poll.h>
 #include <pthread.h>
+#endif
 #include <stdlib.h>
 #include <string.h>
+#ifndef _MSC_VER
 #include <sys/select.h>
 #include <sys/socket.h>
+#endif
 #include <sys/types.h>
+#ifndef _MSC_VER
 #include <sys/un.h>
+#endif
 #include <time.h>
+#ifndef _MSC_VER
 #include <unistd.h>
+#endif
 
 #include <array>
 #include <mutex>
@@ -49,6 +59,20 @@
 
 #include "os/log.h"
 #include "osi/include/osi.h"  // OSI_NO_INTR
+
+#ifdef _MSC_VER
+#include <cutils/threads.h>
+#include <WinSock2.h>
+
+#ifndef ssize_t
+#define ssize_t int64_t
+#endif
+
+#ifndef POLLRDHUP
+#define POLLRDHUP 0
+#endif
+
+#endif
 
 #define asrt(s)                                         \
   do {                                                  \
@@ -181,10 +205,12 @@ int btsock_thread_create(btsock_signaled_cb callback,
 /* create dummy socket pair used to wake up select loop */
 static inline void init_cmd_fd(int h) {
   asrt(ts[h].cmd_fdr == -1 && ts[h].cmd_fdw == -1);
+#ifndef _MSC_VER
   if (socketpair(AF_UNIX, SOCK_STREAM, 0, &ts[h].cmd_fdr) < 0) {
     log::error("socketpair failed: {}", strerror(errno));
     return;
   }
+#endif
   // add the cmd fd for read & write
   add_poll(h, ts[h].cmd_fdr, 0, SOCK_THREAD_FD_RD, 0);
 }
@@ -227,8 +253,10 @@ int btsock_thread_add_fd(int h, int fd, int type, int flags, uint32_t user_id) {
   }
   sock_cmd_t cmd = {CMD_ADD_FD, fd, type, flags, user_id};
 
-  ssize_t ret;
+  ssize_t ret = 0;
+#ifndef _MSC_VER
   OSI_NO_INTR(ret = send(ts[h].cmd_fdw, &cmd, sizeof(cmd), 0));
+#endif
 
   return ret == sizeof(cmd);
 }
@@ -243,8 +271,10 @@ int btsock_thread_wakeup(int h) {
   }
   sock_cmd_t cmd = {CMD_WAKEUP, 0, 0, 0, 0};
 
-  ssize_t ret;
+  ssize_t ret = 0;
+#ifndef _MSC_VER
   OSI_NO_INTR(ret = send(ts[h].cmd_fdw, &cmd, sizeof(cmd), 0));
+#endif
 
   return ret == sizeof(cmd);
 }
@@ -259,8 +289,10 @@ int btsock_thread_exit(int h) {
   }
   sock_cmd_t cmd = {CMD_EXIT, 0, 0, 0, 0};
 
-  ssize_t ret;
+  ssize_t ret = 0;
+#ifndef _MSC_VER
   OSI_NO_INTR(ret = send(ts[h].cmd_fdw, &cmd, sizeof(cmd), 0));
+#endif
 
   if (ret == sizeof(cmd)) {
     if (ts[h].thread_id != std::nullopt) {
@@ -345,8 +377,10 @@ static int process_cmd_sock(int h) {
   sock_cmd_t cmd = {-1, 0, 0, 0, 0};
   int fd = ts[h].cmd_fdr;
 
-  ssize_t ret;
+  ssize_t ret = 0;
+#ifndef _MSC_VER
   OSI_NO_INTR(ret = recv(fd, &cmd, sizeof(cmd), MSG_WAITALL));
+#endif
 
   if (ret != sizeof(cmd)) {
     log::error("recv cmd errno:{}", errno);
@@ -444,8 +478,10 @@ static void* sock_poll_thread(void* arg) {
   for (;;) {
     pfds = {};
     prepare_poll_fds(h, pfds.data());
-    int ret;
+    int ret = 0;
+#ifndef _MSC_VER
     OSI_NO_INTR(ret = poll(pfds.data(), ts[h].poll_count, -1));
+#endif
     if (ret == -1) {
       log::error("poll ret -1, exit the thread, errno:{}, err:{}", errno,
                  strerror(errno));
@@ -470,6 +506,10 @@ static void* sock_poll_thread(void* arg) {
         process_data_sock(h, pfds.data(), pfds_count, ret);
     } else {
       log::info("no data, select ret: {}", ret);
+#ifdef _MSC_VER
+      log::info("we ignore this socket loop on windows.");
+      sleep(20);
+#endif
     };
   }
   log::info("socket poll thread exiting, h:{}", h);

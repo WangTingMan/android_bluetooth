@@ -112,7 +112,7 @@ void avct_l2c_br_connect_ind_cback(const RawAddress& bd_addr, uint16_t lcid,
                                    uint16_t /* psm */, uint8_t id) {
   tAVCT_LCB* p_lcb;
   uint16_t result = L2CAP_CONN_NO_RESOURCES;
-  tAVCT_BCB* p_bcb;
+  tAVCT_BCB* p_bcb = nullptr;
   tL2CAP_ERTM_INFO ertm_info;
 
   p_lcb = avct_lcb_by_bd(bd_addr);

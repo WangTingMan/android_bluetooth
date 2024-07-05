@@ -17,6 +17,7 @@
 #pragma once
 
 #include "os/utils.h"
+#include <atomic>
 
 namespace bluetooth {
 namespace os {
@@ -39,6 +40,9 @@ class ReactiveSemaphore {
 
  private:
   int fd_;
+#ifdef _MSC_VER
+  std::atomic_int32_t value_;
+#endif
 };
 
 }  // namespace os

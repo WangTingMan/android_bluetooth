@@ -21,7 +21,9 @@
 #include "btcore/include/module.h"
 
 #include <bluetooth/log.h>
+#if __has_include(<dlfcn.h>)
 #include <dlfcn.h>
+#endif
 #include <string.h>
 
 #include <mutex>
@@ -29,6 +31,8 @@
 
 #include "common/message_loop_thread.h"
 #include "os/log.h"
+
+#include <cutils/native_handle.h>
 
 using bluetooth::common::MessageLoopThread;
 using namespace bluetooth;

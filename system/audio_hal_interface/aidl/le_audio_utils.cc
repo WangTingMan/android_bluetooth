@@ -219,15 +219,14 @@ GetAidlMetadataFromStackFormat(const std::vector<uint8_t>& vec) {
     }
     if (stackMetadata.vendor_specific) {
       if (stackMetadata.vendor_specific->size() >= 2) {
-        out_ltvs.push_back(
-            ::aidl::android::hardware::bluetooth::audio::MetadataLtv::
-                VendorSpecific{/* Two octets for the company identifier */
-                               stackMetadata.vendor_specific->at(0) |
-                                   (stackMetadata.vendor_specific->at(1) << 8),
-                               /* The rest is a payload */
-                               .opaqueValue = std::vector<uint8_t>(
-                                   stackMetadata.vendor_specific->begin() + 2,
-                                   stackMetadata.vendor_specific->end())});
+        ::aidl::android::hardware::bluetooth::audio::MetadataLtv::
+          VendorSpecific vendor;
+        vendor.companyId = stackMetadata.vendor_specific->at(0) |
+          (stackMetadata.vendor_specific->at(1) << 8);
+        vendor.opaqueValue = std::vector<uint8_t>(
+          stackMetadata.vendor_specific->begin() + 2,
+          stackMetadata.vendor_specific->end());
+        out_ltvs.push_back(vendor);
       }
     }
     /* Note: stackMetadata.program_info

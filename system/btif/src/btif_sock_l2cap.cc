@@ -16,10 +16,12 @@
  */
 
 #include <bluetooth/log.h>
+#ifndef _MSC_VER
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#endif
 
 #include <cstdint>
 #include <cstring>
@@ -40,6 +42,10 @@
 #include "stack/include/bt_hdr.h"
 #include "stack/include/l2cdefs.h"
 #include "types/raw_address.h"
+
+#ifndef ssize_t
+#define ssize_t int64_t
+#endif
 
 using namespace bluetooth;
 
@@ -242,8 +248,9 @@ static void btsock_l2cap_free_l(l2cap_socket* sock) {
     sock->prev->next = sock->next;
   else
     socks = sock->next;
-
+#ifndef _MSC_VER
   shutdown(sock->our_fd, SHUT_RDWR);
+#endif
   close(sock->our_fd);
   if (sock->app_fd != -1) {
     close(sock->app_fd);
@@ -286,7 +293,11 @@ static l2cap_socket* btsock_l2cap_alloc_l(const char* name,
   unsigned security = 0;
   int fds[2];
   l2cap_socket* sock = (l2cap_socket*)osi_calloc(sizeof(*sock));
+#ifdef _MSC_VER
+  int sock_type = 0;
+#else
   int sock_type = SOCK_SEQPACKET;
+#endif
 
   if (flags & BTSOCK_FLAG_ENCRYPT)
     security |= is_server ? BTM_SEC_IN_ENCRYPT : BTM_SEC_OUT_ENCRYPT;
@@ -302,10 +313,12 @@ static l2cap_socket* btsock_l2cap_alloc_l(const char* name,
 #if TARGET_FLOSS
   sock_type = SOCK_STREAM;
 #endif
+#ifndef _MSC_VER
   if (socketpair(AF_LOCAL, sock_type, 0, fds)) {
     log::error("socketpair failed:{}", strerror(errno));
     goto fail_sockpair;
   }
+#endif
 
   sock->our_fd = fds[0];
   sock->app_fd = fds[1];
@@ -922,8 +935,10 @@ static bool flush_incoming_que_on_wr_signal_l(l2cap_socket* sock) {
   uint32_t len;
 
   while (packet_get_head_l(sock, &buf, &len)) {
-    ssize_t sent;
+    ssize_t sent = 0;
+#ifndef _MSC_VER
     OSI_NO_INTR(sent = send(sock->our_fd, buf, len, MSG_DONTWAIT));
+#endif
     int saved_errno = errno;
 
     if (sent == (signed)len)
@@ -968,6 +983,7 @@ void btsock_l2cap_signaled(int fd, int flags, uint32_t user_id) {
   if ((flags & SOCK_THREAD_FD_RD) && !sock->server) {
     // app sending data
     if (sock->connected) {
+#ifndef _MSC_VER
       int size = 0;
       bool ioctl_success = ioctl(sock->our_fd, FIONREAD, &size) == 0;
       if (!(flags & SOCK_THREAD_FD_EXCEPTION) || (ioctl_success && size)) {
@@ -1001,6 +1017,7 @@ void btsock_l2cap_signaled(int fd, int flags, uint32_t user_id) {
         // will take care of freeing buffer
         BTA_JvL2capWrite(sock->handle, PTR_TO_UINT(buffer), buffer, user_id);
       }
+#endif
     } else
       drop_it = true;
   }
@@ -1010,11 +1027,13 @@ void btsock_l2cap_signaled(int fd, int flags, uint32_t user_id) {
       btsock_thread_add_fd(pth, sock->our_fd, BTSOCK_L2CAP, SOCK_THREAD_FD_WR,
                            sock->id);
   }
+#ifndef _MSC_VER
   if (drop_it || (flags & SOCK_THREAD_FD_EXCEPTION)) {
     int size = 0;
     if (drop_it || ioctl(sock->our_fd, FIONREAD, &size) != 0 || size == 0)
       btsock_l2cap_free_l(sock);
   }
+#endif
 }
 
 bt_status_t btsock_l2cap_disconnect(const RawAddress* bd_addr) {

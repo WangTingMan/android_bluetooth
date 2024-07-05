@@ -51,7 +51,8 @@ typedef enum : uint8_t {
 
 /* Define the PAN Connection Control Block
  */
-typedef struct {
+struct tPAN_CONN
+{
   tPAN_STATE con_state;
 
 #define PAN_FLAGS_CONN_COMPLETED 0x01
@@ -75,7 +76,7 @@ typedef struct {
     size_t drops{0};
   } write, read;
 
-} tPAN_CONN;
+};
 
 /*  The main PAN control block
  */

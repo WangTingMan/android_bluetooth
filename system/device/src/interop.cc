@@ -26,10 +26,14 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <hardware/bluetooth.h>
+#if __has_include(<pthread.h>)
 #include <pthread.h>
+#endif
 #include <string.h>  // For memcmp
 #include <sys/stat.h>
+#if __has_include(<unistd.h>)
 #include <unistd.h>
+#endif
 
 #include <iostream>
 #include <map>
@@ -47,6 +51,11 @@
 #include "osi/include/list.h"
 #include "osi/include/osi.h"
 #include "types/raw_address.h"
+
+#include <cutils/threads.h>
+#ifndef strncasecmp
+#define strncasecmp _strnicmp
+#endif
 
 using namespace bluetooth;
 
@@ -67,6 +76,11 @@ static const char* INTEROP_DYNAMIC_FILE_PATH =
 
 static const char* INTEROP_STATIC_FILE_PATH =
     "/var/lib/bluetooth/interop_database.conf";
+#elif _MSC_VER
+static const char* INTEROP_DYNAMIC_FILE_PATH =
+  "/data/misc/bluedroid/interop_database_dynamic.conf";
+static const char* INTEROP_STATIC_FILE_PATH =
+  "/apex/com.android.btservices/etc/bluetooth/interop_database.conf";
 #else  // !TARGET_FLOSS and !__ANDROID__
 #include <base/files/file_util.h>
 
@@ -319,7 +333,7 @@ static future_t* interop_clean_up(void) {
   return future_new_immediate(FUTURE_SUCCESS);
 }
 
-EXPORT_SYMBOL module_t interop_module = {
+/*EXPORT_SYMBOL*/ module_t interop_module = {
     .name = INTEROP_MODULE,
     .init = interop_init,
     .start_up = NULL,

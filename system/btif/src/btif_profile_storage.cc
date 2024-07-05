@@ -19,7 +19,9 @@
 
 #include "btif_profile_storage.h"
 
+#if __has_include(<alloca.h>)
 #include <alloca.h>
+#endif
 #include <bluetooth/log.h>
 #include <com_android_bluetooth_flags.h>
 #include <stdlib.h>
@@ -359,7 +361,13 @@ bt_status_t btif_storage_remove_hid_info(const tAclLinkSpec& link_spec) {
 static bool btif_device_supports_profile(const std::string& device,
                                          const Uuid& profile) {
   int size = STORAGE_UUID_STRING_SIZE * BT_MAX_NUM_UUIDS;
+#ifdef _MSC_VER
+  std::vector<char> buffer;
+  buffer.resize( size );
+  char* uuid_str = buffer.data();
+#else
   char uuid_str[size];
+#endif
   if (btif_config_get_str(device, BTIF_STORAGE_KEY_REMOTE_SERVICE, uuid_str,
                           &size)) {
     Uuid p_uuid[BT_MAX_NUM_UUIDS];
@@ -490,7 +498,13 @@ void btif_storage_load_bonded_hearing_aids() {
     const std::string& name = bd_addr.ToString();
 
     int size = STORAGE_UUID_STRING_SIZE * BT_MAX_NUM_UUIDS;
+#ifdef _MSC_VER
+    std::vector<char> buffer;
+    buffer.resize( size );
+    char* uuid_str = buffer.data();
+#else
     char uuid_str[size];
+#endif
     bool isHearingaidDevice = false;
     if (btif_config_get_str(name, BTIF_STORAGE_KEY_REMOTE_SERVICE, uuid_str,
                             &size)) {
@@ -778,7 +792,13 @@ void btif_storage_load_bonded_leaudio() {
     auto name = bd_addr.ToString();
 
     int size = STORAGE_UUID_STRING_SIZE * BT_MAX_NUM_UUIDS;
+#ifdef _MSC_VER
+    std::vector<char> buffer;
+    buffer.resize( size );
+    char* uuid_str = buffer.data();
+#else
     char uuid_str[size];
+#endif
     bool isLeAudioDevice = false;
     if (btif_config_get_str(name, BTIF_STORAGE_KEY_REMOTE_SERVICE, uuid_str,
                             &size)) {

@@ -46,6 +46,10 @@
 #include "profile/avrcp/media_id_map.h"
 #include "raw_address.h"
 
+#ifdef interface
+#undef interface
+#endif
+
 namespace bluetooth {
 namespace avrcp {
 

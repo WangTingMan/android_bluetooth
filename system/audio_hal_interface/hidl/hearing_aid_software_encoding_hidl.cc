@@ -25,6 +25,11 @@
 #include "os/log.h"
 #include "osi/include/properties.h"
 
+#ifdef _MSC_VER
+#define DO_NOT_DEFINE_TIME_VAL
+#include <utils/Timers.h>
+#endif
+
 namespace fmt {
 template <>
 struct formatter<audio_usage_t> : enum_formatter<audio_usage_t> {};
@@ -55,7 +60,7 @@ class HearingAidTransport
   HearingAidTransport(StreamCallbacks stream_cb)
       : IBluetoothSinkTransportInstance(
             SessionType::HEARING_AID_SOFTWARE_ENCODING_DATAPATH,
-            (AudioConfiguration){}),
+            AudioConfiguration{}),
         stream_cb_(std::move(stream_cb)),
         remote_delay_report_ms_(0),
         total_bytes_read_(0),

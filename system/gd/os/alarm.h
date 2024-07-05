@@ -25,6 +25,10 @@
 #include "os/thread.h"
 #include "os/utils.h"
 
+#ifdef _MSC_VER
+struct alarm_t;
+#endif
+
 namespace bluetooth {
 namespace os {
 
@@ -51,7 +55,12 @@ class Alarm {
  private:
   common::OnceClosure task_;
   Handler* handler_;
+#ifdef _MSC_VER
+  static void alarm_on_fire_callback( void* data );
+  alarm_t* alarm_;
+#else
   int fd_ = 0;
+#endif
   Reactor::Reactable* token_;
   mutable std::mutex mutex_;
   void on_fire();

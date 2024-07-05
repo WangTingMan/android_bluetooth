@@ -17,7 +17,11 @@
 #include "crypto_toolbox.h"
 
 #include <bluetooth/log.h>
+#if __has_include(<endian.h>)
 #include <endian.h>
+#else
+#define	le32toh( x ) ( ( uint32_t )( x ) )
+#endif
 
 #include <algorithm>
 

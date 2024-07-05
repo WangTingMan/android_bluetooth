@@ -13,9 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
+#if __has_include(<sched.h>)
 #include <sched.h>
+#endif
 #include <sys/types.h>
+
+#include <cutils/threads.h>
+#include <utils/Timers.h>
 
 namespace {
 constexpr int kRealTimeFifoSchedulingPriority = 1;

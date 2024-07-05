@@ -31,6 +31,11 @@
 #include "hal_version_manager.h"
 #include "os/log.h"
 
+#ifdef _MSC_VER
+#define DO_NOT_DEFINE_TIME_VAL
+#include <utils/Timers.h>
+#endif
+
 namespace bluetooth {
 namespace audio {
 namespace aidl {
@@ -381,7 +386,7 @@ inline bool is_broadcaster_session(SessionType session_type) {
 
 LeAudioSinkTransport::LeAudioSinkTransport(SessionType session_type,
                                            StreamCallbacks stream_cb)
-    : IBluetoothSinkTransportInstance(session_type, (AudioConfiguration){}) {
+    : IBluetoothSinkTransportInstance(session_type, AudioConfiguration{}) {
   transport_ = new LeAudioTransport(
       is_broadcaster_session(session_type) ? flush_broadcast_sink
                                            : flush_unicast_sink,
@@ -481,7 +486,7 @@ void flush_source() {
 
 LeAudioSourceTransport::LeAudioSourceTransport(SessionType session_type,
                                                StreamCallbacks stream_cb)
-    : IBluetoothSourceTransportInstance(session_type, (AudioConfiguration){}) {
+    : IBluetoothSourceTransportInstance(session_type, AudioConfiguration{}) {
   transport_ = new LeAudioTransport(flush_source, std::move(stream_cb),
                                     {16000, ChannelMode::STEREO, 16, 0});
 };

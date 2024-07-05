@@ -95,6 +95,9 @@ enum class Attribute : uint32_t {
   DEFAULT_COVER_ART = 0x08,
 };
 
+#ifdef NO_ERROR
+#undef NO_ERROR
+#endif
 enum class Status : uint8_t {
   INVALID_COMMAND = 0x00,
   INVALID_PARAMETER = 0x01,

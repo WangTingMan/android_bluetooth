@@ -41,7 +41,7 @@
   s32OutLow = (int32_t)(s32In1) * (int32_t)(s32In2);
 #define Mult64(s32In1, s32In2, s32OutLow, s32OutHi)                \
   {                                                                \
-    __builtin_mul_overflow(s32In1, (uint16_t)s32In2, &s64OutTemp); \
+    s64OutTemp = s32In1 * (uint16_t)s32In2;                        \
     s32OutLow = s64OutTemp & 0xFFFFFFFF;                           \
     s32OutHi = (s64OutTemp >> 32) & 0xFFFFFFFF;                    \
   }

@@ -20,6 +20,8 @@
 #include <raw_address.h>
 #include <stdint.h>
 
+#include <cutils/bitops.h>
+
 __BEGIN_DECLS
 
 typedef enum {

@@ -42,6 +42,8 @@
 
 using namespace bluetooth;
 
+#define FALLTHROUGH_INTENDED [[fallthrough]]
+
 static const std::set<uint16_t> uuid_logging_acceptlist = {
     UUID_SERVCLASS_HEADSET_AUDIO_GATEWAY,
     UUID_SERVCLASS_AG_HANDSFREE,

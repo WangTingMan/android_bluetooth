@@ -37,6 +37,10 @@
 #include "types/bluetooth/uuid.h"
 #include "types/raw_address.h"
 
+#ifdef interface
+#undef interface
+#endif
+
 using namespace bluetooth::legacy::stack::sdp;
 
 namespace bluetooth {

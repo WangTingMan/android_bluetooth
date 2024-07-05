@@ -167,12 +167,12 @@ enum {
 };
 
 /* type for HF control block */
-typedef struct {
+struct tBTA_HF_CLIENT_CB {
   // Fields useful for particular control block.
   uint8_t handle;               /* Handle of the control block to be
                                    used by upper layer */
   RawAddress peer_addr;         /* peer bd address */
-  tSDP_DISCOVERY_DB* p_disc_db; /* pointer to discovery database */
+  tSDP_DISCOVERY_DB* p_disc_db = nullptr; /* pointer to discovery database */
   uint16_t conn_handle;         /* RFCOMM handle of connected service */
   tBTA_HF_CLIENT_PEER_FEAT peer_features; /* peer device features */
   tBTA_HF_CLIENT_CHLD_FEAT chld_features; /* call handling features */
@@ -188,12 +188,12 @@ typedef struct {
   tBTA_HF_CLIENT_AT_CB at_cb; /* AT Parser control block */
   uint8_t state;              /* state machine state */
   bool is_allocated;          /* if the control block is already allocated */
-  alarm_t* collision_timer;   /* Collision timer */
+  alarm_t* collision_timer = nullptr;   /* Collision timer */
   std::unordered_set<int>
       peer_hf_indicators; /* peer supported hf indicator indices (HFP1.7) */
   std::unordered_set<int>
       enabled_hf_indicators; /* enabled hf indicator indices (HFP1.7) */
-} tBTA_HF_CLIENT_CB;
+};
 
 typedef struct {
   // Common fields, should be taken out.

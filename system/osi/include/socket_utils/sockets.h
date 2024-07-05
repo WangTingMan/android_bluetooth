@@ -20,7 +20,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if __has_include(<sys/socket.h>)
 #include <sys/socket.h>
+#endif
 
 #include <cerrno>
 

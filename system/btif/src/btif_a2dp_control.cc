@@ -36,6 +36,8 @@
 
 #define A2DP_DATA_READ_POLL_MS 10
 
+#include <utils/Timers.h>
+
 using namespace bluetooth;
 
 namespace fmt {

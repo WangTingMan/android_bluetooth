@@ -24,7 +24,9 @@
 #include <com_android_bluetooth_flags.h>
 #include <string.h>
 #include <time.h>
+#if __has_include(<unistd.h>)
 #include <unistd.h>
+#endif
 
 #include <mutex>
 #include <string>
@@ -38,6 +40,14 @@
 #include "osi/include/future.h"
 #include "osi/include/properties.h"
 #include "types/raw_address.h"
+
+#ifndef strncasecmp
+#define strncasecmp _strnicmp
+#endif
+
+#ifndef strcasecmp
+#define strcasecmp strcmp
+#endif
 
 extern enum ConfigSource device_iot_config_source;
 
@@ -180,7 +190,7 @@ future_t* device_iot_config_module_clean_up(void) {
   return future_new_immediate(FUTURE_SUCCESS);
 }
 
-EXPORT_SYMBOL module_t device_iot_config_module = {
+/*EXPORT_SYMBOL*/ module_t device_iot_config_module = {
     .name = DEVICE_IOT_CONFIG_MODULE,
     .init = device_iot_config_module_init,
     .start_up = device_iot_config_module_start_up,

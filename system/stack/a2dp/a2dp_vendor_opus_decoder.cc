@@ -27,12 +27,13 @@
 
 using namespace bluetooth;
 
-typedef struct {
+struct tA2DP_OPUS_DECODER_CB
+{
   OpusDecoder* opus_handle = nullptr;
   bool has_opus_handle;
   int16_t* decode_buf = nullptr;
   decoded_data_callback_t decode_callback;
-} tA2DP_OPUS_DECODER_CB;
+};
 
 static tA2DP_OPUS_DECODER_CB a2dp_opus_decoder_cb;
 

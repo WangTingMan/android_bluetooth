@@ -38,6 +38,8 @@
 #define L2CAP_SUCCESS 0
 #define L2CAP_ERROR 1
 
+#define FALLTHROUGH_INTENDED [[fallthrough]]
+
 using namespace bluetooth;
 
 /******************************************************************************/

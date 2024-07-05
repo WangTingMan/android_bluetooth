@@ -48,9 +48,15 @@ void Handler::Post(OnceClosure closure) {
       log::warn("Posting to a handler which has been cleared");
       return;
     }
+#ifndef _MSC_VER
     tasks_->emplace(std::move(closure));
+#endif
   }
+#ifdef _MSC_VER
+  thread_->GetReactor()->PostTask( std::move( closure ) );
+#else
   event_->Notify();
+#endif
 }
 
 void Handler::Clear() {

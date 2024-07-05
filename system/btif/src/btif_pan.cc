@@ -28,17 +28,24 @@
 #define LOG_TAG "bt_btif_pan"
 
 #include <android_bluetooth_sysprop.h>
+#ifndef _MSC_VER
 #include <arpa/inet.h>
+#endif
 #include <base/functional/bind.h>
 #include <base/location.h>
 #include <bluetooth/log.h>
 #include <fcntl.h>
+#ifndef _MSC_VER
 #include <linux/if_ether.h>
 #include <linux/if_tun.h>
 #include <net/if.h>
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#else
+#include <WinSock2.h>
+#include <cutils/sockets.h>
+#endif
 
 #include "bta/include/bta_pan_api.h"
 #include "btif/include/btif_common.h"
@@ -264,6 +271,9 @@ void destroy_tap_read_thread(void) {
 }
 
 static int tap_if_up(const char* devname, const RawAddress& addr) {
+#ifdef _MSC_VER
+  log::verbose( "network fake up on windows", devname );
+#else
   struct ifreq ifr;
   int sk, err;
 
@@ -322,11 +332,14 @@ static int tap_if_up(const char* devname, const RawAddress& addr) {
     return -1;
   }
   close(sk);
+#endif
   log::verbose("network interface: {} is up", devname);
   return 0;
 }
 
 static int tap_if_down(const char* devname) {
+#ifdef _MSC_VER
+#else
   struct ifreq ifr;
   int sk;
 
@@ -341,7 +354,7 @@ static int tap_if_down(const char* devname) {
   ioctl(sk, SIOCSIFFLAGS, (caddr_t)&ifr);
 
   close(sk);
-
+#endif
   return 0;
 }
 
@@ -357,6 +370,8 @@ void btpan_set_flow_control(bool enable) {
 }
 
 int btpan_tap_open() {
+#ifdef _MSC_VER
+#else
   struct ifreq ifr;
   int fd, err;
   const char* clonedev = "/dev/tun";
@@ -390,12 +405,15 @@ int btpan_tap_open() {
   }
   log::error("can not bring up tap interface:{}", TAP_IF_NAME);
   close(fd);
+#endif
   return INVALID_FD;
 }
 
 int btpan_tap_send(int tap_fd, const RawAddress& src, const RawAddress& dst,
                    uint16_t proto, const char* buf, uint16_t len,
                    bool /* ext */, bool /* forward */) {
+#ifdef _MSC_VER
+#else
   if (tap_fd != INVALID_FD) {
     tETH_HDR eth_hdr;
     eth_hdr.h_dest = dst;
@@ -415,6 +433,7 @@ int btpan_tap_send(int tap_fd, const RawAddress& src, const RawAddress& dst,
     log::verbose("ret:{}", ret);
     return (int)ret;
   }
+#endif
   return -1;
 }
 
@@ -525,10 +544,13 @@ void btpan_close_handle(btpan_conn_t* p) {
 }
 
 static inline bool should_forward(tETH_HDR* hdr) {
+#ifdef _MSC_VER
+#else
   uint16_t proto = ntohs(hdr->h_proto);
   if (proto == ETH_P_IP || proto == ETH_P_ARP || proto == ETH_P_IPV6)
     return true;
   log::verbose("unknown proto:{:x}", proto);
+#endif
   return false;
 }
 
@@ -714,10 +736,11 @@ static void btu_exec_tap_fd_read(int fd) {
     ufd.fd = fd;
     ufd.events = POLLIN;
     ufd.revents = 0;
-
+#ifndef _MSC_VER
     int ret;
     OSI_NO_INTR(ret = poll(&ufd, 1, 0));
     if (ret <= 0 || IS_EXCEPTION(ufd.revents)) break;
+#endif
   }
 
   if (btpan_cb.flow) {

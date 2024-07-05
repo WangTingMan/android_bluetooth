@@ -31,12 +31,18 @@ namespace {
 
 struct IsSpace {
   bool operator()(std::string::value_type v) {
+    if (v < -1) {
+      return false;
+    }
     return isspace(static_cast<int>(v));
   }
 };
 
 struct IsHexDigit {
   bool operator()(std::string::value_type v) {
+    if (v < -1) {
+      return false;
+    }
     return isxdigit(static_cast<int>(v));
   }
 };

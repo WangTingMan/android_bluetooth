@@ -749,7 +749,8 @@ typedef void(tGATT_SUBRATE_CHG_CB)(tGATT_IF gatt_if, uint16_t conn_id,
  * GATT. This structure includes callback functions. All functions
  * MUST be provided.
 */
-typedef struct {
+struct tGATT_CBACK
+{
   tGATT_CONN_CBACK* p_conn_cb{nullptr};
   tGATT_CMPL_CBACK* p_cmpl_cb{nullptr};
   tGATT_DISC_RES_CB* p_disc_res_cb{nullptr};
@@ -760,7 +761,7 @@ typedef struct {
   tGATT_PHY_UPDATE_CB* p_phy_update_cb{nullptr};
   tGATT_CONN_UPDATE_CB* p_conn_update_cb{nullptr};
   tGATT_SUBRATE_CHG_CB* p_subrate_chg_cb{nullptr};
-} tGATT_CBACK;
+};
 
 /*****************  Start Handle Management Definitions   *********************/
 

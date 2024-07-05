@@ -151,6 +151,9 @@ inline std::ostream& operator<<(std::ostream& os, const Attribute& attr) {
   return os << AttributeText(attr);
 }
 
+#ifdef NO_ERROR
+#undef NO_ERROR
+#endif
 inline std::string StatusText(const Status& status) {
   switch (status) {
     CASE_RETURN_TEXT(Status::INVALID_COMMAND);

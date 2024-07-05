@@ -36,6 +36,8 @@
 #include "stack/include/btm_status.h"
 #include "types/raw_address.h"
 
+#include <cutils\memory.h>
+
 using namespace bluetooth;
 
 time_t get_current_time() { return time(0); }
@@ -353,7 +355,9 @@ void power_telemetry::PowerTelemetry::LogBleAdvStarted() {
   std::lock_guard<std::mutex> lock(pimpl_->dumpsys_mutex_);
   const time_t current_time = get_current_time();
   LogDataContainer& ldc = pimpl_->GetCurrentLogDataContainer();
-  ldc.adv_list.emplace_back(AdvDetails{.active.begin = current_time});
+  AdvDetails detail;
+  detail.active.begin = current_time;
+  ldc.adv_list.emplace_back( detail );
 }
 
 void power_telemetry::PowerTelemetry::LogBleAdvStopped() {
@@ -412,12 +416,12 @@ void power_telemetry::PowerTelemetry::LogLinkDetails(uint16_t handle,
     link_list.push_back(link_details);
     link_map.erase(handle);
   } else if (is_connected == true) {
-    link_map[handle] = {
-        .bd_addr = bd_addr,
-        .handle = handle,
-        .duration.begin = get_current_time(),
-        .tx_power_level = 0,
-    };
+    LinkDetails detail;
+    detail.bd_addr = bd_addr;
+    detail.handle = handle;
+    detail.duration.begin = get_current_time();
+    detail.tx_power_level = 0;
+    link_map[handle] = detail;
 
     if (is_acl_link) {
       SniffData sniff_data;
@@ -528,18 +532,14 @@ void power_telemetry::PowerTelemetry::LogChannelConnected(
   std::list<ChannelDetails> channel_details_list;
   LogDataContainer& ldc = pimpl_->GetCurrentLogDataContainer();
   const ChannelType channel_type = PsmToChannelType(psm);
-  ChannelDetails channel_details = {
-      .bd_addr = bd_addr,
-      .psm = psm,
-      .src.cid = static_cast<uint16_t>(src_id),
-      .dst.cid = static_cast<uint16_t>(dst_id),
-      .state = State::kConnected,
-      .channel_type = channel_type,
-      .data_transfer = {},
-      .duration.begin = get_current_time(),
-      .rx = {},
-      .tx = {},
-  };
+  ChannelDetails channel_details;
+  channel_details.bd_addr = bd_addr;
+  channel_details.psm = psm;
+  channel_details.src.cid = static_cast<uint16_t>( src_id );
+  channel_details.dst.cid = static_cast<uint16_t>( dst_id );
+  channel_details.state = State::kConnected;
+  channel_details.channel_type = channel_type;
+  channel_details.duration.begin = get_current_time();
 
   if (ldc.channel_map.count(bd_addr) == 0) {
     ldc.channel_map.insert(std::pair<RawAddress, std::list<ChannelDetails>>(

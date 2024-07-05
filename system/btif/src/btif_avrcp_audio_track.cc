@@ -23,7 +23,11 @@
 #define __INTRODUCED_IN(x)
 #endif
 
+#ifdef _MSC_VER
+#include <audio_utils/porting_aaudio.h>
+#else
 #include <aaudio/AAudio.h>
+#endif
 #include <bluetooth/log.h>
 #include <utils/StrongPointer.h>
 

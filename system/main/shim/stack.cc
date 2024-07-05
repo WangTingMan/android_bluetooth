@@ -20,7 +20,9 @@
 
 #include <bluetooth/log.h>
 #include <fcntl.h>
+#if __has_include(<unistd.h>)
 #include <unistd.h>
+#endif
 
 #include <string>
 

@@ -36,6 +36,9 @@
 #include "stack/include/l2cdefs.h"
 #include "stack/include/main_thread.h"
 
+#include <base/callback.h>
+#include <base/callback_forward.h>
+
 namespace bluetooth {
 namespace eatt {
 

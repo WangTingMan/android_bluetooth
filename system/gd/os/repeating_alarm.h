@@ -25,6 +25,8 @@
 #include "os/thread.h"
 #include "os/utils.h"
 
+struct alarm_t;
+
 namespace bluetooth {
 namespace os {
 
@@ -51,7 +53,12 @@ class RepeatingAlarm {
  private:
   common::Closure task_;
   Handler* handler_;
+#ifdef _MSC_VER
+  static void alarm_on_fire_callback( void* data );
+  alarm_t* alarm__;
+#else
   int fd_ = 0;
+#endif
   Reactor::Reactable* token_;
   mutable std::mutex mutex_;
   void on_fire();

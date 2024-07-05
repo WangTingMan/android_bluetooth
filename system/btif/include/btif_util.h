@@ -22,7 +22,9 @@
 
 #include <hardware/bluetooth.h>
 #include <stdbool.h>
+#if __has_include(<sys/time.h>)
 #include <sys/time.h>
+#endif
 
 #include "stack/include/bt_dev_class.h"
 

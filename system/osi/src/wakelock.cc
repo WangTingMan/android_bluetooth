@@ -23,12 +23,16 @@
 #include <bluetooth/log.h>
 #include <fcntl.h>
 #include <hardware/bluetooth.h>
+#if __has_include(<pthread.h>)
 #include <pthread.h>
+#endif
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
+#if __has_include(<unistd.h>)
 #include <unistd.h>
+#endif
 
 #include <mutex>
 #include <string>
@@ -36,6 +40,13 @@
 #include "common/metrics.h"
 #include "os/log.h"
 #include "osi/include/osi.h"
+
+#include <cutils/threads.h>
+#include <utils/Timers.h>
+
+#ifndef ssize_t
+#define ssize_t int64_t
+#endif
 
 using bluetooth::common::BluetoothMetricsLogger;
 using namespace bluetooth;

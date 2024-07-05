@@ -55,6 +55,9 @@
 #include "stack/include/srvc_api.h"
 #endif
 
+#define DO_NOT_DEFINE_TIME_VAL
+#include <utils/Timers.h>
+
 using bluetooth::Uuid;
 using namespace bluetooth::legacy::stack::sdp;
 using namespace bluetooth;

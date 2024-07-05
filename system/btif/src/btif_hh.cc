@@ -156,7 +156,7 @@ void bta_hh_co_send_hid_info(btif_hh_device_t* p_dev, const char* dev_name,
                              uint16_t vendor_id, uint16_t product_id,
                              uint16_t version, uint8_t ctry_code, int dscp_len,
                              uint8_t* p_dscp);
-void bta_hh_co_write(int fd, uint8_t* rpt, uint16_t len);
+int bta_hh_co_write(int fd, uint8_t* rpt, uint16_t len);
 static void bte_hh_evt(tBTA_HH_EVT event, tBTA_HH* p_data);
 void btif_dm_hh_open_failed(RawAddress* bdaddr);
 void btif_hd_service_registration();

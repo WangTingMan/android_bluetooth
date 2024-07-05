@@ -20,7 +20,9 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#if __has_include(<sys/cdefs.h>)
 #include <sys/cdefs.h>
+#endif
 #include <sys/types.h>
 
 #include <vector>
@@ -63,7 +65,9 @@
 #define BT_BQR_ID "bqr"
 
 /** Bluetooth Device Name */
-typedef struct { uint8_t name[249]; } __attribute__((packed)) bt_bdname_t;
+#pragma pack(1)
+typedef struct { uint8_t name[249]; } /*__attribute__((packed))*/ bt_bdname_t;
+#pragma pack()
 
 /** Bluetooth Adapter Visibility Modes*/
 typedef enum {
@@ -162,8 +166,9 @@ inline std::string bt_status_text(const bt_status_t& status) {
 /** Corresponding to [Vol 2] Part D, "Error Codes" of Core_v5.1 specs */
 typedef uint8_t bt_hci_error_code_t;
 
+#pragma pack(1)
 /** Bluetooth PinKey Code */
-typedef struct { uint8_t pin[16]; } __attribute__((packed)) bt_pin_code_t;
+typedef struct { uint8_t pin[16]; } /*__attribute__((packed))*/ bt_pin_code_t;
 
 typedef struct {
   uint8_t status;
@@ -172,13 +177,14 @@ typedef struct {
   uint64_t rx_time;     /* in ms */
   uint64_t idle_time;   /* in ms */
   uint64_t energy_used; /* a product of mA, V and ms */
-} __attribute__((packed)) bt_activity_energy_info;
+} /*__attribute__((packed))*/ bt_activity_energy_info;
 
 typedef struct {
   int32_t app_uid;
   uint64_t tx_bytes;
   uint64_t rx_bytes;
-} __attribute__((packed)) bt_uid_traffic_t;
+} /*__attribute__((packed))*/ bt_uid_traffic_t;
+#pragma pack()
 
 /** Bluetooth Adapter Discovery state */
 typedef enum {

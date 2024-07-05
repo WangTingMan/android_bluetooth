@@ -16,7 +16,9 @@
 
 #pragma once
 
+#if __has_include(<sys/epoll.h>)
 #include <sys/epoll.h>
+#endif
 
 #include <atomic>
 #include <functional>
@@ -28,6 +30,8 @@
 
 #include "common/callback.h"
 #include "os/utils.h"
+
+#include <base/callback_forward.h>
 
 namespace bluetooth {
 namespace os {
@@ -77,7 +81,7 @@ class Reactor {
   };
 
   // Modify subscribed poll events on the fly
-  void ModifyRegistration(Reactable* reactable, ReactOn react_on);
+  void ModifyRegistration(  Reactable* reactable, common::Closure on_read_ready, common::Closure on_write_ready );
 
   class Event {
    public:
@@ -96,7 +100,27 @@ class Reactor {
   };
   std::unique_ptr<Reactor::Event> NewEvent() const;
 
+#ifdef _MSC_VER
+  void PostTask( common::OnceClosure closure );
+#endif
+
  private:
+#ifdef _MSC_VER
+   std::condition_variable task_condition_variable;
+   std::mutex task_mutex;
+   std::list<common::OnceClosure> tasks_to_do;
+   std::atomic<bool> to_quit_ = false;
+
+   mutable std::recursive_mutex mutex_;
+   int epoll_fd_;
+   int control_fd_;
+   std::condition_variable_any condition_vairable_;
+   std::atomic<bool> is_running_;
+   std::list<std::shared_ptr<Reactable>> invalidation_list_;
+   std::list<std::shared_ptr<Reactable>> validation_list_;
+   std::shared_ptr<std::future<void>> executing_reactable_finished_;
+   std::shared_ptr<std::promise<void>> idle_promise_;
+#else
   mutable std::mutex mutex_;
   int epoll_fd_;
   int control_fd_;
@@ -104,6 +128,7 @@ class Reactor {
   std::list<Reactable*> invalidation_list_;
   std::shared_ptr<std::future<void>> executing_reactable_finished_;
   std::shared_ptr<std::promise<void>> idle_promise_;
+#endif
 };
 
 }  // namespace os

@@ -27,6 +27,8 @@
 #include "osi/include/allocator.h"
 #include "osi/include/osi.h"
 
+#include <cutils/memory.h>
+
 std::unordered_map<std::string, std::string>
 hash_map_utils_new_from_string_params(const char* params) {
   bluetooth::log::assert_that(params != NULL, "assert failed: params != NULL");

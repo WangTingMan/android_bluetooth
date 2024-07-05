@@ -30,6 +30,8 @@
 #include "osi/include/allocator.h"
 #include "stack/include/bt_hdr.h"
 
+#include <cutils/memory.h>
+
 //
 // Encoder for AAC Source Codec
 //

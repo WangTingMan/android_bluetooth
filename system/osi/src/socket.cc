@@ -19,7 +19,10 @@
 #define LOG_TAG "bt_osi_socket"
 
 #include "osi/include/socket.h"
-
+#ifdef _MSC_VER
+#include <bluetooth/log.h>
+#include <string.h>
+#else
 #include <asm/ioctls.h>
 #include <bluetooth/log.h>
 #include <netinet/in.h>
@@ -27,6 +30,7 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 #include "os/log.h"
 #include "osi/include/allocator.h"
@@ -34,10 +38,10 @@
 #include "osi/include/reactor.h"
 
 using namespace bluetooth;
-
+#ifndef _MSC_VER
 // The IPv4 loopback address: 127.0.0.1
 static const in_addr_t LOCALHOST_ = 0x7f000001;
-
+#endif
 struct socket_t {
   int fd;
   reactor_object_t* reactor_object;
@@ -52,7 +56,7 @@ static void internal_write_ready(void* context);
 socket_t* socket_new(void) {
   socket_t* ret = (socket_t*)osi_calloc(sizeof(socket_t));
   int enable = 1;
-
+#ifndef _MSC_VER
   ret->fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (ret->fd == INVALID_FD) {
     log::error("unable to create socket: {}", strerror(errno));
@@ -64,13 +68,14 @@ socket_t* socket_new(void) {
     log::error("unable to set SO_REUSEADDR: {}", strerror(errno));
     goto error;
   }
-
+#endif
   return ret;
-
+#ifndef _MSC_VER
 error:;
   if (ret) close(ret->fd);
   osi_free(ret);
   return NULL;
+#endif
 }
 
 socket_t* socket_new_from_fd(int fd) {
@@ -92,7 +97,7 @@ void socket_free(socket_t* socket) {
 
 bool socket_listen(const socket_t* socket, port_t port) {
   log::assert_that(socket != NULL, "assert failed: socket != NULL");
-
+#ifndef _MSC_VER
   struct sockaddr_in addr;
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(LOCALHOST_);
@@ -106,20 +111,21 @@ bool socket_listen(const socket_t* socket, port_t port) {
     log::error("unable to listen on port {}: {}", port, strerror(errno));
     return false;
   }
-
+#endif
   return true;
 }
 
 socket_t* socket_accept(const socket_t* socket) {
   log::assert_that(socket != NULL, "assert failed: socket != NULL");
 
-  int fd;
+  int fd = 0;
+#ifndef _MSC_VER
   OSI_NO_INTR(fd = accept(socket->fd, NULL, NULL));
   if (fd == INVALID_FD) {
     log::error("unable to accept socket: {}", strerror(errno));
     return NULL;
   }
-
+#endif
   socket_t* ret = (socket_t*)osi_calloc(sizeof(socket_t));
 
   ret->fd = fd;
@@ -130,9 +136,10 @@ ssize_t socket_read(const socket_t* socket, void* buf, size_t count) {
   log::assert_that(socket != NULL, "assert failed: socket != NULL");
   log::assert_that(buf != NULL, "assert failed: buf != NULL");
 
-  ssize_t ret;
+  ssize_t ret = 0;
+#ifndef _MSC_VER
   OSI_NO_INTR(ret = recv(socket->fd, buf, count, MSG_DONTWAIT));
-
+#endif
   return ret;
 }
 
@@ -140,9 +147,10 @@ ssize_t socket_write(const socket_t* socket, const void* buf, size_t count) {
   log::assert_that(socket != NULL, "assert failed: socket != NULL");
   log::assert_that(buf != NULL, "assert failed: buf != NULL");
 
-  ssize_t ret;
+  ssize_t ret = 0;
+#ifndef _MSC_VER
   OSI_NO_INTR(ret = send(socket->fd, buf, count, MSG_DONTWAIT));
-
+#endif
   return ret;
 }
 
@@ -152,7 +160,7 @@ ssize_t socket_write_and_transfer_fd(const socket_t* socket, const void* buf,
   log::assert_that(buf != NULL, "assert failed: buf != NULL");
 
   if (fd == INVALID_FD) return socket_write(socket, buf, count);
-
+#ifndef _MSC_VER
   struct msghdr msg;
   struct iovec iov;
   char control_buf[CMSG_SPACE(sizeof(int))];
@@ -175,7 +183,9 @@ ssize_t socket_write_and_transfer_fd(const socket_t* socket, const void* buf,
 
   ssize_t ret;
   OSI_NO_INTR(ret = sendmsg(socket->fd, &msg, MSG_DONTWAIT));
-
+#else
+  ssize_t ret = 0;
+#endif
   close(fd);
   return ret;
 }
@@ -184,7 +194,9 @@ ssize_t socket_bytes_available(const socket_t* socket) {
   log::assert_that(socket != NULL, "assert failed: socket != NULL");
 
   int size = 0;
+#ifndef _MSC_VER
   if (ioctl(socket->fd, FIONREAD, &size) == -1) return -1;
+#endif
   return size;
 }
 

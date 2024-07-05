@@ -45,7 +45,9 @@
 #include <string.h>
 #include <sys/types.h>
 #include <time.h>
+#if __has_include(<unistd.h>)
 #include <unistd.h>
+#endif
 
 #include <mutex>
 #include <optional>
@@ -103,6 +105,8 @@
 #include "stack/sdp/sdpint.h"
 #include "storage/config_keys.h"
 #include "types/raw_address.h"
+
+#include <utils/Timers.h>
 
 #ifdef __ANDROID__
 #include <android/sysprop/BluetoothProperties.sysprop.h>
@@ -219,9 +223,12 @@ typedef struct {
   unsigned int manufact_id;
 } skip_sdp_entry_t;
 
-typedef struct {
+struct btif_dm_metadata_cb_t
+{
+  btif_dm_metadata_cb_t( int cnt )
+    : le_audio_cache(cnt){ }
   bluetooth::common::LruCache<RawAddress, std::vector<uint8_t>> le_audio_cache;
-} btif_dm_metadata_cb_t;
+};
 
 typedef enum {
   BTIF_DM_FUNC_CREATE_BOND,
@@ -277,7 +284,7 @@ static void btif_dm_remove_ble_bonding_keys(void);
 static void btif_dm_save_ble_bonding_keys(RawAddress& bd_addr);
 static btif_dm_pairing_cb_t pairing_cb;
 static btif_dm_oob_cb_t oob_cb;
-static btif_dm_metadata_cb_t metadata_cb{.le_audio_cache{40}};
+static btif_dm_metadata_cb_t metadata_cb{40};
 static void btif_dm_cb_create_bond(const RawAddress bd_addr,
                                    tBT_TRANSPORT transport);
 static void btif_dm_cb_create_bond_le(const RawAddress bd_addr,
@@ -3750,7 +3757,7 @@ static void btif_dm_save_ble_bonding_keys(RawAddress& bd_addr) {
   }
 
   if (pairing_cb.ble.is_lidk_key_rcvd) {
-    uint8_t empty[] = {};
+    uint8_t empty[1] = {};
     btif_storage_add_ble_bonding_key(&bd_addr, empty, BTM_LE_KEY_LID, 0);
   }
 }

@@ -54,7 +54,7 @@ void SyspropsModule::Start() {
     std::string override_dir = file_path + ".d";
     if (std::filesystem::exists(override_dir)) {
       for (const auto& entry : std::filesystem::directory_iterator(override_dir)) {
-        parse_config(entry.path());
+        parse_config(entry.path().string());
       }
     }
   }

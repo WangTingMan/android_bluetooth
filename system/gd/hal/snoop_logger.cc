@@ -16,7 +16,12 @@
 
 #include "hal/snoop_logger.h"
 
+#if __has_include(<arpa/inet.h>)
 #include <arpa/inet.h>
+#endif
+#ifdef _MSC_VER
+#include <WinSock2.h>
+#endif
 #include <bluetooth/log.h>
 #include <sys/stat.h>
 
@@ -516,8 +521,9 @@ SnoopLogger::SnoopLogger(
     delete_btsnoop_files(get_btsnoop_log_path(snoop_log_path_, true));
     delete_btsnoop_files(get_btsnoop_log_path(snoop_log_path_, false));
   }
-
+#ifndef _MSC_VER
   snoop_logger_socket_thread_ = nullptr;
+#endif
   socket_ = nullptr;
   // Add ".filtered" extension if necessary
   snoop_log_path_ = get_btsnoop_log_path(snoop_log_path_, btsnoop_mode_ == kBtSnoopLogModeFiltered);
@@ -548,8 +554,9 @@ void SnoopLogger::OpenNextSnoopLogFile() {
   } else {
     log::info("Previous log file \"{}\" does not exist, skip renaming", snoop_log_path_);
   }
-
+#ifndef _MSC_VER
   mode_t prevmask = umask(0);
+#endif
   // do not use std::ios::app as we want override the existing file
   btsnoop_ostream_.open(snoop_log_path_, std::ios::binary | std::ios::out);
 #ifdef USE_FAKE_TIMERS
@@ -559,7 +566,9 @@ void SnoopLogger::OpenNextSnoopLogFile() {
     log::fatal(
         "Unable to open snoop log at \"{}\", error: \"{}\"", snoop_log_path_, strerror(errno));
   }
+#ifndef _MSC_VER
   umask(prevmask);
+#endif
   if (!btsnoop_ostream_.write(
           reinterpret_cast<const char*>(&SnoopLoggerCommon::kBtSnoopFileHeader),
           sizeof(SnoopLoggerCommon::FileHeaderType))) {
@@ -1290,15 +1299,18 @@ void SnoopLogger::DumpSnoozLogToFile(const std::vector<std::string>& data) const
   } else {
     log::info("Previous log file \"{}\" does not exist, skip renaming", snooz_log_path_);
   }
-
+#ifndef _MSC_VER
   mode_t prevmask = umask(0);
+#endif
   // do not use std::ios::app as we want override the existing file
   std::ofstream btsnooz_ostream(snooz_log_path_, std::ios::binary | std::ios::out);
   if (!btsnooz_ostream.good()) {
     log::fatal(
         "Unable to open snoop log at \"{}\", error: \"{}\"", snooz_log_path_, strerror(errno));
   }
+#ifndef _MSC_VER
   umask(prevmask);
+#endif
   if (!btsnooz_ostream.write(
           reinterpret_cast<const char*>(&SnoopLoggerCommon::kBtSnoopFileHeader),
           sizeof(SnoopLoggerCommon::FileHeaderType))) {
@@ -1327,7 +1339,7 @@ void SnoopLogger::Start() {
     if (btsnoop_mode_ == kBtSnoopLogModeFiltered) {
       EnableFilters();
     }
-
+#ifndef _MSC_VER
     auto snoop_logger_socket = std::make_unique<SnoopLoggerSocket>(&syscall_if);
     snoop_logger_socket_thread_ =
         std::make_unique<SnoopLoggerSocketThread>(std::move(snoop_logger_socket));
@@ -1340,6 +1352,7 @@ void SnoopLogger::Start() {
       snoop_logger_socket_thread_.reset();
       snoop_logger_socket_thread_ = nullptr;
     }
+#endif
   }
   alarm_ = std::make_unique<os::RepeatingAlarm>(GetHandler());
   alarm_->Schedule(
@@ -1350,14 +1363,14 @@ void SnoopLogger::Stop() {
   std::lock_guard<std::recursive_mutex> lock(file_mutex_);
   log::debug("Closing btsnoop log data at {}", snoop_log_path_);
   CloseCurrentSnoopLogFile();
-
+#ifndef _MSC_VER
   if (snoop_logger_socket_thread_ != nullptr) {
     snoop_logger_socket_thread_->Stop();
     snoop_logger_socket_thread_.reset();
     snoop_logger_socket_thread_ = nullptr;
     socket_ = nullptr;
   }
-
+#endif
   btsnoop_mode_.clear();
   // Disable all filters
   DisableFilters();

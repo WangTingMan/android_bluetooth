@@ -29,12 +29,13 @@
 
 using namespace bluetooth;
 
-typedef struct {
+struct tA2DP_AAC_DECODER_CB
+{
   HANDLE_AACDECODER aac_handle;
   bool has_aac_handle;  // True if aac_handle is valid
   INT_PCM* decode_buf = nullptr;
   decoded_data_callback_t decode_callback;
-} tA2DP_AAC_DECODER_CB;
+};
 
 static tA2DP_AAC_DECODER_CB a2dp_aac_decoder_cb;
 

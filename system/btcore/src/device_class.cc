@@ -18,28 +18,53 @@
 
 #include "btcore/include/device_class.h"
 
+#if __has_include(<arpa/inet.h>)
 #include <arpa/inet.h>
+#endif
 #include <bluetooth/log.h>
+#if __has_include(<endian.h>)
 #include <endian.h>
+#else
+#define	le32toh( x ) ( ( uint32_t )( x ) )
+#endif
 #include <string.h>
 
 using namespace bluetooth;
 
+#pragma pack(1)
 typedef struct _bt_device_class_t {
   uint32_t unused : 2;  // LSBs
   uint32_t minor_device : 6;
   uint32_t major_device : 5;
   uint32_t major_service : 11;  // MSBs
-} __attribute__((__packed__)) _bt_device_class_t;
+} _bt_device_class_t;
+#pragma pack()
 
+#ifdef _MSC_VER
+_bt_device_class_t* DC( void const* ptr )
+{
+  static _bt_device_class_t local;
+  uint8_t const* detail = reinterpret_cast<uint8_t const*>( ptr );
+  uint8_t first_byte = detail[0];
+  uint8_t second_byte = detail[1];
+  local.unused = 0x00;
+  local.minor_device = first_byte >> 2;
+  local.major_device = second_byte & 0x1F;
+  local.major_service = 0xFFFF; // TODO need parse this
+  return &local;
+}
+#else
 // Convenience to interpret raw device class bytes.
 #define DC(x) ((_bt_device_class_t*)(x))
+#endif
 
 // Ensure the internal device class implementation and public one
 // have equal size.
-static_assert(sizeof(_bt_device_class_t) == sizeof(bt_device_class_t),
-              "Internal and external device class implementation should have "
-              "the same size");
+#ifndef _MSC_VER
+static_assert( sizeof( _bt_device_class_t ) == sizeof( bt_device_class_t ),
+               "Internal and external device class implementation should have "
+               "the same size" );
+#endif
 
 // [Major Service Classes]
 // (https://www.bluetooth.org/en-us/specification/assigned-numbers/baseband)

@@ -1413,7 +1413,7 @@ static void bta_jv_port_mgmt_cl_cback(const tPORT_RESULT code,
         .rfc_close =
             {
                 .status = tBTA_JV_STATUS::FAILURE,
-                .port_status = code,
+                .port_status = (uint32_t)code,
                 .handle = p_cb->handle,
                 .async = (p_pcb->state == BTA_JV_ST_CL_CLOSING) ? false : true,
             },

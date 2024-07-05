@@ -25,6 +25,8 @@
 #include "btif/include/btif_common.h"
 #include "common/stop_watch_legacy.h"
 
+static const char AUDIO_ATTRIBUTES_TAGS_SEPARATOR = ';';
+
 namespace bluetooth {
 namespace audio {
 namespace aidl {

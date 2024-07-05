@@ -22,7 +22,9 @@
 
 #include <bluetooth/log.h>
 #include <openssl/rand.h>
+#if __has_include(<unistd.h>)
 #include <unistd.h>
+#endif
 
 #include <cstdio>
 #include <cstring>
@@ -176,7 +178,7 @@ static future_t* clean_up(void) {
   return future_new_immediate(FUTURE_SUCCESS);
 }
 
-EXPORT_SYMBOL module_t btif_config_module = {.name = BTIF_CONFIG_MODULE,
+/*EXPORT_SYMBOL*/ module_t btif_config_module = {.name = BTIF_CONFIG_MODULE,
                                              .init = init,
                                              .start_up = NULL,
                                              .shut_down = shut_down,

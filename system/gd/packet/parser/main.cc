@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+#if __has_include(<unistd.h>)
 #include <unistd.h>
+#endif
 
 #include <cerrno>
 #include <cstdio>
@@ -44,7 +46,12 @@ bool generate_cpp_headers_one_file(
     const std::filesystem::path& input_file,
     const std::filesystem::path& include_dir,
     const std::filesystem::path& out_dir,
+#ifdef _MSC_VER
+    const std::string& root_namespace,
+    bool force_to_out_dir);
+#else
     const std::string& root_namespace);
+#endif
 
 bool parse_declarations_one_file(const std::filesystem::path& input_file, Declarations* declarations) {
   void* scanner;
@@ -175,7 +182,12 @@ int main(int argc, const char** argv) {
             input_files.front(),
             include_dir,
             out_dir,
+#ifdef _MSC_VER
+            root_namespace,
+            true)) {
+#else
             root_namespace)) {
+#endif
       std::cerr << "Didn't generate cpp headers for " << input_files.front() << std::endl;
       return 3;
     }

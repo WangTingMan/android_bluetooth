@@ -26,11 +26,20 @@ namespace common {
 class InitFlags final {
  public:
   inline static void Load(const char** flags) {
+#ifdef _MSC_VER
+    ::std::vector<::std::string> rusted_flags;
+    while( flags != nullptr && *flags != nullptr )
+    {
+      rusted_flags.push_back( ::std::string( *flags ) );
+      flags++;
+    }
+#else
     rust::Vec<rust::String> rusted_flags = rust::Vec<rust::String>();
     while (flags != nullptr && *flags != nullptr) {
       rusted_flags.push_back(rust::String(*flags));
       flags++;
     }
+#endif
     init_flags::load(std::move(rusted_flags));
   }
 

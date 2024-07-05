@@ -91,7 +91,11 @@ typedef struct {
 
   /* parameters passed to callback */
   uint16_t event;                          /* message event id */
+#ifdef _MSC_VER
+  char* p_param;
+#else
   char __attribute__((aligned)) p_param[]; /* parameter area needs to be last */
+#endif
 } tBTIF_CONTEXT_SWITCH_CBACK;
 
 /*******************************************************************************
@@ -116,6 +120,9 @@ base::Callback<R(Args...)> jni_thread_wrapper(base::Callback<R(Args...)> cb) {
       },
       std::move(cb));
 }
+
+template <>
+base::Callback<void()> jni_thread_wrapper( base::Callback<void()> cb );
 
 tBTA_SERVICE_MASK btif_get_enabled_services_mask(void);
 void btif_enable_service(tBTA_SERVICE_ID service_id);

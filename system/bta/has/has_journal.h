@@ -16,8 +16,11 @@
  */
 
 #pragma once
-
+#ifdef _MSC_VER
+#include <utils/Timers.h>
+#else
 #include <sys/time.h>
+#endif
 #include <time.h>
 
 #include <list>

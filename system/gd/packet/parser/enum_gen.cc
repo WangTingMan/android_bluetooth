@@ -26,9 +26,9 @@ void EnumGen::GenDefinition(std::ostream& stream) {
   stream << "enum class ";
   stream << e_.name_;
   stream << " : " << util::GetTypeForSize(e_.size_);
-  stream << " {";
+  stream << " {\n";
   for (const auto& pair : e_.constants_) {
-    stream << pair.second << " = 0x" << std::hex << pair.first << std::dec << ",";
+    stream << "    " << pair.second << " = 0x" << std::hex << pair.first << std::dec << ",\n";
   }
   stream << "};\n";
 }
@@ -43,19 +43,19 @@ void EnumGen::GenDefinitionPybind11(std::ostream& stream) {
 
 void EnumGen::GenLogging(std::ostream& stream) {
   // Print out the switch statement that converts all the constants to strings.
-  stream << "inline std::string " << e_.name_ << "Text(const " << e_.name_ << "& param) {";
-  stream << "std::stringstream builder;";
-  stream << "switch (param) {";
+  stream << "inline std::string " << e_.name_ << "Text(const " << e_.name_ << "& param) {\n";
+  stream << "    std::stringstream builder;\n";
+  stream << "    switch (param) {\n";
   for (const auto& pair : e_.constants_) {
-    stream << "case " << e_.name_ << "::" << pair.second << ":";
-    stream << "  builder << \"" << pair.second << "\"; break;";
+    stream << "    case " << e_.name_ << "::" << pair.second << ":\n";
+    stream << "        builder << \"" << pair.second << "\";\n    break;\n";
   }
-  stream << "default:";
-  stream << "  builder << \"Unknown " << e_.name_ << "\";";
-  stream << "}";
-  stream << "builder << \"(\" << std::hex << \"0x\" << std::setfill('0')";
+  stream << "    default:\n";
+  stream << "        builder << \"Unknown " << e_.name_ << "\";\n";
+  stream << "    }\n\n";
+  stream << "    builder << \"(\" << std::hex << \"0x\" << std::setfill('0')";
   stream << "<< std::setw(" << (e_.size_ > 0 ? e_.size_ : 0) << "/4)";
-  stream << "<< static_cast<uint64_t>(param) << \")\";";
-  stream << "return builder.str();";
-  stream << "}\n\n";
+  stream << "<< static_cast<uint64_t>(param) << \")\";\n\n";
+  stream << "    return builder.str();\n";
+  stream << "}\n";
 }

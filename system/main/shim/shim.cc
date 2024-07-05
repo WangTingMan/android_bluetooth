@@ -55,7 +55,7 @@ static future_t* GeneralShutDown() {
   return kReturnImmediate;
 }
 
-EXPORT_SYMBOL extern const module_t gd_shim_module = {
+/*EXPORT_SYMBOL*/ extern const module_t gd_shim_module = {
     .name = GD_SHIM_MODULE,
     .init = kUnusedModuleApi,
     .start_up = ShimModuleStartUp,

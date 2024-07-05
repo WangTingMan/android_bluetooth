@@ -130,10 +130,12 @@ StackAclBtmAcl internal_;
 std::unique_ptr<RoleChangeView> delayed_role_change_ = nullptr;
 }
 
+#pragma pack(1)
 typedef struct {
   uint16_t handle;
   uint16_t hci_len;
-} __attribute__((packed)) acl_header_t;
+} acl_header_t;
+#pragma pack()
 
 constexpr uint8_t BTM_MAX_SW_ROLE_FAILED_ATTEMPTS = 3;
 

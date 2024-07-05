@@ -92,8 +92,8 @@ class PairingHandler : public UICallbacks {
   }
 
  private:
-  channel::SecurityManagerChannel* security_manager_channel_ __attribute__((unused));
-  std::shared_ptr<record::SecurityRecord> record_ __attribute__((unused));
+  channel::SecurityManagerChannel* security_manager_channel_ /*__attribute__((unused))*/;
+  std::shared_ptr<record::SecurityRecord> record_ /*__attribute__((unused))*/;
   neighbor::NameDbModule* name_db_module_;
 };
 

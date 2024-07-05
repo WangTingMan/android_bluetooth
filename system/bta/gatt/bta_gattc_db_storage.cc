@@ -20,7 +20,11 @@
 
 #include <base/strings/string_number_conversions.h>
 #include <bluetooth/log.h>
+#if __has_include(<dirent.h>)
 #include <dirent.h>
+#else
+#include <utils/direct.h>
+#endif
 #include <sys/stat.h>
 
 #include <string>
@@ -323,9 +327,11 @@ void bta_gattc_cache_link(const RawAddress& server_bda, const Octet16& hash) {
   bta_gattc_generate_hash_file_name(hash_file, sizeof(hash_file), hash);
 
   unlink(addr_file);  // remove addr file first if the file exists
+#ifndef _MSC_VER
   if (link(hash_file, addr_file) == -1) {
     log::error("link {} to {}, errno={}", addr_file, hash_file, errno);
   }
+#endif
 }
 
 /*******************************************************************************

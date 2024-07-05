@@ -64,12 +64,16 @@ static constexpr char kPropertyEnhancedDrivingIndicatorEnabled[] =
 #define BTA_HF_CLIENT_BIND_PARSE_READ_ENABLED_IND 0
 #define BTA_HF_CLIENT_BIND_PARSE_READ_SUPPOETED_IND 1
 
+#ifdef _MSC_VER
+#define MIN std::min
+#else
 #define MIN(a, b)           \
   ({                        \
     __typeof__(a) _a = (a); \
     __typeof__(b) _b = (b); \
     (_a < _b) ? _a : _b;    \
   })
+#endif
 
 /* CIND: represents each indicators boundaries */
 typedef struct {

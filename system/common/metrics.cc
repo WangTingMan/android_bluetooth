@@ -23,7 +23,9 @@
 #include <frameworks/proto_logging/stats/enums/bluetooth/le/enums.pb.h>
 #include <include/hardware/bt_av.h>
 #include <statslog_bt.h>
+#ifndef _MSC_VER
 #include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -45,6 +47,10 @@
 #include "time_util.h"
 #include "types/raw_address.h"
 #include "main/shim/metric_id_api.h"
+
+#ifndef ssize_t
+#define ssize_t int64_t
+#endif
 
 namespace fmt {
 template <>

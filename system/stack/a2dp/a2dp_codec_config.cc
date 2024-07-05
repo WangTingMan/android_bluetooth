@@ -42,6 +42,8 @@
 #include "osi/include/properties.h"
 #include "stack/include/bt_hdr.h"
 
+#define FALLTHROUGH_INTENDED [[clang::fallthrough]] 
+
 /* The Media Type offset within the codec info byte array */
 #define A2DP_MEDIA_TYPE_OFFSET 1
 

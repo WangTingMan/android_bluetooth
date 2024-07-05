@@ -31,7 +31,9 @@
 #include <bluetooth/log.h>
 #include <hardware/bluetooth.h>
 #include <hardware/bt_sdp.h>
+#if __has_include(<pthread.h>)
 #include <pthread.h>
+#endif
 #include <stdlib.h>
 #include <string.h>
 
@@ -780,9 +782,18 @@ static int add_opps_sdp(const bluetooth_sdp_ops_record* rec) {
   tSDP_PROTOCOL_ELEM protoList[3];
   uint16_t service = UUID_SERVCLASS_OBEX_OBJECT_PUSH;
   uint16_t browse = UUID_SERVCLASS_PUBLIC_BROWSE_GROUP;
+#ifdef _MSC_VER
+  std::vector<uint8_t> type_len_buffer( rec->supported_formats_list_len );
+  std::vector<uint8_t> desc_type_buffer( rec->supported_formats_list_len );
+  std::vector<uint8_t*> type_value_buffer( rec->supported_formats_list_len );
+  uint8_t* type_len = type_len_buffer.data();
+  uint8_t* desc_type = desc_type_buffer.data();
+  uint8_t** type_value = type_value_buffer.data();
+#else
   uint8_t type_len[rec->supported_formats_list_len];
   uint8_t desc_type[rec->supported_formats_list_len];
   uint8_t* type_value[rec->supported_formats_list_len];
+#endif
   bool status = true;
   uint32_t sdp_handle = 0;
   uint8_t temp[4];

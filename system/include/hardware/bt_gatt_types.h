@@ -19,7 +19,11 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#if __has_include(<sys/cdefs.h>)
 #include <sys/cdefs.h>
+#else
+#include <cutils/bitops.h>
+#endif
 
 #include <bluetooth/uuid.h>
 

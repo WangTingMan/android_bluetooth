@@ -581,7 +581,8 @@ typedef struct t_l2c_linkcb {
 
 /* Define the L2CAP control structure
 */
-typedef struct {
+struct tL2C_CB
+{
   uint16_t controller_xmit_window; /* Total ACL window for all links */
 
   uint16_t round_robin_quota;   /* Round-robin link quota */
@@ -647,7 +648,7 @@ typedef struct {
   uint16_t le_dyn_psm; /* Next LE dynamic PSM value to try to assign */
   bool le_dyn_psm_assigned[LE_DYNAMIC_PSM_RANGE]; /* Table of assigned LE PSM */
 
-} tL2C_CB;
+};
 
 /* Define a structure that contains the information about a connection.
  * This structure is used to pass between functions, and not all the

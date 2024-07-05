@@ -63,8 +63,8 @@ class SecurityRecordStorage {
   void RemoveDevice(hci::AddressWithType address);
 
  private:
-  storage::StorageModule* storage_module_ __attribute__((unused));
-  os::Handler* handler_ __attribute__((unused));
+  storage::StorageModule* storage_module_ /*__attribute__((unused))*/;
+  os::Handler* handler_ /*__attribute__((unused))*/;
 };
 
 }  // namespace record

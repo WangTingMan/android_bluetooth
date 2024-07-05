@@ -19,6 +19,10 @@
 #include "bta/ag/bta_ag_int.h"
 #include "common/message_loop_thread.h"
 
+#ifdef interface
+#undef interface
+#endif
+
 namespace bluetooth {
 namespace audio {
 namespace hfp {

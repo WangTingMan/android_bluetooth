@@ -61,6 +61,8 @@
 #include "stack/include/smp_api_types.h"
 #include "types/raw_address.h"
 
+#define FALLTHROUGH_INTENDED [[fallthrough]]
+
 using namespace bluetooth;
 
 extern tBTM_CB btm_cb;

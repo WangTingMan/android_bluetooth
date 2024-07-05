@@ -19,9 +19,11 @@
 #define LOG_TAG "bt_btif_sock_sco"
 
 #include <bluetooth/log.h>
+#ifndef _MSC_VER
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#endif
 
 #include <cstdint>
 #include <mutex>
@@ -140,10 +142,12 @@ static sco_socket_t* sco_socket_establish_locked(bool is_listening,
   socket_t* socket = NULL;
   tBTM_STATUS status;
   enh_esco_params_t params;
+#ifndef _MSC_VER
   if (socketpair(AF_LOCAL, SOCK_STREAM, 0, pair) == -1) {
     log::error("unable to allocate socket pair: {}", strerror(errno));
     goto error;
   }
+#endif
 
   sco_socket = sco_socket_new();
   if (!sco_socket) {

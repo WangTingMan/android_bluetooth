@@ -61,6 +61,10 @@ class Thread {
   // Return a user-friendly string representation of this thread object
   std::string ToString() const;
 
+#ifdef _MSC_VER
+  bool WaitForIdle( std::chrono::milliseconds timeout );
+#endif
+
   // Return the pointer of underlying reactor. The ownership is NOT transferred.
   Reactor* GetReactor() const;
 

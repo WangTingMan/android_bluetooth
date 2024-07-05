@@ -777,7 +777,7 @@ std::vector<uint16_t> L2CA_ConnectCreditBasedReq(uint16_t psm,
     return allocated_cids;
   }
 
-  tL2C_CCB* p_ccb_primary;
+  tL2C_CCB* p_ccb_primary = nullptr;
 
   /* Make sure user set proper value for number of cids */
   if (p_cfg->number_of_channels > L2CAP_CREDIT_BASED_MAX_CIDS ||
@@ -845,7 +845,7 @@ std::vector<uint16_t> L2CA_ConnectCreditBasedReq(uint16_t psm,
 bool L2CA_ReconfigCreditBasedConnsReq(const RawAddress& /* bda */,
                                       std::vector<uint16_t>& lcids,
                                       tL2CAP_LE_CFG_INFO* p_cfg) {
-  tL2C_CCB* p_ccb;
+  tL2C_CCB* p_ccb = nullptr;
 
   log::verbose("L2CA_ReconfigCreditBasedConnsReq()");
 

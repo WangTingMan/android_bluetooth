@@ -19,9 +19,11 @@
 #define LOG_TAG "bt_btif_sock_rfcomm"
 
 #include <bluetooth/log.h>
+#ifndef _MSC_VER
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#endif
 
 #include <cstdint>
 #include <mutex>
@@ -201,10 +203,12 @@ static rfc_slot_t* alloc_rfc_slot(const RawAddress* addr, const char* name,
   }
 
   int fds[2] = {INVALID_FD, INVALID_FD};
+#ifndef _MSC_VER
   if (socketpair(AF_LOCAL, SOCK_STREAM, 0, fds) == -1) {
     log::error("error creating socketpair: {}", strerror(errno));
     return NULL;
   }
+#endif
 
   // Increment slot id and make sure we don't use id=0.
   if (++rfc_slot_id == 0) rfc_slot_id = 1;
@@ -443,7 +447,9 @@ static void free_rfc_slot_scn(rfc_slot_t* slot) {
 
 static void cleanup_rfc_slot(rfc_slot_t* slot) {
   if (slot->fd != INVALID_FD) {
+#ifndef _MSC_VER
     shutdown(slot->fd, SHUT_RDWR);
+#endif
     close(slot->fd);
     log::info(
         "disconnected from RFCOMM socket connections for device: {}, scn: {}, "
@@ -896,9 +902,11 @@ typedef enum {
 static sent_status_t send_data_to_app(int fd, BT_HDR* p_buf) {
   if (p_buf->len == 0) return SENT_ALL;
 
-  ssize_t sent;
+  size_t sent = 0;
+#ifndef _MSC_VER
   OSI_NO_INTR(
       sent = send(fd, p_buf->data + p_buf->offset, p_buf->len, MSG_DONTWAIT));
+#endif
 
   if (sent == -1) {
     if (errno == EAGAIN || errno == EWOULDBLOCK) return SENT_NONE;
@@ -960,11 +968,13 @@ void btsock_rfc_signaled(int /* fd */, int flags, uint32_t id) {
   if (flags & SOCK_THREAD_FD_RD && !slot->f.server) {
     if (slot->f.connected) {
       // Make sure there's data pending in case the peer closed the socket.
+#ifndef _MSC_VER
       int size = 0;
       if (!(flags & SOCK_THREAD_FD_EXCEPTION) ||
           (ioctl(slot->fd, FIONREAD, &size) == 0 && size)) {
         BTA_JvRfcommWrite(slot->rfc_handle, slot->id);
       }
+#endif
     } else {
       log::error(
           "socket signaled for read while disconnected, slot: {}, channel: {}",
@@ -986,9 +996,11 @@ void btsock_rfc_signaled(int /* fd */, int flags, uint32_t id) {
 
   if (need_close || (flags & SOCK_THREAD_FD_EXCEPTION)) {
     // Clean up if there's no data pending.
+#ifndef _MSC_VER
     int size = 0;
     if (need_close || ioctl(slot->fd, FIONREAD, &size) != 0 || !size)
       cleanup_rfc_slot(slot);
+#endif
   }
 }
 
@@ -1043,14 +1055,14 @@ int bta_co_rfc_data_outgoing_size(uint32_t id, int* size) {
     log::error("RFCOMM slot with id {} not found.", id);
     return false;
   }
-
+#ifndef _MSC_VER
   if (ioctl(slot->fd, FIONREAD, size) != 0) {
     log::error("unable to determine bytes remaining to be read on fd {}: {}",
                slot->fd, strerror(errno));
     cleanup_rfc_slot(slot);
     return false;
   }
-
+#endif
   return true;
 }
 
@@ -1062,9 +1074,10 @@ int bta_co_rfc_data_outgoing(uint32_t id, uint8_t* buf, uint16_t size) {
     return false;
   }
 
-  ssize_t received;
+  size_t received = 0;
+#ifndef _MSC_VER
   OSI_NO_INTR(received = recv(slot->fd, buf, size, 0));
-
+#endif
   if (received != size) {
     log::error("error receiving RFCOMM data from app: {}", strerror(errno));
     cleanup_rfc_slot(slot);

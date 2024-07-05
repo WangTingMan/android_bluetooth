@@ -189,7 +189,8 @@ typedef struct {
 /* A service registration information record consists of beginning and ending */
 /* attribute handle, service UUID and a set of GATT server callback.          */
 
-typedef struct {
+struct tGATT_REG
+{
   bluetooth::Uuid app_uuid128;
   tGATT_CBACK app_cb{};
   tGATT_IF gatt_if{0}; /* one based */
@@ -198,7 +199,7 @@ typedef struct {
   bool eatt_support{false};
   std::string name;
   std::set<RawAddress> direct_connect_request;
-} tGATT_REG;
+};
 
 struct tGATT_CLCB;
 

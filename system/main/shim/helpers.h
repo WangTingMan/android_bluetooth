@@ -126,7 +126,7 @@ inline BT_HDR* MakeLegacyBtHdrPacket(
     const std::vector<uint8_t>& preamble) {
   std::vector<uint8_t> packet_vector(packet->begin(), packet->end());
   BT_HDR* buffer = static_cast<BT_HDR*>(
-      osi_calloc(packet_vector.size() + preamble.size() + sizeof(BT_HDR)));
+      osi_malloc(packet_vector.size() + preamble.size() + sizeof(BT_HDR)));
   std::copy(preamble.begin(), preamble.end(), buffer->data);
   std::copy(packet_vector.begin(), packet_vector.end(),
             buffer->data + preamble.size());

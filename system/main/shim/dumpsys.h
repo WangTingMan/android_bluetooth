@@ -19,9 +19,11 @@
 #include <cstdint>
 #include <functional>
 
-#define LOG_DUMPSYS(fd, fmt, args...)                 \
+#include <cutils/memory.h>
+
+#define LOG_DUMPSYS(fd, fmt, ...)                 \
   do {                                                \
-    dprintf(fd, "%s " fmt "\n", DUMPSYS_TAG, ##args); \
+    dprintf(fd, "%s " fmt "\n", DUMPSYS_TAG, __VA_ARGS__); \
   } while (false)
 
 #define LOG_DUMPSYS_TITLE(fd, title)         \

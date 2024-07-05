@@ -458,7 +458,9 @@ void AclManager::impl::Dump(
   auto title = fb_builder->CreateString("----- Acl Manager Dumpsys -----");
   auto le_connectability_state = fb_builder->CreateString(le_connectability_state_text);
 
-  flatbuffers::Offset<flatbuffers::String> strings[accept_list.size()];
+  std::vector<flatbuffers::Offset<flatbuffers::String>> buffer;
+  buffer.resize( accept_list.size() );
+  flatbuffers::Offset<flatbuffers::String>* strings = buffer.data();
 
   size_t cnt = 0;
   for (const auto& it : accept_list) {

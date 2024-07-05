@@ -22,15 +22,21 @@
 #include <bluetooth/log.h>
 #include <ctype.h>
 #include <fcntl.h>
+#if __has_include(<libgen.h>)
 #include <libgen.h>
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#if __has_include(<unistd.h>)
 #include <unistd.h>
+#endif
 
 #include <cerrno>
 #include <sstream>
 #include <type_traits>
+
+#include <base/files/file_path.h>
 
 using namespace bluetooth;
 
@@ -278,7 +284,7 @@ bool config_save(const config_t& config, const std::string& filename) {
   const std::string temp_filename = filename + ".new";
 
   // Extract directory from file path (e.g. /data/misc/bluedroid).
-  const std::string directoryname = base::FilePath(filename).DirName().value();
+  const std::string directoryname = base::FilePath(filename).DirName().StdStringValue();
   if (directoryname.empty()) {
     log::error("error extracting directory from '{}': {}", filename,
                strerror(errno));
@@ -322,16 +328,18 @@ bool config_save(const config_t& config, const std::string& filename) {
 
   // Sync written temp file out to disk. fsync() is blocking until data makes it
   // to disk.
+#ifndef _MSC_VER
   if (fsync(fileno(fp)) < 0) {
     log::warn("unable to fsync file '{}': {}", temp_filename, strerror(errno));
   }
+#endif
 
   if (fclose(fp) == EOF) {
     log::error("unable to close file '{}': {}", temp_filename, strerror(errno));
     goto error;
   }
   fp = nullptr;
-
+#ifndef _MSC_VER
   // Change the file's permissions to Read/Write by User and Group
   if (chmod(temp_filename.c_str(), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP) ==
       -1) {
@@ -339,18 +347,18 @@ bool config_save(const config_t& config, const std::string& filename) {
                strerror(errno));
     goto error;
   }
-
+#endif
   // Rename written temp file to the actual config file.
   if (rename(temp_filename.c_str(), filename.c_str()) == -1) {
     log::error("unable to commit file '{}': {}", filename, strerror(errno));
     goto error;
   }
-
+#ifndef _MSC_VER
   // This should ensure the directory is updated as well.
   if (fsync(dir_fd) < 0) {
     log::warn("unable to fsync dir '{}': {}", directoryname, strerror(errno));
   }
-
+#endif
   if (close(dir_fd) < 0) {
     log::error("unable to close dir '{}': {}", directoryname, strerror(errno));
     goto error;
@@ -389,7 +397,7 @@ bool checksum_save(const std::string& checksum, const std::string& filename) {
   base::FilePath path(temp_filename);
 
   // Extract directory from file path (e.g. /data/misc/bluedroid).
-  const std::string directoryname = base::FilePath(filename).DirName().value();
+  const std::string directoryname = base::FilePath(filename).DirName().StdStringValue();
   if (directoryname.empty()) {
     log::error("error extracting directory from '{}': {}", filename,
                strerror(errno));
@@ -414,19 +422,19 @@ bool checksum_save(const std::string& checksum, const std::string& filename) {
                strerror(errno));
     goto error2;
   }
-
+#ifndef _MSC_VER
   // Sync written temp file out to disk. fsync() is blocking until data makes it
   // to disk.
   if (fsync(fileno(fp)) < 0) {
     log::warn("unable to fsync file '{}': {}", temp_filename, strerror(errno));
   }
-
+#endif
   if (fclose(fp) == EOF) {
     log::error("unable to close file '{}': {}", temp_filename, strerror(errno));
     goto error2;
   }
   fp = nullptr;
-
+#ifndef _MSC_VER
   // Change the file's permissions to Read/Write by User and Group
   if (chmod(temp_filename.c_str(), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP) ==
       -1) {
@@ -434,18 +442,18 @@ bool checksum_save(const std::string& checksum, const std::string& filename) {
                strerror(errno));
     goto error2;
   }
-
+#endif
   // Rename written temp file to the actual config file.
   if (rename(temp_filename.c_str(), filename.c_str()) == -1) {
     log::error("unable to commit file '{}': {}", filename, strerror(errno));
     goto error2;
   }
-
+#ifndef _MSC_VER
   // This should ensure the directory is updated as well.
   if (fsync(dir_fd) < 0) {
     log::warn("unable to fsync dir '{}': {}", directoryname, strerror(errno));
   }
-
+#endif
   if (close(dir_fd) < 0) {
     log::error("unable to close dir '{}': {}", directoryname, strerror(errno));
     goto error2;

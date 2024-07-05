@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+#if __has_include(<unistd.h>)
 #include <unistd.h>
+#endif
 #include <cerrno>
 #include <cstdio>
 #include <filesystem>
@@ -57,11 +59,23 @@ bool generate_cpp_headers_one_file(
     const std::filesystem::path& input_file,
     const std::filesystem::path& include_dir,
     const std::filesystem::path& out_dir,
+#ifdef _MSC_VER
+    const std::string& root_namespace,
+    bool force_to_out_dir
+    ){
+#else
     const std::string& root_namespace) {
+#endif
   auto gen_relative_path = input_file.lexically_relative(include_dir).parent_path();
 
   auto input_filename = input_file.filename().string().substr(0, input_file.filename().string().find(".pdl"));
   auto gen_path = out_dir / gen_relative_path;
+
+#ifdef _MSC_VER
+  if ( force_to_out_dir ) {
+    gen_path = out_dir;
+  }
+#endif
 
   std::filesystem::create_directories(gen_path);
 
@@ -134,7 +148,12 @@ bool generate_cpp_headers_one_file(
   out_file << "\n\n";
 
   std::vector<std::string> namespace_list;
+#ifdef _MSC_VER
+  namespace_list.push_back( root_namespace );
+  namespace_list.push_back( "hci" );
+#else
   parse_namespace(root_namespace, gen_relative_path, &namespace_list);
+#endif
   generate_namespace_open(namespace_list, out_file);
   out_file << "\n\n";
 
@@ -174,7 +193,7 @@ using ::bluetooth::packet::RawBuilder;
       const auto* enum_def = static_cast<const EnumDef*>(e.second);
       EnumGen gen(*enum_def);
       gen.GenDefinition(out_file);
-      out_file << "\n\n";
+      out_file << "\n";
     }
   }
   for (const auto& e : decls.type_defs_queue_) {
@@ -182,7 +201,7 @@ using ::bluetooth::packet::RawBuilder;
       const auto* enum_def = static_cast<const EnumDef*>(e.second);
       EnumGen gen(*enum_def);
       gen.GenLogging(out_file);
-      out_file << "\n\n";
+      out_file << "\n";
     }
   }
   for (const auto& ch : decls.type_defs_queue_) {

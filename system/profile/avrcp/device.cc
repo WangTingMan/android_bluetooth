@@ -35,6 +35,10 @@
 #include "packet/avrcp/set_player_application_setting_value.h"
 #include "types/raw_address.h"
 
+#ifdef NO_ERROR
+#undef NO_ERROR
+#endif
+
 extern bool btif_av_peer_is_connected_sink(const RawAddress& peer_address);
 extern bool btif_av_both_enable(void);
 extern bool btif_av_src_sink_coexist_enabled(void);

@@ -358,14 +358,14 @@ static void transmit_downward(void* raw_data, uint16_t iso_buffer_size) {
       iso_buffer_size);
 }
 
-static hci_t interface = {.set_data_cb = set_data_cb,
+static hci_t interface_ = {.set_data_cb = set_data_cb,
                           .transmit_command = transmit_command,
                           .transmit_downward = transmit_downward};
 
 const hci_t* bluetooth::shim::hci_layer_get_interface() {
   packet_fragmenter = packet_fragmenter_get_interface();
   packet_fragmenter->init(&packet_fragmenter_callbacks);
-  return &interface;
+  return &interface_;
 }
 
 void bluetooth::shim::hci_on_reset_complete() {

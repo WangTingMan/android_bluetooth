@@ -21,8 +21,10 @@
 #include <base/strings/stringprintf.h>
 #include <base/time/time.h>
 #include <bluetooth/log.h>
+#ifndef _MSC_VER
 #include <sys/syscall.h>
 #include <unistd.h>
+#endif
 
 #include <future>
 #include <mutex>
@@ -163,7 +165,7 @@ bool MessageLoopThread::EnableRealTimeScheduling() {
     log::error("thread {} is not running", *this);
     return false;
   }
-
+#ifndef _MSC_VER
   struct sched_param rt_params = {.sched_priority =
                                       kRealTimeFifoSchedulingPriority};
   int rc = sched_setscheduler(linux_tid_, SCHED_FIFO, &rt_params);
@@ -174,6 +176,7 @@ bool MessageLoopThread::EnableRealTimeScheduling() {
         kRealTimeFifoSchedulingPriority, linux_tid_, *this, strerror(errno));
     return false;
   }
+#endif
   return true;
 }
 
@@ -191,7 +194,11 @@ void MessageLoopThread::Run(std::promise<void> start_up_promise) {
     message_loop_ = new btbase::AbstractMessageLoop();
     run_loop_ = new base::RunLoop();
     thread_id_ = base::PlatformThread::CurrentId();
+#ifdef _MSC_VER
+    linux_tid_ = thread_id_;
+#else
     linux_tid_ = static_cast<pid_t>(syscall(SYS_gettid));
+#endif
     start_up_promise.set_value();
   }
 

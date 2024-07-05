@@ -655,7 +655,7 @@ class RasServerImpl : public bluetooth::ras::RasServer {
   void OnServiceAdded(tGATT_STATUS status, int server_if,
                       std::vector<btgatt_db_element_t> service) {
     log::info("status: {}, server_if: {}", gatt_status_text(status), server_if);
-    RasCharacteristic* current_characteristic;
+    RasCharacteristic* current_characteristic = nullptr;
     for (uint16_t i = 0; i < service.size(); i++) {
       uint16_t attribute_handle = service[i].attribute_handle;
       Uuid uuid = service[i].uuid;

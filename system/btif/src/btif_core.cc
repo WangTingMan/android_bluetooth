@@ -282,7 +282,11 @@ void btif_dut_mode_configure(uint8_t enable) {
     BTA_EnableTestMode();
   } else {
     // Can't do in process reset anyways - just quit
+#ifdef _MSC_VER
+    std::exit( 0 );
+#else
     kill(getpid(), SIGKILL);
+#endif
   }
 }
 

@@ -456,7 +456,13 @@ void btsnd_hcic_set_cig_params(
     uint16_t max_trans_lat_mtos, uint8_t cis_cnt, const EXT_CIS_CFG* cis_cfg,
     base::OnceCallback<void(uint8_t*, uint16_t)> cb) {
   const int params_len = 15 + cis_cnt * 9;
+#ifdef _MSC_VER
+  std::vector<uint8_t> buffer;
+  buffer.resize( params_len );
+  uint8_t* param = buffer.data();
+#else
   uint8_t param[params_len];
+#endif
   uint8_t* pp = param;
 
   UINT8_TO_STREAM(pp, cig_id);
@@ -486,7 +492,13 @@ void btsnd_hcic_set_cig_params(
 void btsnd_hcic_create_cis(uint8_t num_cis, const EXT_CIS_CREATE_CFG* cis_cfg,
                            base::OnceCallback<void(uint8_t*, uint16_t)> cb) {
   const int params_len = 1 + num_cis * 4;
+#ifdef _MSC_VER
+  std::vector<uint8_t> buffer;
+  buffer.resize( params_len );
+  uint8_t* param = buffer.data();
+#else
   uint8_t param[params_len];
+#endif
   uint8_t* pp = param;
 
   UINT8_TO_STREAM(pp, num_cis);
@@ -585,7 +597,13 @@ void btsnd_hcic_setup_iso_data_path(
     std::vector<uint8_t> codec_conf,
     base::OnceCallback<void(uint8_t*, uint16_t)> cb) {
   const int params_len = 13 + codec_conf.size();
+#ifdef _MSC_VER
+  std::vector<uint8_t> buffer;
+  buffer.resize( params_len );
+  uint8_t* param = buffer.data();
+#else
   uint8_t param[params_len];
+#endif
   uint8_t* pp = param;
 
   UINT16_TO_STREAM(pp, iso_handle);

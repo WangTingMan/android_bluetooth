@@ -18,7 +18,11 @@
 
 #pragma once
 
+#if __has_include(<features.h>)
 #include <features.h>
+#else
+#include <cutils/memory.h>
+#endif
 #include <sys/types.h>
 
 #if __GLIBC__

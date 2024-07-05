@@ -26,6 +26,8 @@
 
 #include "macros.h"
 
+#include <cutils/bitops.h>
+
 __BEGIN_DECLS
 
 #define BTHH_MAX_DSC_LEN 884

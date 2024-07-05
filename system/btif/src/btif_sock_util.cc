@@ -20,22 +20,36 @@
 
 #include "btif_sock_util.h"
 
+#ifndef _MSC_VER
 #include <arpa/inet.h>
+#endif
 #include <bluetooth/log.h>
 #include <hardware/bluetooth.h>
 #include <hardware/bt_sock.h>
+#ifndef _MSC_VER
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#endif
 #include <stdlib.h>
 #include <string.h>
+#ifndef _MSC_VER
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#endif
 #include <sys/types.h>
+#ifndef _MSC_VER
 #include <sys/un.h>
 #include <unistd.h>
+#endif
 
 #include "os/log.h"
 #include "osi/include/osi.h"
+
+#ifdef _MSC_VER
+#ifndef ssize_t
+#define ssize_t int64_t
+#endif
+#endif
 
 #define asrt(s)                                         \
   do {                                                  \
@@ -48,8 +62,10 @@ int sock_send_all(int sock_fd, const uint8_t* buf, int len) {
   int s = len;
 
   while (s) {
-    ssize_t ret;
+    ssize_t ret = 0;
+#ifndef _MSC_VER
     OSI_NO_INTR(ret = send(sock_fd, buf, s, 0));
+#endif
     if (ret <= 0) {
       log::error("sock fd:{} send errno:{}, ret:{}", sock_fd, errno, ret);
       return -1;
@@ -63,8 +79,10 @@ int sock_recv_all(int sock_fd, uint8_t* buf, int len) {
   int r = len;
 
   while (r) {
-    ssize_t ret;
+    ssize_t ret = 0;
+#ifndef _MSC_VER
     OSI_NO_INTR(ret = recv(sock_fd, buf, r, MSG_WAITALL));
+#endif
     if (ret <= 0) {
       log::error("sock fd:{} recv errno:{}, ret:{}", sock_fd, errno, ret);
       return -1;
@@ -76,6 +94,9 @@ int sock_recv_all(int sock_fd, uint8_t* buf, int len) {
 }
 
 int sock_send_fd(int sock_fd, const uint8_t* buf, int len, int send_fd) {
+#ifdef _MSC_VER
+  return len;
+#else
   struct msghdr msg;
   unsigned char* buffer = (unsigned char*)buf;
   memset(&msg, 0, sizeof(msg));
@@ -128,4 +149,5 @@ int sock_send_fd(int sock_fd, const uint8_t* buf, int len, int send_fd) {
   //       socket...
   close(send_fd);
   return ret_len;
+#endif
 }

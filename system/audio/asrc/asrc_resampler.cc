@@ -32,6 +32,10 @@
 #include "main/shim/entry.h"
 #include "stack/include/main_thread.h"
 
+#ifdef _MSC_VER
+#define __attribute__(...)
+#endif
+
 namespace bluetooth::audio::asrc {
 
 class SourceAudioHalAsrc::ClockRecovery

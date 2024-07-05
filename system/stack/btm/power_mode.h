@@ -110,13 +110,14 @@ typedef enum : uint8_t {
   BTM_PM_DEREG = (1u << 2),
 } tBTM_PM_REGISTER;
 
-typedef struct {
+struct tBTM_PM_PWR_MD
+{
   uint16_t max = 0;
   uint16_t min = 0;
   uint16_t attempt = 0;
   uint16_t timeout = 0;
   tBTM_PM_MODE mode = BTM_PM_MD_ACTIVE;  // 0
-} tBTM_PM_PWR_MD;
+};
 
 typedef void(tBTM_PM_STATUS_CBACK)(const RawAddress& p_bda,
                                    tBTM_PM_STATUS status, uint16_t value,

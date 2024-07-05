@@ -63,6 +63,9 @@
 #include "stack/include/srvc_api.h"
 #endif
 
+#define DO_NOT_DEFINE_TIME_VAL
+#include <utils/Timers.h>
+
 // TODO: Remove this file after flag separate_service_and_device_discovery rolls
 // out
 namespace bta_dm_disc_legacy {

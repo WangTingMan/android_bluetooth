@@ -26,9 +26,11 @@
 
 #include "common/circular_buffer.h"
 #include "hal/hci_hal.h"
-#include "hal/snoop_logger_socket_interface.h"
+#include "hal/snoop_logger_socket_interface.h" 
+#ifndef _MSC_VER
 #include "hal/snoop_logger_socket_thread.h"
 #include "hal/syscall_wrapper_impl.h"
+#endif
 #include "module.h"
 #include "os/repeating_alarm.h"
 
@@ -174,7 +176,7 @@ class SnoopLogger : public ::bluetooth::Module {
   std::unordered_map<std::string, std::string> kBtSnoopLogFilterMode = {
       {kBtSnoopLogFilterProfilePbapModeProperty, kBtSnoopLogFilterProfileModeDisabled},
       {kBtSnoopLogFilterProfileMapModeProperty, kBtSnoopLogFilterProfileModeDisabled}};
-
+#pragma pack(1)
   // Put in header for test
   struct PacketHeaderType {
     uint32_t length_original;
@@ -183,8 +185,8 @@ class SnoopLogger : public ::bluetooth::Module {
     uint32_t dropped_packets;
     uint64_t timestamp;
     uint8_t type;
-  } __attribute__((__packed__));
-
+  } /*__attribute__((__packed__))*/;
+#pragma pack()
   // Struct for caching info about L2CAP Media Channel
   struct A2dpMediaChannel {
     uint16_t conn_handle;
@@ -332,9 +334,9 @@ class SnoopLogger : public ::bluetooth::Module {
       PacketType type,
       uint32_t& length,
       PacketHeaderType header);
-
+#ifndef _MSC_VER
   std::unique_ptr<SnoopLoggerSocketThread> snoop_logger_socket_thread_;
-
+#endif
  private:
   static std::string btsnoop_mode_;
   std::string snoop_log_path_;
@@ -349,7 +351,9 @@ class SnoopLogger : public ::bluetooth::Module {
   std::chrono::milliseconds snooz_log_life_time_;
   std::chrono::milliseconds snooz_log_delete_alarm_interval_;
   SnoopLoggerSocketInterface* socket_;
+#ifndef _MSC_VER
   SyscallWrapperImpl syscall_if;
+#endif
   bool snoop_log_persists = false;
 };
 

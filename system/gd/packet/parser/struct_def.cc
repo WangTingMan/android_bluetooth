@@ -179,8 +179,8 @@ void StructDef::GenDefinition(std::ostream& s) const {
       s << " : public PacketStruct<!kLittleEndian>";
     }
   }
-  s << " {";
-  s << " public:";
+  s << " {\n";
+  s << "public:\n";
 
   GenDefaultConstructor(s);
   GenConstructor(s);
@@ -254,10 +254,10 @@ void StructDef::GenDefinitionPybind11(std::ostream& s) const {
 // Generate constructor which provides default values for all struct fields.
 void StructDef::GenDefaultConstructor(std::ostream& s) const {
   if (parent_ != nullptr) {
-    s << name_ << "(const " << parent_->name_ << "& parent) : " << parent_->name_ << "(parent) {}";
-    s << name_ << "() : " << parent_->name_ << "() {";
+    s << "    " << name_ << "(const " << parent_->name_ << "& parent) : " << parent_->name_ << "(parent) {}";
+    s << name_ << "() : " << parent_->name_ << "() {\n";
   } else {
-    s << name_ << "() {";
+    s << "    " << name_ << "() {\n";
   }
 
   // Get the list of parent params.
@@ -284,7 +284,7 @@ void StructDef::GenDefaultConstructor(std::ostream& s) const {
     }
   }
 
-  s << "}\n";
+  s << "    }\n";
 }
 
 // Generate constructor which inputs initial field values for all struct fields.

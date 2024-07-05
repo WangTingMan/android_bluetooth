@@ -31,12 +31,13 @@ constexpr uint32_t BTSNOOP_DATALINK_TYPE =
 
 class SnoopLoggerCommon {
  public:
+#pragma pack(1)
   struct FileHeaderType {
     uint8_t identification_pattern[8];
     uint32_t version_number;
     uint32_t datalink_type;
-  } __attribute__((__packed__));
-
+  }/* __attribute__((__packed__))*/;
+#pragma pack()
   static constexpr FileHeaderType kBtSnoopFileHeader = {
       .identification_pattern = {'b', 't', 's', 'n', 'o', 'o', 'p', 0x00},
       .version_number = BTSNOOP_VERSION_NUMBER,

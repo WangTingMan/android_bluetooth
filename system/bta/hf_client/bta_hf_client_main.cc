@@ -277,7 +277,9 @@ static const tBTA_SYS_REG bta_hf_client_reg = {bta_hf_client_hdl_event,
  *
  ******************************************************************************/
 void bta_hf_client_cb_arr_init() {
+#ifndef _MSC_VER
   memset(&bta_hf_client_cb_arr, 0, sizeof(tBTA_HF_CLIENT_CB_ARR));
+#endif
 
   // reset the handles and make the CBs non-allocated
   for (int i = 0; i < HF_CLIENT_MAX_DEVICES; i++) {

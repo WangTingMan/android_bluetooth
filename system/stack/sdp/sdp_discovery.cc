@@ -38,6 +38,8 @@
 #include "types/bluetooth/uuid.h"
 #include "types/raw_address.h"
 
+#define FALLTHROUGH_INTENDED [[fallthrough]]
+
 using bluetooth::Uuid;
 using namespace bluetooth;
 

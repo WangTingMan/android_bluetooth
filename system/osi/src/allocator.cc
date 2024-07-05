@@ -21,6 +21,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <stack/include/bt_hdr.h>
+
+#ifndef ssize_t
+#define ssize_t int64_t
+#endif
+
 using namespace bluetooth;
 
 char* osi_strdup(const char* str) {
@@ -54,6 +60,13 @@ void* osi_malloc(size_t size) {
   log::assert_that(static_cast<ssize_t>(size) >= 0,
                    "assert failed: static_cast<ssize_t>(size) >= 0");
   void* ptr = malloc(size);
+  if( size >= sizeof( BT_HDR ) )
+  {
+    BT_HDR* hdr = reinterpret_cast<BT_HDR*>( ptr );
+    if (hdr) {
+      hdr->data = reinterpret_cast<uint8_t*>(ptr) + sizeof(BT_HDR);
+    }
+  }
   log::assert_that(ptr != nullptr, "assert failed: ptr != nullptr");
   return ptr;
 }

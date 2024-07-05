@@ -30,10 +30,16 @@
 #include <fcntl.h>
 #include <hardware/bluetooth.h>
 #include <hardware/bt_rc.h>
+#if __has_include(<pthread.h>)
 #include <pthread.h>
+#else
+#include <cutils/threads.h>
+#endif
 #include <string.h>
 #include <time.h>
+#if __has_include(<unistd.h>)
 #include <unistd.h>
+#endif
 
 #include <cstdio>
 #include <mutex>
@@ -3248,7 +3254,7 @@ static void handle_notification_response(tBTA_AV_META_MSG* pmeta_msg,
   const uint8_t attr_list_size = get_requested_attributes_list_size(p_dev);
 
   if (pmeta_msg->code == AVRC_RSP_INTERIM) {
-    btif_rc_supported_event_t* p_event;
+    btif_rc_supported_event_t* p_event = nullptr;
     list_node_t* node;
 
     log::verbose("Interim response: 0x{:2X}", p_rsp->event_id);

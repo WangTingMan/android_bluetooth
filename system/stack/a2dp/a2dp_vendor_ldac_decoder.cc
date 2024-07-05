@@ -19,15 +19,24 @@
 #include "a2dp_vendor_ldac_decoder.h"
 
 #include <bluetooth/log.h>
+#if __has_include(<dlfcn.h>)
 #include <dlfcn.h>
+#endif
 #include <ldacBT.h>
 #include <ldacBT_bco_for_fluoride.h>
+#if __has_include(<pthread.h>)
 #include <pthread.h>
+#endif
 #include <string.h>
 
 #include "a2dp_vendor_ldac.h"
 #include "os/log.h"
 #include "stack/include/bt_hdr.h"
+
+#ifdef _MSC_VER
+#include <cutils/threads.h>
+#include <cutils/native_handle.h>
+#endif
 
 using namespace bluetooth;
 

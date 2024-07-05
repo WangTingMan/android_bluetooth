@@ -19,7 +19,9 @@
 
 #include <bluetooth/log.h>
 #include <com_android_bluetooth_flags.h>
+#if __has_include(<unistd.h>)
 #include <unistd.h>
+#endif
 
 #include <future>
 #include <sstream>
@@ -34,6 +36,11 @@
 #include "os/system_properties.h"
 #include "shim/dumpsys.h"
 #include "shim/dumpsys_args.h"
+
+#include <cutils/memory.h>
+#ifndef STDOUT_FILENO
+#define STDOUT_FILENO 1
+#endif
 
 namespace bluetooth {
 namespace shim {

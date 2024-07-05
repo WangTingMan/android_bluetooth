@@ -20,7 +20,9 @@
 #include <bluetooth/log.h>
 #include <com_android_bluetooth_flags.h>
 #include <string.h>
+#if __has_include(<unistd.h>)
 #include <unistd.h>
+#endif
 
 #include "bta/ag/bta_ag_int.h"
 #include "common/strings.h"

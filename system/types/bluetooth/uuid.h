@@ -114,9 +114,9 @@ class Uuid final {
   bool operator==(const Uuid& rhs) const;
   bool operator!=(const Uuid& rhs) const;
 
- private:
   constexpr Uuid(const UUID128Bit& val) : uu{val} {};
 
+private:
   // Network-byte-ordered ID (Big Endian).
   UUID128Bit uu;
 };

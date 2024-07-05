@@ -24,8 +24,12 @@
 #include <fcntl.h>
 #include <malloc.h>
 #include <string.h>
+#ifdef _MSC_VER
+#include <semaphore>
+#else
 #include <sys/eventfd.h>
 #include <unistd.h>
+#endif
 
 #include "os/log.h"
 #include "osi/include/allocator.h"
@@ -37,6 +41,49 @@
 
 using namespace bluetooth;
 
+#ifdef _MSC_VER
+
+struct semaphore_t
+{
+  semaphore_t(uint32_t init = 0)
+    : m_semaphore(init){ }
+
+  int fd = 0;
+  std::counting_semaphore<0xFFFF> m_semaphore;
+};
+
+semaphore_t* semaphore_new( unsigned int value )
+{
+  uint32_t value_use = value > 0xFFFF ? 0xFFFF : value;
+  return new semaphore_t(value_use);
+}
+
+void semaphore_free( semaphore_t* semaphore )
+{
+  delete semaphore;
+}
+
+void semaphore_wait( semaphore_t* semaphore )
+{
+  semaphore->m_semaphore.acquire();
+}
+
+bool semaphore_try_wait( semaphore_t* semaphore )
+{
+  return semaphore->m_semaphore.try_acquire();
+}
+
+void semaphore_post( semaphore_t* semaphore )
+{
+  semaphore->m_semaphore.release();
+}
+
+int semaphore_get_fd( const semaphore_t* semaphore )
+{
+  return 0;
+}
+
+#else
 struct semaphore_t {
   int fd;
 };
@@ -109,3 +156,4 @@ int semaphore_get_fd(const semaphore_t* semaphore) {
                    "assert failed: semaphore->fd != INVALID_FD");
   return semaphore->fd;
 }
+#endif

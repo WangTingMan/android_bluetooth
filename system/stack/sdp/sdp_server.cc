@@ -450,7 +450,7 @@ static void process_service_attr_req(tCONN_CB* p_ccb, uint16_t trans_num,
   uint16_t rsp_param_len, xx;
   uint32_t rec_handle;
   const tSDP_RECORD* p_rec;
-  const tSDP_ATTRIBUTE* p_attr;
+  const tSDP_ATTRIBUTE* p_attr = nullptr;
   bool is_cont = false;
   bool is_hfp_fallback = false;
   uint16_t attr_len;
@@ -824,7 +824,7 @@ static void process_service_search_attr_req(tCONN_CB* p_ccb, uint16_t trans_num,
   const tSDP_RECORD* p_rec;
   tSDP_RECORD* p_prev_rec;
   tSDP_ATTR_SEQ attr_seq, attr_seq_sav;
-  const tSDP_ATTRIBUTE* p_attr;
+  const tSDP_ATTRIBUTE* p_attr = nullptr;
   bool maxxed_out = false, is_cont = false;
   uint8_t* p_seq_start;
   bool is_hfp_fallback = false;

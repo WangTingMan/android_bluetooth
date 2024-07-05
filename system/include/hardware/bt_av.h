@@ -24,6 +24,8 @@
 #include <optional>
 #include <vector>
 
+#include <log/log.h>
+
 __BEGIN_DECLS
 
 /* Bluetooth AV connection states */

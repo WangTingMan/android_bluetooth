@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <sstream>
 
 #include "storage/serializable.h"
 

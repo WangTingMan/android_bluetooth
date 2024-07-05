@@ -31,11 +31,13 @@
 
 #define BTIF_GATTS_MAX_SRV_CHG_CLT_SIZE 50
 
+#pragma pack(1)
 typedef struct {
   bool enable;
   uint8_t num_clients;
   tGATTS_SRV_CHG srv_chg[BTIF_GATTS_MAX_SRV_CHG_CLT_SIZE];
-} __attribute__((packed)) btif_gatts_srv_chg_cb_t;
+} btif_gatts_srv_chg_cb_t;
+#pragma pack()
 
 /*****************************************************************************
  *  Static variables

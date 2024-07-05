@@ -31,6 +31,10 @@
 #include "bta/le_audio/le_audio_types.h"
 #include "common/message_loop_thread.h"
 
+#ifdef interface
+#undef interface
+#endif
+
 namespace bluetooth {
 namespace audio {
 namespace le_audio {

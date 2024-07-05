@@ -28,6 +28,9 @@
 #include "os/log.h"
 #include "types/raw_address.h"
 
+#include <utils\Timers.h>
+#include <cutils\memory.h>
+
 #define SOCK_LOGGER_SIZE_MAX 16
 
 using namespace bluetooth;

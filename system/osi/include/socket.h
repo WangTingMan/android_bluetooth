@@ -23,6 +23,10 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#ifndef ssize_t
+#define ssize_t int64_t
+#endif
+
 typedef struct reactor_t reactor_t;
 typedef struct socket_t socket_t;
 typedef uint16_t port_t;

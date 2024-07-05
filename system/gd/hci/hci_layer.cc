@@ -57,6 +57,20 @@ using os::Alarm;
 using os::Handler;
 using std::unique_ptr;
 
+void enqueue_command_hook(unique_ptr<CommandBuilder>& command)
+{
+  std::shared_ptr<std::vector<uint8_t>> bytes = std::make_shared<std::vector<uint8_t>>();
+  BitInserter bi(*bytes);
+  command->Serialize(bi);
+  auto cmd_view = CommandView::Create(PacketView<kLittleEndian>(bytes));
+  OpCode op_code = cmd_view.GetOpCode();
+  if ((uint16_t)op_code == 0xCDCD)
+  {
+    int x = 0;
+    x = 9;
+  }
+}
+
 static void fail_if_reset_complete_not_success(CommandCompleteView complete) {
   auto reset_complete = ResetCompleteView::Create(complete);
   log::assert_that(reset_complete.IsValid(), "assert failed: reset_complete.IsValid()");
@@ -157,6 +171,7 @@ struct HciLayer::impl {
 
   template <typename TResponse>
   void enqueue_command(unique_ptr<CommandBuilder> command, ContextualOnceCallback<void(TResponse)> on_response) {
+    enqueue_command_hook(command);
     command_queue_.emplace_back(std::move(command), std::move(on_response));
     send_next_command();
   }
@@ -581,6 +596,7 @@ common::BidiQueueEnd<IsoBuilder, IsoView>* HciLayer::GetIsoQueueEnd() {
 
 void HciLayer::EnqueueCommand(
     unique_ptr<CommandBuilder> command, ContextualOnceCallback<void(CommandCompleteView)> on_complete) {
+  enqueue_command_hook(command);
   CallOn(
       impl_,
       &impl::enqueue_command<CommandCompleteView>,

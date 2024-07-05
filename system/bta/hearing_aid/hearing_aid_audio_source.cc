@@ -102,7 +102,9 @@ void send_audio_data() {
   uint32_t bytes_per_tick =
       (num_channels * sample_rate * data_interval_ms * (bit_rate / 8)) / 1000;
 
-  uint8_t p_buf[bytes_per_tick];
+  std::vector<uint8_t> buffer;
+  buffer.resize( bytes_per_tick );
+  uint8_t* p_buf = buffer.data();
 
   uint32_t bytes_read;
   if (bluetooth::audio::hearing_aid::is_hal_enabled()) {

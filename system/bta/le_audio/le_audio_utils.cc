@@ -22,6 +22,8 @@
 #include "le_audio_types.h"
 #include "os/log.h"
 
+static const char AUDIO_ATTRIBUTES_TAGS_SEPARATOR = ';';
+
 using bluetooth::common::ToString;
 using bluetooth::le_audio::types::AudioContexts;
 using bluetooth::le_audio::types::LeAudioContextType;

@@ -28,9 +28,11 @@
 
 // Device class may be defined in other structures.
 // Only use defined methods to manipulate internals.
+#pragma pack(1)
 typedef struct bt_device_class_t {
   uint8_t _[3];  // Do not access directly; use methods below.
 } bt_device_class_t;
+#pragma pack()
 
 // Copies the |data| class of device stream into device class |dc|.  |dc|
 // and |data| must not be NULL.

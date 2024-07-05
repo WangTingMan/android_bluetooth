@@ -22,6 +22,10 @@
 #include "bluetooth/uuid.h"
 #include "raw_address.h"
 
+#include <cutils/bitops.h>
+
+using bluetooth::Uuid;
+
 __BEGIN_DECLS
 
 #define BTSOCK_FLAG_ENCRYPT 1
@@ -39,6 +43,7 @@ typedef enum {
 } btsock_type_t;
 
 /** Represents the standard BT SOCKET interface. */
+#pragma pack(1)
 typedef struct {
   short size;
   RawAddress bd_addr;
@@ -56,7 +61,8 @@ typedef struct {
   // The connection uuid. (L2CAP only)
   uint64_t conn_uuid_lsb;
   uint64_t conn_uuid_msb;
-} __attribute__((packed)) sock_connect_signal_t;
+} sock_connect_signal_t;
+#pragma pack()
 
 typedef struct {
   /** set to size of this struct*/

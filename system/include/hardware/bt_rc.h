@@ -16,7 +16,7 @@
 
 #ifndef ANDROID_INCLUDE_BT_RC_H
 #define ANDROID_INCLUDE_BT_RC_H
-
+#include <cutils/bitops.h>
 #include <raw_address.h>
 __BEGIN_DECLS
 

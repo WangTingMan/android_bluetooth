@@ -34,12 +34,20 @@
 #include <inttypes.h>
 #include <log/log.h>
 #include <stdint.h>
+#if __has_include(<sys/socket.h>)
 #include <sys/socket.h>
+#endif
 #include <sys/stat.h>
+#if __has_include(<sys/time.h>)
 #include <sys/time.h>
+#endif
+#if __has_include(<sys/un.h>)
 #include <sys/un.h>
+#endif
 #include <system/audio.h>
+#if __has_include(<unistd.h>)
 #include <unistd.h>
+#endif
 
 #include <cerrno>
 #include <mutex>
@@ -47,6 +55,10 @@
 #include "osi/include/hash_map_utils.h"
 #include "osi/include/osi.h"
 #include "osi/include/socket_utils/sockets.h"
+
+#define DO_NOT_DEFINE_TIME_VAL
+#include <utils/Timers.h>
+#include <cutils/threads.h>
 
 /*****************************************************************************
  *  Constants & Macros
@@ -68,15 +80,27 @@
 // sockets
 #define WRITE_POLL_MS 20
 
+#ifdef _MSC_VER
+#define FNLOG() ALOGV("%s:%d %s: ", __FILE__, __LINE__, __func__)
+#define DEBUG(fmt, ...) \
+  ALOGD("%s:%d %s: " fmt, __FILE__, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__)
+#define INFO(fmt, ...) \
+  ALOGI("%s:%d %s: " fmt, __FILE__, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__)
+#define WARN(fmt, ...) \
+  ALOGW("%s:%d %s: " fmt, __FILE__, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__)
+#define ERROR(fmt, ...) \
+  ALOGE("%s:%d %s: " fmt, __FILE__, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__)
+#else
 #define FNLOG() ALOGV("%s:%d %s: ", __FILE__, __LINE__, __func__)
 #define DEBUG(fmt, args...) \
-  ALOGD("%s:%d %s: " fmt, __FILE__, __LINE__, __func__, ##args)
+  ALOGD("%s:%d %s: " fmt, __FILE__, __LINE__, __func__, __VA_ARGS__)
 #define INFO(fmt, args...) \
-  ALOGI("%s:%d %s: " fmt, __FILE__, __LINE__, __func__, ##args)
+  ALOGI("%s:%d %s: " fmt, __FILE__, __LINE__, __func__, __VA_ARGS__)
 #define WARN(fmt, args...) \
-  ALOGW("%s:%d %s: " fmt, __FILE__, __LINE__, __func__, ##args)
+  ALOGW("%s:%d %s: " fmt, __FILE__, __LINE__, __func__, __VA_ARGS__)
 #define ERROR(fmt, args...) \
-  ALOGE("%s:%d %s: " fmt, __FILE__, __LINE__, __func__, ##args)
+  ALOGE("%s:%d %s: " fmt, __FILE__, __LINE__, __func__, __VA_ARGS__)
+#endif
 
 #define ASSERTC(cond, msg, val)                                           \
   if (!(cond)) {                                                          \
@@ -250,7 +274,10 @@ static int skt_connect(const char* path, size_t buffer_sz) {
   int len;
 
   INFO("connect to %s (sz %zu)", path, buffer_sz);
-
+#ifdef _MSC_VER
+  ALOGF( "no implementation!" );
+  return 0;
+#else
   skt_fd = socket(AF_LOCAL, SOCK_STREAM, 0);
 
   if (osi_socket_local_client_connect(
@@ -282,7 +309,7 @@ static int skt_connect(const char* path, size_t buffer_sz) {
 
   ret = setsockopt(skt_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
   if (ret < 0) ERROR("setsockopt failed (%s)", strerror(errno));
-
+#endif
   INFO("connected to stack fd = %d", skt_fd);
 
   return skt_fd;
@@ -294,10 +321,13 @@ static int skt_read(int fd, void* p, size_t len) {
   FNLOG();
 
   ts_log("skt_read recv", len, NULL);
-
+#ifdef _MSC_VER 
+  ALOGF( "no implementation!" );
+  return 0;
+#else
   OSI_NO_INTR(read = recv(fd, p, len, MSG_NOSIGNAL));
   if (read == -1) ERROR("read failed with errno=%d\n", errno);
-
+#endif
   return (int)read;
 }
 
@@ -308,13 +338,19 @@ static int skt_write(int fd, const void* p, size_t len) {
   ts_log("skt_write", len, NULL);
 
   if (WRITE_POLL_MS == 0) {
+#ifdef _MSC_VER 
+    ALOGF( "no implementation!" );
+#else
     // do not poll, use blocking send
     OSI_NO_INTR(sent = send(fd, p, len, MSG_NOSIGNAL));
     if (sent == -1) ERROR("write failed with error(%s)", strerror(errno));
-
+#endif
     return (int)sent;
   }
-
+#ifdef _MSC_VER 
+  ALOGF( "no implementation!" );
+  return 0;
+#else
   // use non-blocking send, poll
   int ms_timeout = SOCK_SEND_TIMEOUT_MS;
   size_t count = 0;
@@ -337,15 +373,19 @@ static int skt_write(int fd, const void* p, size_t len) {
     p = (const uint8_t*)p + sent;
   }
   return (int)count;
+#endif
 }
 
 static int skt_disconnect(int fd) {
   INFO("fd %d", fd);
-
+#ifdef _MSC_VER 
+  ALOGF( "no implementation!" );
+#else
   if (fd != AUDIO_SKT_DISCONNECTED) {
     shutdown(fd, SHUT_RDWR);
     close(fd);
   }
+#endif
   return 0;
 }
 
@@ -359,7 +399,10 @@ static int a2dp_ctrl_receive(struct a2dp_stream_common* common, void* buffer,
                              size_t length) {
   ssize_t ret;
   int i;
-
+#ifdef _MSC_VER 
+  ALOGF( "no implementation!" );
+  return 0;
+#else
   for (i = 0;; i++) {
     OSI_NO_INTR(ret = recv(common->ctrl_fd, buffer, length, MSG_NOSIGNAL));
     if (ret > 0) {
@@ -384,6 +427,7 @@ static int a2dp_ctrl_receive(struct a2dp_stream_common* common, void* buffer,
     common->ctrl_fd = AUDIO_SKT_DISCONNECTED;
   }
   return ret;
+#endif
 }
 
 // Sends control info for stream |common|. The data to send is stored in
@@ -396,7 +440,9 @@ static int a2dp_ctrl_send(struct a2dp_stream_common* common, const void* buffer,
   int i;
 
   if (length == 0) return 0;  // Nothing to do
-
+#ifdef _MSC_VER 
+  ALOGF( "no implementation!" );
+#else
   for (i = 0;; i++) {
     OSI_NO_INTR(sent = send(common->ctrl_fd, buffer, remaining, MSG_NOSIGNAL));
     if (sent == static_cast<ssize_t>(remaining)) {
@@ -425,6 +471,7 @@ static int a2dp_ctrl_send(struct a2dp_stream_common* common, const void* buffer,
     common->ctrl_fd = AUDIO_SKT_DISCONNECTED;
     return -1;
   }
+#endif
   return length;
 }
 
@@ -443,7 +490,9 @@ static int a2dp_command(struct a2dp_stream_common* common, tA2DP_CTRL_CMD cmd) {
       return -1;
     }
   }
-
+#ifdef _MSC_VER 
+  ALOGF( "no implementation!" );
+#else
   /* send command */
   ssize_t sent;
   OSI_NO_INTR(sent = send(common->ctrl_fd, &cmd, 1, MSG_NOSIGNAL));
@@ -454,7 +503,7 @@ static int a2dp_command(struct a2dp_stream_common* common, tA2DP_CTRL_CMD cmd) {
     common->ctrl_fd = AUDIO_SKT_DISCONNECTED;
     return -1;
   }
-
+#endif
   /* wait for ack byte */
   if (a2dp_ctrl_receive(common, &ack, 1) < 0) {
     ERROR("A2DP COMMAND %s: no ACK", audio_a2dp_hw_dump_ctrl_event(cmd));
@@ -1181,12 +1230,14 @@ static int out_set_parameters(struct audio_stream* stream,
 
   /* dump params */
   hash_map_utils_dump_string_keys_string_values(params);
-
+#ifdef _MSC_VER 
+  ALOGF( "no implementation!" );
+#else
   if (params[AUDIO_PARAMETER_KEY_CLOSING].compare("true") == 0) {
     DEBUG("stream closing, disallow any writes");
     out->common.state = AUDIO_A2DP_STATE_STOPPING;
   }
-
+#endif
   if (params["A2dpSuspended"].compare("true") == 0) {
     if (out->common.state == AUDIO_A2DP_STATE_STARTED)
       status = suspend_audio_datapath(&out->common, false);
@@ -1943,8 +1994,8 @@ static struct hw_module_methods_t hal_module_methods = {
     .open = adev_open,
 };
 
-__attribute__((
-    visibility("default"))) struct audio_module HAL_MODULE_INFO_SYM = {
+/*__attribute__((
+    visibility("default")))*/ struct audio_module HAL_MODULE_INFO_SYM = {
     .common =
         {
             .tag = HARDWARE_MODULE_TAG,

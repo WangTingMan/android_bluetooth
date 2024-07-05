@@ -29,6 +29,8 @@
 #include "osi/include/osi.h"
 #include "osi/include/properties.h"
 
+#include <utils/Timers.h>
+
 using namespace bluetooth;
 
 constexpr size_t kMaxLogSize = 255;

@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+#ifdef _MSC_VER
+#include <stddef.h>
+#include <stdlib.h>
+#else
 #include <netinet/in.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -22,6 +26,16 @@
 #include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
+#endif
+
+#ifdef _MSC_VER 
+#include <WinSock2.h>
+#include <ws2def.h>
+#include <afunix.h>
+#include <cutils/sockets.h>
+#include <corecrt_io.h>
+#define AF_LOCAL 0
+#endif
 
 #include "osi/include/socket_utils/socket_local.h"
 #include "osi/include/socket_utils/sockets.h"
@@ -61,7 +75,9 @@ int osi_socket_local_server_bind(int s, const char* name, int namespaceId) {
   }
 
   n = 1;
+#ifndef _MSC_VER
   setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &n, sizeof(n));
+#endif
 
   if (bind(s, (struct sockaddr*)&addr, alen) < 0) {
     return -1;

@@ -18,7 +18,11 @@
 #ifndef UIPC_H
 #define UIPC_H
 
+#if __has_include(<sys/select.h>)
 #include <sys/select.h>
+#else
+#include <WinSock2.h>
+#endif
 
 #include <memory>
 #include <mutex>
@@ -70,7 +74,11 @@ typedef struct {
 } tUIPC_CHAN;
 
 struct tUIPC_STATE {
+#ifdef _MSC_VER
+  int tid;
+#else
   pthread_t tid; /* main thread id */
+#endif
   int running;
   std::recursive_mutex mutex;
 

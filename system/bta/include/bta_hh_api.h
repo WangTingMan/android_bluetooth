@@ -233,7 +233,8 @@ typedef tHID_DEV_DSCP_INFO tBTA_HH_DEV_DESCR;
 #define BTA_HH_VENDOR_ID_INVALID 0xffff
 
 /* report descriptor information */
-typedef struct {
+struct tBTA_HH_DEV_DSCP_INFO
+{
   uint16_t vendor_id;       /* vendor ID */
   uint16_t product_id;      /* product ID */
   uint16_t version;         /* version */
@@ -253,7 +254,7 @@ typedef struct {
     return base::StringPrintf("%04x::%04x::%04x", vendor_id, product_id,
                               version);
   }
-} tBTA_HH_DEV_DSCP_INFO;
+};
 
 /* callback event data for BTA_HH_OPEN_EVT */
 typedef struct {

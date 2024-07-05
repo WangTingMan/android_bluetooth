@@ -47,6 +47,16 @@
 #include "types/bluetooth/uuid.h"
 #include "types/raw_address.h"
 
+#ifndef FALLTHROUGH_INTENDED
+#ifdef __cplusplus
+#define FALLTHROUGH_INTENDED [[fallthrough]]
+#elif __has_attribute(fallthrough)
+#define FALLTHROUGH_INTENDED __attribute__((__fallthrough__))
+#else
+#define FALLTHROUGH_INTENDED
+#endif // __cplusplus
+#endif // FALLTHROUGH_INTENDED
+
 using namespace bluetooth::legacy::stack::sdp;
 using namespace bluetooth;
 

@@ -70,6 +70,10 @@
 #define BT_STACK_CLEANUP_WAIT_MS 1000
 #endif
 
+#ifdef interface
+#undef interface
+#endif
+
 // Validate or respond to various conditional compilation flags
 
 // Once BTA_PAN_INCLUDED is no longer exposed via bt_target.h
@@ -193,13 +197,13 @@ static bool get_stack_is_running() { return stack_is_running; }
 
 // Internal functions
 extern const module_t bt_utils_module;
-extern const module_t btif_config_module;
+extern module_t btif_config_module;
 extern const module_t gd_shim_module;
-extern const module_t interop_module;
+extern module_t interop_module;
 extern const module_t osi_module;
 extern const module_t rust_module;
 extern const module_t stack_config_module;
-extern const module_t device_iot_config_module;
+extern module_t device_iot_config_module;
 
 struct module_lookup {
   const char* name;

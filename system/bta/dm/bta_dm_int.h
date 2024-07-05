@@ -148,7 +148,8 @@ typedef struct {
   uint8_t le_count;
 } tBTA_DM_ACTIVE_LINK;
 
-typedef struct {
+struct tBTA_DM_SRVCS
+{
   RawAddress peer_bdaddr;
   tBTA_SYS_ID id;
   uint8_t app_id;
@@ -163,7 +164,7 @@ typedef struct {
         new_request ? "true" : "false");
   }
 
-} tBTA_DM_SRVCS;
+};
 
 #ifndef BTA_DM_NUM_CONN_SRVS
 #define BTA_DM_NUM_CONN_SRVS 30
@@ -266,12 +267,13 @@ typedef struct {
 
 } tBTA_DM_PM_SPEC;
 
-typedef struct {
+struct tBTA_DM_SSR_SPEC
+{
   uint16_t max_lat;
   uint16_t min_rmt_to;
   uint16_t min_loc_to;
   const char* name{nullptr};
-} tBTA_DM_SSR_SPEC;
+};
 
 typedef struct {
   uint16_t manufacturer;

@@ -109,9 +109,9 @@ class CsipSetCoordinatorServiceInterfaceImpl : public CsisClientInterface,
       return;
     }
 
-    do_in_main_thread(
-        FROM_HERE, Bind(&CsisClient::LockGroup, Unretained(CsisClient::Get()),
-                        group_id, lock, base::DoNothing()));
+    std::function<void()> fun = std::bind( &CsisClient::LockGroup, CsisClient::Get(),
+                                           group_id, lock, base::DoNothing() );
+    post_on_bt_main( fun );
   }
 
   void Cleanup(void) override {

@@ -32,7 +32,9 @@
 
 #include <ctype.h>
 #include <hardware/bt_av.h>
+#if __has_include(<netinet/in.h>)
 #include <netinet/in.h>
+#endif
 #include <stdlib.h>
 
 #include <string>

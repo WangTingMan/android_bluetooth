@@ -230,7 +230,8 @@ typedef struct {
 } tBTM_ESCO_INFO;
 
 /* Define the structure used for SCO Management */
-typedef struct {
+struct tSCO_CONN
+{
   tBTM_ESCO_INFO esco;    /* Current settings             */
   tBTM_SCO_CB* p_conn_cb; /* Callback for when connected  */
   tBTM_SCO_CB* p_disc_cb; /* Callback for when disconnect */
@@ -259,7 +260,7 @@ typedef struct {
   bool is_orig;           /* true if the originator       */
   bool rem_bd_known;      /* true if remote BD addr known */
 
-} tSCO_CONN;
+};
 
 /* SCO Management control block */
 struct tSCO_CB {

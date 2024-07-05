@@ -858,7 +858,7 @@ bool bluetooth::shim::is_ad_type_filter_supported() {
 }
 
 void bluetooth::shim::set_ad_type_rsi_filter(bool enable) {
-  bluetooth::hci::AdvertisingFilterParameter advertising_filter_parameter;
+  bluetooth::hci::AdvertisingFilterParameter advertising_filter_parameter{};
   bluetooth::shim::GetScanning()->ScanFilterParameterSetup(
       bluetooth::hci::ApcfAction::DELETE, 0x00, advertising_filter_parameter);
   if (enable) {
@@ -882,7 +882,7 @@ void bluetooth::shim::set_ad_type_rsi_filter(bool enable) {
 }
 
 void bluetooth::shim::set_empty_filter(bool enable) {
-  bluetooth::hci::AdvertisingFilterParameter advertising_filter_parameter;
+  bluetooth::hci::AdvertisingFilterParameter advertising_filter_parameter{};
   bluetooth::shim::GetScanning()->ScanFilterParameterSetup(
       bluetooth::hci::ApcfAction::DELETE, 0x00, advertising_filter_parameter);
   if (enable) {

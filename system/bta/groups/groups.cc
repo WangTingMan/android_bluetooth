@@ -30,6 +30,10 @@
 #include "types/bluetooth/uuid.h"
 #include "types/raw_address.h"
 
+#ifdef _MSC_VER
+#include <cutils/memory.h>
+#endif
+
 using bluetooth::Uuid;
 
 namespace bluetooth {

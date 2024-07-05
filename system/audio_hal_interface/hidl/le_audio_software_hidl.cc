@@ -23,6 +23,11 @@
 
 #include "os/log.h"
 
+#ifdef _MSC_VER
+#define DO_NOT_DEFINE_TIME_VAL
+#include <utils/Timers.h>
+#endif
+
 namespace bluetooth {
 namespace audio {
 namespace hidl {

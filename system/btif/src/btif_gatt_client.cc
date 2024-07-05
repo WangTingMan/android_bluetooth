@@ -430,12 +430,12 @@ static bt_status_t btif_gattc_get_gatt_db(int conn_id) {
 
 void read_char_cb(uint16_t conn_id, tGATT_STATUS status, uint16_t handle,
                   uint16_t len, uint8_t* value, void* data) {
-  btgatt_read_params_t params = {
-      .handle = handle,
-      .value.len = len,
-      .value_type = 0x00, /* GATTC_READ_VALUE_TYPE_VALUE */
-      .status = status,
-  };
+  btgatt_read_params_t params;
+  params.handle = handle;
+  params.value.len = len;
+  params.value_type = 0x00; /* GATTC_READ_VALUE_TYPE_VALUE */
+  params.status = status;
+
   log::assert_that(len <= GATT_MAX_ATTR_LEN,
                    "assert failed: len <= GATT_MAX_ATTR_LEN");
   if (len > 0) memcpy(params.value.value, value, len);
@@ -453,12 +453,12 @@ static bt_status_t btif_gattc_read_char(int conn_id, uint16_t handle,
 void read_using_char_uuid_cb(uint16_t conn_id, tGATT_STATUS status,
                              uint16_t handle, uint16_t len, uint8_t* value,
                              void* data) {
-  btgatt_read_params_t params = {
-      .handle = handle,
-      .value.len = len,
-      .value_type = 0x00, /* GATTC_READ_VALUE_TYPE_VALUE */
-      .status = status,
-  };
+  btgatt_read_params_t params;
+  params.handle = handle;
+  params.value.len = len;
+  params.value_type = 0x00; /* GATTC_READ_VALUE_TYPE_VALUE */
+  params.status = status;
+
   log::assert_that(len <= GATT_MAX_ATTR_LEN,
                    "assert failed: len <= GATT_MAX_ATTR_LEN");
   if (len > 0) memcpy(params.value.value, value, len);

@@ -20,6 +20,7 @@
 #include <raw_address.h>
 
 #include "bluetooth.h"
+#include <cutils/bitops.h>
 
 #define SDP_OPP_SUPPORTED_FORMATS_MAX_LENGTH 15
 

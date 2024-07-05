@@ -23,7 +23,9 @@
 #include <cutils/trace.h>
 #endif
 #include <bluetooth/log.h>
+#if __has_include(<dlfcn.h>)
 #include <dlfcn.h>
+#endif
 #include <inttypes.h>
 #include <ldacBT_abr.h>
 #include <string.h>
@@ -34,6 +36,8 @@
 #include "os/log.h"
 #include "osi/include/allocator.h"
 #include "stack/include/bt_hdr.h"
+
+#include <cutils/memory.h>
 
 //
 // Encoder for LDAC Source Codec

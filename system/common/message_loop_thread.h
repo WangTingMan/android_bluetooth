@@ -21,7 +21,9 @@
 #include <base/run_loop.h>
 #include <base/threading/platform_thread.h>
 #include <bluetooth/log.h>
+#if __has_include(<unistd.h>)
 #include <unistd.h>
+#endif
 
 #include <future>
 #include <string>
@@ -29,6 +31,12 @@
 
 #include "abstract_message_loop.h"
 #include "common/postable_context.h"
+
+#ifdef _MSC_VER
+#ifndef pid_t
+#define pid_t int
+#endif
+#endif
 
 namespace bluetooth {
 

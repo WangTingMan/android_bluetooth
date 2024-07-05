@@ -37,7 +37,9 @@ class LeAclManagerShim {
   void CancelLeConnect(core::AddressWithType address) const;
 
 #ifndef TARGET_FLOSS
+#ifndef _MSC_VER
   void RegisterRustCallbacks(::rust::Box<LeAclManagerCallbackShim> callbacks);
+#endif
 #endif
 
  private:

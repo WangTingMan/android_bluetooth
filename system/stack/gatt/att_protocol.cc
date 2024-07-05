@@ -37,6 +37,8 @@
 #define GATT_OP_CODE_SIZE 1
 #define GATT_START_END_HANDLE_SIZE 4
 
+#define FALLTHROUGH_INTENDED [[fallthrough]]
+
 using base::StringPrintf;
 using bluetooth::Uuid;
 using namespace bluetooth;
@@ -291,6 +293,8 @@ static BT_HDR* attp_build_value_cmd(uint16_t payload_size, uint8_t op_code,
   uint8_t *p, *pp, *p_pair_len;
   size_t pair_len;
   size_t size_now = 1;
+
+  p_pair_len = nullptr;
 
 #define CHECK_SIZE()                        \
   do {                                      \

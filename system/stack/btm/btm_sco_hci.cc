@@ -17,10 +17,14 @@
 #define LOG_TAG "sco_hci"
 
 #include <bluetooth/log.h>
+#if __has_include(<grp.h>)
 #include <grp.h>
+#endif
 #include <math.h>
 #include <sys/stat.h>
+#if __has_include(<unistd.h>)
 #include <unistd.h>
+#endif
 
 #include <cfloat>
 #include <memory>
@@ -105,6 +109,7 @@ void open() {
   }
 
   UIPC_Open(*sco_uipc, UIPC_CH_ID_AV_AUDIO, sco_data_cb, SCO_HOST_DATA_PATH);
+#ifndef _MSC_VER
   struct group* grp = getgrnam(SCO_HOST_DATA_GROUP);
   chmod(SCO_HOST_DATA_PATH, 0770);
   if (grp) {
@@ -113,6 +118,7 @@ void open() {
       log::error("failed: {}", strerror(errno));
     }
   }
+#endif
 }
 
 void cleanup() {

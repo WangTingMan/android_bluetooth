@@ -21,12 +21,17 @@
 #include "osi/include/reactor.h"
 
 #include <bluetooth/log.h>
+#ifndef _MSC_VER
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
+#else
+#include <cutils/threads.h> 
+#include <string.h>
+#endif
 
 #include <mutex>
 
@@ -65,14 +70,16 @@ struct reactor_object_t {
 static reactor_status_t run_reactor(reactor_t* reactor, int iterations);
 
 static const size_t MAX_EVENTS = 64;
+#ifndef _MSC_VER
 static const eventfd_t EVENT_REACTOR_STOP = 1;
+#endif
 
 reactor_t* reactor_new(void) {
   reactor_t* ret = (reactor_t*)osi_calloc(sizeof(reactor_t));
 
   ret->epoll_fd = INVALID_FD;
   ret->event_fd = INVALID_FD;
-
+#ifndef _MSC_VER
   ret->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
   if (ret->epoll_fd == INVALID_FD) {
     log::error("unable to create epoll instance: {}", strerror(errno));
@@ -84,14 +91,14 @@ reactor_t* reactor_new(void) {
     log::error("unable to create eventfd: {}", strerror(errno));
     goto error;
   }
-
+#endif
   ret->list_mutex = new std::mutex;
   ret->invalidation_list = list_new(NULL);
   if (!ret->invalidation_list) {
     log::error("unable to allocate object invalidation list.");
     goto error;
   }
-
+#ifndef _MSC_VER
   struct epoll_event event;
   memset(&event, 0, sizeof(event));
   event.events = EPOLLIN;
@@ -101,7 +108,7 @@ reactor_t* reactor_new(void) {
                strerror(errno));
     goto error;
   }
-
+#endif
   return ret;
 
 error:;
@@ -131,8 +138,9 @@ reactor_status_t reactor_run_once(reactor_t* reactor) {
 
 void reactor_stop(reactor_t* reactor) {
   log::assert_that(reactor != NULL, "assert failed: reactor != NULL");
-
+#ifndef _MSC_VER
   eventfd_write(reactor->event_fd, EVENT_REACTOR_STOP);
+#endif
 }
 
 reactor_object_t* reactor_register(reactor_t* reactor, int fd, void* context,
@@ -150,7 +158,7 @@ reactor_object_t* reactor_register(reactor_t* reactor, int fd, void* context,
   object->read_ready = read_ready;
   object->write_ready = write_ready;
   object->mutex = new std::mutex;
-
+#ifndef _MSC_VER
   struct epoll_event event;
   memset(&event, 0, sizeof(event));
   if (read_ready) event.events |= (EPOLLIN | EPOLLRDHUP);
@@ -164,7 +172,7 @@ reactor_object_t* reactor_register(reactor_t* reactor, int fd, void* context,
     osi_free(object);
     return NULL;
   }
-
+#endif
   return object;
 }
 
@@ -172,7 +180,7 @@ bool reactor_change_registration(reactor_object_t* object,
                                  void (*read_ready)(void* context),
                                  void (*write_ready)(void* context)) {
   log::assert_that(object != NULL, "assert failed: object != NULL");
-
+#ifndef _MSC_VER
   struct epoll_event event;
   memset(&event, 0, sizeof(event));
   if (read_ready) event.events |= (EPOLLIN | EPOLLRDHUP);
@@ -185,7 +193,7 @@ bool reactor_change_registration(reactor_object_t* object,
                strerror(errno));
     return false;
   }
-
+#endif
   std::lock_guard<std::mutex> lock(*object->mutex);
   object->read_ready = read_ready;
   object->write_ready = write_ready;
@@ -197,7 +205,7 @@ void reactor_unregister(reactor_object_t* obj) {
   log::assert_that(obj != NULL, "assert failed: obj != NULL");
 
   reactor_t* reactor = obj->reactor;
-
+#ifndef _MSC_VER
   if (epoll_ctl(reactor->epoll_fd, EPOLL_CTL_DEL, obj->fd, NULL) == -1)
     log::error("unable to unregister fd {} from epoll set: {}", obj->fd,
                strerror(errno));
@@ -207,7 +215,7 @@ void reactor_unregister(reactor_object_t* obj) {
     reactor->object_removed = true;
     return;
   }
-
+#endif
   {
     std::unique_lock<std::mutex> lock(*reactor->list_mutex);
     list_append(reactor->invalidation_list, obj);
@@ -235,7 +243,7 @@ static reactor_status_t run_reactor(reactor_t* reactor, int iterations) {
 
   reactor->run_thread = pthread_self();
   reactor->is_running = true;
-
+#ifndef _MSC_VER
   struct epoll_event events[MAX_EVENTS];
   for (int i = 0; iterations == 0 || i < iterations; ++i) {
     {
@@ -289,7 +297,7 @@ static reactor_status_t run_reactor(reactor_t* reactor, int iterations) {
       }
     }
   }
-
+#endif
   reactor->is_running = false;
   return REACTOR_STATUS_DONE;
 }

@@ -81,7 +81,8 @@ typedef struct {
 /*
  * RFCOMM multiplexer Control Block
 */
-typedef struct {
+struct tRFC_MCB
+{
   alarm_t* mcb_timer = nullptr;   /* MCB timer */
   fixed_queue_t* cmd_q = nullptr; /* Queue for command messages on this mux */
   uint8_t port_handles[RFCOMM_MAX_DLCI + 1]; /* Array for quick access to  */
@@ -103,7 +104,7 @@ typedef struct {
                                             connection was completed*/
   tL2CAP_CFG_INFO pending_cfg_info = {}; /* store configure info for incoming
                                        connection while connecting */
-} tRFC_MCB;
+};
 
 /*
  * RFCOMM Port Connection Control Block

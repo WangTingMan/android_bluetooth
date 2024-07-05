@@ -18,7 +18,11 @@
 
 #include "common/time_util.h"
 
+#ifdef _MSC_VER
+#include <utils\Timers.h>
+#else
 #include <sys/time.h>
+#endif
 #include <time.h>
 
 namespace bluetooth {

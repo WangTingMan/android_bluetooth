@@ -20,12 +20,16 @@
 
 #include <com_android_bluetooth_flags.h>
 #include <fcntl.h>
+#ifndef _WIN32
 #include <linux/uhid.h>
 #include <poll.h>
 #include <pthread.h>
+#endif
 #include <stdint.h>
 #include <string.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 #include <cerrno>
 
@@ -59,6 +63,9 @@ static const bthh_report_type_t map_rtype_uhid_hh[] = {
 static void* btif_hh_poll_event_thread(void* arg);
 
 void uhid_set_non_blocking(int fd) {
+#ifdef _MSC_VER
+  log::warn( "not implement on this platform." );
+#else
   int opts = fcntl(fd, F_GETFL);
   if (opts < 0) log::error("Getting flags failed ({})", strerror(errno));
 
@@ -66,8 +73,10 @@ void uhid_set_non_blocking(int fd) {
 
   if (fcntl(fd, F_SETFL, opts) < 0)
     log::verbose("Setting non-blocking flag failed ({})", strerror(errno));
+#endif
 }
 
+#ifndef _MSC_VER
 static bool uhid_feature_req_handler(btif_hh_uhid_t* p_uhid,
                                      struct uhid_feature_req& req) {
   log::debug("Report type = {}, id = {}", req.rtype, req.rnum);
@@ -94,6 +103,7 @@ static bool uhid_feature_req_handler(btif_hh_uhid_t* p_uhid,
   btif_hh_getreport(p_uhid, map_rtype_uhid_hh[req.rtype], req.rnum, 0);
   return true;
 }
+#endif
 
 #if ENABLE_UHID_SET_REPORT
 static bool uhid_set_report_req_handler(btif_hh_uhid_t* p_uhid,
@@ -126,6 +136,7 @@ static bool uhid_set_report_req_handler(btif_hh_uhid_t* p_uhid,
 
 /*Internal function to perform UHID write and error checking*/
 static int uhid_write(int fd, const struct uhid_event* ev) {
+#ifndef _MSC_VER
   ssize_t ret;
   OSI_NO_INTR(ret = write(fd, ev, sizeof(*ev)));
 
@@ -137,6 +148,7 @@ static int uhid_write(int fd, const struct uhid_event* ev) {
     log::error("Wrong size written to uhid: {} != {}", ret, sizeof(*ev));
     return -EFAULT;
   }
+#endif
 
   return 0;
 }
@@ -144,7 +156,7 @@ static int uhid_write(int fd, const struct uhid_event* ev) {
 /* Internal function to parse the events received from UHID driver*/
 static int uhid_read_event(btif_hh_uhid_t* p_uhid) {
   log::assert_that(p_uhid != nullptr, "assert failed: p_uhid != nullptr");
-
+#ifndef _MSC_VER
   struct uhid_event ev;
   memset(&ev, 0, sizeof(ev));
 
@@ -235,9 +247,10 @@ static int uhid_read_event(btif_hh_uhid_t* p_uhid) {
     default:
       log::error("Invalid event from uhid-dev: {}\n", ev.type);
   }
-
+#endif
   return 0;
 }
+
 
 /*******************************************************************************
  *
@@ -266,6 +279,7 @@ static inline pthread_t create_thread(void* (*start_routine)(void*),
 
 /* Internal function to close the UHID driver*/
 static void uhid_fd_close(btif_hh_uhid_t* p_uhid) {
+#ifndef _MSC_VER
   if (p_uhid->fd >= 0) {
     struct uhid_event ev = {};
     ev.type = UHID_DESTROY;
@@ -274,10 +288,12 @@ static void uhid_fd_close(btif_hh_uhid_t* p_uhid) {
     close(p_uhid->fd);
     p_uhid->fd = -1;
   }
+#endif
 }
 
 /* Internal function to open the UHID driver*/
 static bool uhid_fd_open(btif_hh_device_t* p_dev) {
+#ifndef _MSC_VER
   if (p_dev->uhid.fd < 0) {
     p_dev->uhid.fd = open(dev_path, O_RDWR | O_CLOEXEC);
     if (p_dev->uhid.fd < 0) {
@@ -291,6 +307,7 @@ static bool uhid_fd_open(btif_hh_device_t* p_dev) {
     p_dev->hh_poll_thread_id =
         create_thread(btif_hh_poll_event_thread, &p_dev->uhid);
   }
+#endif
   return true;
 }
 
@@ -311,8 +328,9 @@ static int uhid_fd_poll(btif_hh_uhid_t* p_uhid,
                  BTA_HH_UHID_INTERRUPT_COUNT_MAX);
       return -1;
     }
-
+#ifndef _MSC_VER
     ret = poll(pfds.data(), pfds.size(), BTA_HH_UHID_POLL_PERIOD_MS);
+#endif
   } while (ret == -1 && errno == EINTR);
 
   if (!com::android::bluetooth::flags::break_uhid_polling_early()) {
@@ -326,6 +344,7 @@ static int uhid_fd_poll(btif_hh_uhid_t* p_uhid,
 }
 
 static void uhid_start_polling(btif_hh_uhid_t* p_uhid) {
+#ifndef _MSC_VER
   std::array<struct pollfd, 1> pfds = {};
   pfds[0].fd = p_uhid->fd;
   pfds[0].events = POLLIN;
@@ -351,6 +370,7 @@ static void uhid_start_polling(btif_hh_uhid_t* p_uhid) {
       }
     }
   }
+#endif
 }
 
 static bool uhid_configure_thread(btif_hh_uhid_t* p_uhid) {
@@ -404,7 +424,9 @@ static void* btif_hh_poll_event_thread(void* arg) {
 
 int bta_hh_co_write(int fd, uint8_t* rpt, uint16_t len) {
   log::verbose("UHID write {}", len);
-
+#ifdef _MSC_VER
+  return len;
+#else
   struct uhid_event ev;
   memset(&ev, 0, sizeof(ev));
   ev.type = UHID_INPUT;
@@ -416,6 +438,7 @@ int bta_hh_co_write(int fd, uint8_t* rpt, uint16_t len) {
   memcpy(ev.u.input.data, rpt, len);
 
   return uhid_write(fd, &ev);
+#endif
 }
 
 /*******************************************************************************
@@ -583,6 +606,7 @@ void bta_hh_co_send_hid_info(btif_hh_device_t* p_dev, const char* dev_name,
                              uint16_t vendor_id, uint16_t product_id,
                              uint16_t version, uint8_t ctry_code, int dscp_len,
                              uint8_t* p_dscp) {
+#ifndef _MSC_VER
   int result;
   struct uhid_event ev;
 
@@ -632,6 +656,7 @@ void bta_hh_co_send_hid_info(btif_hh_device_t* p_dev, const char* dev_name,
     close(p_dev->uhid.fd);
     p_dev->uhid.fd = -1;
   }
+#endif
 }
 
 /*******************************************************************************
@@ -730,7 +755,7 @@ void bta_hh_co_get_rpt_rsp(uint8_t dev_handle, uint8_t status,
     log::warn("No pending UHID_GET_REPORT");
     return;
   }
-
+#ifndef _MSC_VER
   if (len == 0 || len > UHID_DATA_MAX) {
     log::warn("Invalid report size = {}", len);
     return;
@@ -749,6 +774,7 @@ void bta_hh_co_get_rpt_rsp(uint8_t dev_handle, uint8_t status,
   memcpy(ev.u.feature_answer.data, p_rpt, len);
 
   uhid_write(p_dev->uhid.fd, &ev);
+#endif
   osi_free(context);
 }
 

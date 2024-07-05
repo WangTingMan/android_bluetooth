@@ -39,6 +39,9 @@ enum PlayState : uint8_t {
   PAUSED,
   FWD_SEEK,
   REV_SEEK,
+#ifdef ERROR
+#undef ERROR
+#endif
   ERROR = 0xFF,
 };
 

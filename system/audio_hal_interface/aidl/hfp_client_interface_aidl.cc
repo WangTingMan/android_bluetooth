@@ -150,7 +150,7 @@ bool HfpTransport::GetPresentationPosition(uint64_t* remote_delay_report_ns,
 
 // Source / sink functions
 HfpDecodingTransport::HfpDecodingTransport(SessionType session_type)
-    : IBluetoothSinkTransportInstance(session_type, (AudioConfiguration){}) {
+    : IBluetoothSinkTransportInstance(session_type, AudioConfiguration{}) {
   transport_ = new HfpTransport();
 };
 
@@ -202,7 +202,7 @@ void HfpDecodingTransport::ResetPendingCmd() { transport_->ResetPendingCmd(); }
 void HfpDecodingTransport::StopRequest() { transport_->StopRequest(); }
 
 HfpEncodingTransport::HfpEncodingTransport(SessionType session_type)
-    : IBluetoothSourceTransportInstance(session_type, (AudioConfiguration){}) {
+    : IBluetoothSourceTransportInstance(session_type, AudioConfiguration{}) {
   transport_ = new HfpTransport();
 };
 

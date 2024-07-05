@@ -33,6 +33,10 @@
 #include "osi/include/allocator.h"
 #include "stack/include/bt_hdr.h"
 
+#include <cutils/memory.h>
+
+#define FALLTHROUGH_INTENDED [[clang::fallthrough]] 
+
 /* Buffer pool */
 #define A2DP_SBC_BUFFER_SIZE BT_DEFAULT_BUFFER_SIZE
 

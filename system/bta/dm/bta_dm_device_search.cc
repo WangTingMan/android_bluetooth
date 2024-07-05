@@ -60,6 +60,9 @@
 #include "storage/config_keys.h"
 #include "types/raw_address.h"
 
+#define DO_NOT_DEFINE_TIME_VAL
+#include <utils/Timers.h>
+
 using namespace bluetooth;
 
 namespace {
