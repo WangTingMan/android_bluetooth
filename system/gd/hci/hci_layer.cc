@@ -63,6 +63,7 @@ void enqueue_command_hook(unique_ptr<CommandBuilder>& command)
   BitInserter bi(*bytes);
   command->Serialize(bi);
   auto cmd_view = CommandView::Create(PacketView<kLittleEndian>(bytes));
+  cmd_view.IsValid();
   OpCode op_code = cmd_view.GetOpCode();
   if ((uint16_t)op_code == 0xCDCD)
   {

@@ -216,13 +216,30 @@ Queue<T>::~Queue() {
 template <typename T>
 void Queue<T>::RegisterEnqueue(Handler* handler, EnqueueCallback callback) {
 #ifdef _MSC_VER
-  std::lock_guard lock(mutex_);
-  if (!enqueue_.handler_) {
-    log::warn("enqueue_.handler_ == nullptr");
+  if (handler == nullptr) {
+    log::fatal("handler is null!");
+    return;
   }
+
+  if (handler->thread_ == nullptr) {
+    log::fatal("handler's thread is null!");
+    return;
+  }
+
+  ::bluetooth::os::Reactor* reactor_ = nullptr;
+  reactor_ = handler->thread_->GetReactor();
+  if (reactor_ == nullptr)
+  {
+    log::fatal("handler's thread's reactor is null!");
+    return;
+  }
+
+  reactor_->PostTask(
+    base::Bind(&Queue<T>::EnqueueCallbackInternal,
+      base::Unretained(this), std::move(callback)));
+
+  std::lock_guard lock(mutex_);
   enqueue_.handler_ = handler;
-  enqueue_callback_.push_back(callback);
-  HandleQueueIfNeed();
 #else
   std::lock_guard<std::mutex> lock(mutex_);
   log::assert_that(enqueue_.handler_ == nullptr, "assert failed: enqueue_.handler_ == nullptr");
@@ -265,13 +282,13 @@ void Queue<T>::UnregisterEnqueue() {
 template <typename T>
 void Queue<T>::RegisterDequeue(Handler* handler, DequeueCallback callback) {
 #ifdef _MSC_VER
-  std::lock_guard lock(mutex_);
-  if (!dequeue_.handler_) {
-    log::warn("dequeue_.handler_ == nullptr");
+  if (handler == nullptr) {
+    log::fatal("handler is null!");
+    return;
   }
+  std::lock_guard lock(mutex_);
   dequeue_.handler_ = handler;
   dequeue_callback_ = callback;
-  HandleQueueIfNeed();
 #else
   std::lock_guard<std::mutex> lock(mutex_);
   log::assert_that(dequeue_.handler_ == nullptr, "assert failed: dequeue_.handler_ == nullptr");
@@ -371,7 +388,16 @@ void Queue<T>::EnqueueCallbackInternal(EnqueueCallback callback) {
 
   std::lock_guard lock(mutex_);
   queue_.push(std::move(data));
-  HandleQueueIfNeed();
+  if (dequeue_.handler_ == nullptr) {
+    log::fatal("did no register dequeue handler!");
+    return;
+  }
+
+  if (dequeue_callback_.is_null()) {
+    log::fatal("did no register dequeue callback!");
+    return;
+  }
+  dequeue_.handler_->thread_->GetReactor()->PostTask(dequeue_callback_);
 #else
   std::unique_ptr<T> data = callback.Run();
   log::assert_that(data != nullptr, "assert failed: data != nullptr");
