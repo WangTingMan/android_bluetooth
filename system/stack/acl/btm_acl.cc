@@ -50,7 +50,6 @@
 #include "main/shim/dumpsys.h"
 #include "main/shim/entry.h"
 #include "main/shim/helpers.h"
-#include "os/log.h"
 #include "os/parameter_provider.h"
 #include "osi/include/allocator.h"
 #include "osi/include/properties.h"
@@ -69,8 +68,8 @@
 #include "stack/include/acl_hci_link_interface.h"
 #include "stack/include/bt_hdr.h"
 #include "stack/include/bt_types.h"
-#include "stack/include/btm_api.h"
 #include "stack/include/btm_ble_api.h"
+#include "stack/include/btm_client_interface.h"
 #include "stack/include/btm_iso_api.h"
 #include "stack/include/hci_error_code.h"
 #include "stack/include/hcimsgs.h"
@@ -580,7 +579,7 @@ tBTM_STATUS BTM_SwitchRoleToCentral(const RawAddress& remote_bd_addr) {
     return BTM_DEV_RESTRICT_LISTED;
   }
 
-  if (BTM_IsScoActiveByBdaddr(remote_bd_addr)) {
+  if (get_btm_client_interface().sco.BTM_IsScoActiveByBdaddr(remote_bd_addr)) {
     log::info("An active SCO to device prevents role switch at this time");
     return BTM_NO_RESOURCES;
   }
@@ -2583,7 +2582,6 @@ void acl_rcv_acl_data(BT_HDR* p_msg) {
       .hci_len = 0,
   };
   const uint8_t* p = (uint8_t*)(p_msg + 1) + p_msg->offset;
-
   STREAM_TO_UINT16(acl_header.handle, p);
   acl_header.handle = HCID_GET_HANDLE(acl_header.handle);
 

@@ -63,10 +63,17 @@ const BluetoothAudioHalVersion BluetoothAudioHalVersion::VERSION_AIDL_V3 =
 const BluetoothAudioHalVersion BluetoothAudioHalVersion::VERSION_AIDL_V4 =
     BluetoothAudioHalVersion(BluetoothAudioHalTransport::AIDL, 4, 0);
 
+#ifdef _MSC_VER
+HalVersionManager* HalVersionManager::GetInstance()
+{
+  static HalVersionManager instance;
+  return &instance;
+}
+#else
 // Ideally HalVersionManager can be a singleton class
 std::unique_ptr<HalVersionManager> HalVersionManager::instance_ptr =
     std::make_unique<HalVersionManager>();
-
+#endif
 /**
  * A singleton implementation to get the AIDL interface version.
  */
@@ -98,18 +105,18 @@ BluetoothAudioHalVersion GetAidlInterfaceVersion() {
 }
 
 BluetoothAudioHalTransport HalVersionManager::GetHalTransport() {
-  return instance_ptr->hal_version_.getTransport();
+  return GetInstance()->hal_version_.getTransport();
 }
 
 BluetoothAudioHalVersion HalVersionManager::GetHalVersion() {
-  std::lock_guard<std::mutex> guard(instance_ptr->mutex_);
-  return instance_ptr->hal_version_;
+  std::lock_guard<std::mutex> guard( GetInstance()->mutex_);
+  return GetInstance()->hal_version_;
 }
 
 android::sp<IBluetoothAudioProvidersFactory_2_1>
 HalVersionManager::GetProvidersFactory_2_1() {
-  std::lock_guard<std::mutex> guard(instance_ptr->mutex_);
-  if (instance_ptr->hal_version_ != BluetoothAudioHalVersion::VERSION_2_1) {
+  std::lock_guard<std::mutex> guard( GetInstance()->mutex_);
+  if ( GetInstance()->hal_version_ != BluetoothAudioHalVersion::VERSION_2_1) {
     return nullptr;
   }
   android::sp<IBluetoothAudioProvidersFactory_2_1> providers_factory =
@@ -126,10 +133,10 @@ HalVersionManager::GetProvidersFactory_2_1() {
 
 android::sp<IBluetoothAudioProvidersFactory_2_0>
 HalVersionManager::GetProvidersFactory_2_0() {
-  std::unique_lock<std::mutex> guard(instance_ptr->mutex_);
-  if (instance_ptr->hal_version_ == BluetoothAudioHalVersion::VERSION_2_1) {
+  std::unique_lock<std::mutex> guard( GetInstance()->mutex_);
+  if ( GetInstance()->hal_version_ == BluetoothAudioHalVersion::VERSION_2_1) {
     guard.unlock();
-    return instance_ptr->GetProvidersFactory_2_1();
+    return GetInstance()->GetProvidersFactory_2_1();
   }
   android::sp<IBluetoothAudioProvidersFactory_2_0> providers_factory =
       IBluetoothAudioProvidersFactory_2_0::getService();

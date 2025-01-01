@@ -62,7 +62,7 @@ ClassicSignallingManager::ClassicSignallingManager(os::Handler* handler, Link* l
   log::assert_that(link_ != nullptr, "assert failed: link_ != nullptr");
   signalling_channel_ = link_->AllocateFixedChannel(kClassicSignallingCid);
   signalling_channel_->GetQueueUpEnd()->RegisterDequeue(
-      handler_, common::Bind(&ClassicSignallingManager::on_incoming_packet, common::Unretained(this)));
+      handler_, common::Bind(&ClassicSignallingManager::on_incoming_packet, common::Unretained(this)), FROM_HERE );
   enqueue_buffer_ =
       std::make_unique<os::EnqueueBuffer<packet::BasePacketBuilder>>(signalling_channel_->GetQueueUpEnd());
 }

@@ -41,8 +41,8 @@ class BidiQueueEnd : public ::bluetooth::os::IQueueEnqueue<TENQUEUE>, public ::b
     tx_->UnregisterEnqueue();
   }
 
-  void RegisterDequeue(::bluetooth::os::Handler* handler, DequeueCallback callback) override {
-    rx_->RegisterDequeue(handler, callback);
+  void RegisterDequeue(::bluetooth::os::Handler* handler, DequeueCallback callback, base::Location location) override {
+    rx_->RegisterDequeue(handler, callback, location);
   }
 
   void UnregisterDequeue() override {
@@ -74,6 +74,17 @@ class BidiQueue {
   BidiQueueEnd<TUP, TDOWN>* GetDownEnd() {
     return &down_end_;
   }
+
+#ifdef _MSC_VER
+  void SetUpQueueName( std::string a_name )
+  {
+    up_queue_.SetQueueName( a_name );
+  }
+  void SetDownQueueName( std::string a_name )
+  {
+    down_queue_.SetQueueName( a_name );
+  }
+#endif
 
  private:
   ::bluetooth::os::Queue<TUP> up_queue_;

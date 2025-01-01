@@ -47,7 +47,7 @@ LeSignallingManager::LeSignallingManager(os::Handler* handler, Link* link,
   signalling_channel_ =
       link_->AllocateFixedChannel(kLeSignallingCid, SecurityPolicy::NO_SECURITY_WHATSOEVER_PLAINTEXT_TRANSPORT_OK);
   signalling_channel_->GetQueueUpEnd()->RegisterDequeue(
-      handler_, common::Bind(&LeSignallingManager::on_incoming_packet, common::Unretained(this)));
+      handler_, common::Bind(&LeSignallingManager::on_incoming_packet, common::Unretained(this)), FROM_HERE );
   enqueue_buffer_ =
       std::make_unique<os::EnqueueBuffer<packet::BasePacketBuilder>>(signalling_channel_->GetQueueUpEnd());
 }

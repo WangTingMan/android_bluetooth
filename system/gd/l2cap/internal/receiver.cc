@@ -37,7 +37,7 @@ Receiver::Receiver(
       link_queue_up_end_ != nullptr && handler_ != nullptr,
       "assert failed: link_queue_up_end_ != nullptr && handler_ != nullptr");
   link_queue_up_end_->RegisterDequeue(handler_,
-                                      common::Bind(&Receiver::link_queue_dequeue_callback, common::Unretained(this)));
+                                      common::Bind(&Receiver::link_queue_dequeue_callback, common::Unretained(this)), FROM_HERE );
 }
 
 // Invoked from external handler/thread (ModuleRegistry)

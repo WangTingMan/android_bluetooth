@@ -128,7 +128,11 @@ class HalVersionManager {
   HalVersionManager();
 
  private:
+#ifdef _MSC_VER
+  static HalVersionManager* GetInstance();
+#else
   static std::unique_ptr<HalVersionManager> instance_ptr;
+#endif
   std::mutex mutex_;
 
   BluetoothAudioHalVersion hal_version_;

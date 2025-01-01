@@ -40,6 +40,17 @@ DynamicChannelImpl::DynamicChannelImpl(Psm psm, Cid cid, Cid remote_cid, l2cap::
   log::assert_that(remote_cid_ > 0, "assert failed: remote_cid_ > 0");
   log::assert_that(link_ != nullptr, "assert failed: link_ != nullptr");
   log::assert_that(l2cap_handler_ != nullptr, "assert failed: l2cap_handler_ != nullptr");
+#ifdef _MSC_VER
+  std::string base_name;
+  fmt::format_to( std::back_insert_iterator( base_name ), "Local CID:{}", cid );
+  std::string name{ base_name };
+  name.append( "DynamicChannelImpl::DynamicChannelImpl: up queue name" );
+  channel_queue_.SetUpQueueName( name );
+  name.clear();
+  name.append( base_name );
+  name.append( "DynamicChannelImpl::DynamicChannelImpl: down queue name" );
+  channel_queue_.SetDownQueueName( name );
+#endif
 }
 
 hci::AddressWithType DynamicChannelImpl::GetDevice() const {

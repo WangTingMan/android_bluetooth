@@ -23,6 +23,7 @@
 
 #include <functional>
 #include <mutex>
+#include <string>
 #include <queue>
 
 #include "common/bind.h"
@@ -30,6 +31,8 @@
 #include "os/handler.h"
 #include "os/linux_generic/reactive_semaphore.h"
 #include "os/log.h"
+
+#include <base/location.h>
 
 namespace bluetooth {
 namespace os {
@@ -50,7 +53,7 @@ class IQueueDequeue {
  public:
   using DequeueCallback = common::Callback<void()>;
   virtual ~IQueueDequeue() = default;
-  virtual void RegisterDequeue(Handler* handler, DequeueCallback callback) = 0;
+  virtual void RegisterDequeue(Handler* handler, DequeueCallback callback, base::Location callback_location) = 0;
   virtual void UnregisterDequeue() = 0;
   virtual std::unique_ptr<T> TryDequeue() = 0;
 };
@@ -74,18 +77,23 @@ class Queue : public IQueueEnqueue<T>, public IQueueDequeue<T> {
   void UnregisterEnqueue() override;
   // Register |callback| that will be called on |handler| when the queue has at least one piece of data ready
   // for dequeue. This will cause a crash if handler or callback has already been registered before.
-  void RegisterDequeue(Handler* handler, DequeueCallback callback) override;
+  void RegisterDequeue(Handler* handler, DequeueCallback callback, base::Location callback_location ) override;
   // Unregister current DequeueCallback from this queue, this will cause a crash if not registered yet.
   void UnregisterDequeue() override;
 
   // Try to dequeue an item from this queue. Return nullptr when there is nothing in the queue.
   std::unique_ptr<T> TryDequeue() override;
 
+#ifdef _MSC_VER
+  void SetQueueName(std::string a_name) {
+    queue_name_ = a_name;
+  }
+#endif
+
  private:
   void EnqueueCallbackInternal(EnqueueCallback callback);
 #ifdef _MSC_VER
   void DequeueCallbackInternal(DequeueCallback callback);
-  void HandleQueueIfNeed();
 #endif
   // An internal queue that holds at most |capacity| pieces of data
   std::queue<std::unique_ptr<T>> queue_;
@@ -95,6 +103,8 @@ class Queue : public IQueueEnqueue<T>, public IQueueDequeue<T> {
   std::recursive_mutex mutex_;
   std::vector<EnqueueCallback> enqueue_callback_;
   DequeueCallback dequeue_callback_;
+  base::Location dequeue_callback_location_;
+  std::string queue_name_;
 #else
   // A mutex that guards data in this queue
   std::mutex mutex_;
@@ -182,16 +192,14 @@ class EnqueueBuffer {
 #endif
     std::unique_ptr<T> enqueued_t = std::move(buffer_.front());
     buffer_.pop();
-#ifdef _MSC_VER
-    if (buffer_.empty()) {
-#else
+#ifndef _MSC_VER
     if (buffer_.empty() && enqueue_registered_.exchange(false)) {
-#endif
       queue_->UnregisterEnqueue();
       if (!callback_on_empty_.is_null()) {
         std::move(callback_on_empty_).Run();
       }
     }
+#endif
     return enqueued_t;
   }
 
@@ -205,7 +213,10 @@ class EnqueueBuffer {
 };
 
 template <typename T>
-Queue<T>::Queue(size_t capacity) : enqueue_(capacity), dequeue_(0){};
+Queue<T>::Queue(size_t capacity) : enqueue_(capacity), dequeue_(0){
+  int x = 0;
+  x = 90;
+};
 
 template <typename T>
 Queue<T>::~Queue() {
@@ -280,7 +291,7 @@ void Queue<T>::UnregisterEnqueue() {
 }
 
 template <typename T>
-void Queue<T>::RegisterDequeue(Handler* handler, DequeueCallback callback) {
+void Queue<T>::RegisterDequeue(Handler* handler, DequeueCallback callback, base::Location callback_location ) {
 #ifdef _MSC_VER
   if (handler == nullptr) {
     log::fatal("handler is null!");
@@ -289,6 +300,11 @@ void Queue<T>::RegisterDequeue(Handler* handler, DequeueCallback callback) {
   std::lock_guard lock(mutex_);
   dequeue_.handler_ = handler;
   dequeue_callback_ = callback;
+  dequeue_callback_location_ = callback_location;
+  if (!queue_.empty()) {
+    log::debug( "We already have data member in queue_, so just schedule a dequeue_callback_ now" );
+    dequeue_.handler_->thread_->GetReactor()->PostTask( dequeue_callback_ );
+  }
 #else
   std::lock_guard<std::mutex> lock(mutex_);
   log::assert_that(dequeue_.handler_ == nullptr, "assert failed: dequeue_.handler_ == nullptr");
@@ -305,6 +321,7 @@ void Queue<T>::UnregisterDequeue() {
   std::lock_guard lock(mutex_);
   dequeue_.Clear();
   dequeue_callback_.Reset();
+  dequeue_callback_location_ = base::Location();
 #else
   Reactor* reactor = nullptr;
   Reactor::Reactable* to_unregister = nullptr;
@@ -335,7 +352,6 @@ std::unique_ptr<T> Queue<T>::TryDequeue() {
   }
   auto data = std::move(queue_.front());
   queue_.pop();
-  HandleQueueIfNeed();
   return data;
 #else
   std::lock_guard<std::mutex> lock(mutex_);
@@ -355,29 +371,6 @@ std::unique_ptr<T> Queue<T>::TryDequeue() {
 #endif
 }
 
-#ifdef _MSC_VER
-template <typename T>
-void Queue<T>::HandleQueueIfNeed()
-{
-  std::lock_guard lock(mutex_);
-  if (dequeue_callback_)
-  {
-    dequeue_.handler_->thread_->GetReactor()->PostTask(
-      base::Bind(&Queue<T>::DequeueCallbackInternal,
-        base::Unretained(this), dequeue_callback_));
-  }
-
-  if (!enqueue_callback_.empty())
-  {
-    auto callback = std::move(enqueue_callback_.front());
-    enqueue_callback_.erase(enqueue_callback_.begin());
-    enqueue_.handler_->thread_->GetReactor()->PostTask(
-      base::Bind(&Queue<T>::EnqueueCallbackInternal,
-        base::Unretained(this), std::move(callback)));
-  }
-}
-#endif
-
 template <typename T>
 void Queue<T>::EnqueueCallbackInternal(EnqueueCallback callback) {
 #ifdef _MSC_VER
@@ -389,12 +382,12 @@ void Queue<T>::EnqueueCallbackInternal(EnqueueCallback callback) {
   std::lock_guard lock(mutex_);
   queue_.push(std::move(data));
   if (dequeue_.handler_ == nullptr) {
-    log::fatal("did no register dequeue handler!");
+    log::warn("did no register dequeue handler!");
     return;
   }
 
   if (dequeue_callback_.is_null()) {
-    log::fatal("did no register dequeue callback!");
+    log::warn("did no register dequeue callback!");
     return;
   }
   dequeue_.handler_->thread_->GetReactor()->PostTask(dequeue_callback_);

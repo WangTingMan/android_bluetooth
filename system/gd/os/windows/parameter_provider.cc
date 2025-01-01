@@ -21,6 +21,10 @@
 #include <mutex>
 #include <string>
 
+#ifdef _MSC_VER
+#include <osi/include/properties.h>
+#endif
+
 namespace bluetooth {
 namespace os {
 
@@ -41,6 +45,14 @@ std::string ParameterProvider::ConfigFilePath() {
     if (!config_file_path.empty()) {
       return config_file_path;
     }
+#ifdef _MSC_VER
+    char buffer[BUILD_SANITY_PROPERTY_VALUE_MAX] = { 0 };
+    int size = osi_property_get( "persist.bluetooth.bt_config_path", buffer, nullptr );
+    if (size > 0) {
+      config_file_path.assign( buffer );
+      return config_file_path;
+    }
+#endif
   }
   return "D:/bluetooth/bt_config.conf";
 }
@@ -56,6 +68,15 @@ std::string ParameterProvider::SnoopLogFilePath() {
     if (!snoop_log_file_path.empty()) {
       return snoop_log_file_path;
     }
+#ifdef _MSC_VER
+    char buffer[BUILD_SANITY_PROPERTY_VALUE_MAX] = { 0 };
+    int size = osi_property_get( "persist.bluetooth.btsnoop_hci_path", buffer, nullptr );
+    if( size > 0 )
+    {
+      snoop_log_file_path.assign( buffer );
+      return snoop_log_file_path;
+    }
+#endif
   }
   return "D:/bluetooth/btsnoop_hci.log";
 }
@@ -72,6 +93,15 @@ std::string ParameterProvider::SnoozLogFilePath() {
     if (!snooz_log_file_path.empty()) {
       return snooz_log_file_path;
     }
+#ifdef _MSC_VER
+    char buffer[BUILD_SANITY_PROPERTY_VALUE_MAX] = { 0 };
+    int size = osi_property_get( "persist.bluetooth.btsnooz_hci_path", buffer, nullptr );
+    if( size > 0 )
+    {
+      snooz_log_file_path.assign( buffer );
+      return snooz_log_file_path;
+    }
+#endif
   }
   return "D:/bluetooth/btsnooz_hci.log";
 }

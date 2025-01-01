@@ -77,7 +77,7 @@ void Sender::try_register_dequeue() {
   if (is_dequeue_registered_.exchange(true)) {
     return;
   }
-  queue_end_->RegisterDequeue(handler_, common::Bind(&Sender::dequeue_callback, common::Unretained(this)));
+  queue_end_->RegisterDequeue(handler_, common::Bind(&Sender::dequeue_callback, common::Unretained(this)), FROM_HERE );
 }
 
 // From external context

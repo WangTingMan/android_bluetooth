@@ -126,7 +126,7 @@ void RoundRobinScheduler::start_round_robin() {
       acl_queue_handler->second.dequeue_is_registered_ = true;
       uint16_t acl_handle = acl_queue_handler->first;
       acl_queue_handler->second.queue_->GetDownEnd()->RegisterDequeue(
-          handler_, common::Bind(&RoundRobinScheduler::buffer_packet, common::Unretained(this), acl_handle));
+          handler_, common::Bind(&RoundRobinScheduler::buffer_packet, common::Unretained(this), acl_handle), FROM_HERE );
     }
     acl_queue_handler = std::next(acl_queue_handler);
     if (acl_queue_handler == acl_queue_handlers_.end()) {

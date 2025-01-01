@@ -33,6 +33,7 @@
 #include "os/alarm.h"
 #include "os/metrics.h"
 #include "os/queue.h"
+#include "os/system_properties.h"
 #include "osi/include/stack_power_telemetry.h"
 #include "packet/raw_builder.h"
 #include "storage/storage_module.h"
@@ -57,19 +58,32 @@ using os::Alarm;
 using os::Handler;
 using std::unique_ptr;
 
-void enqueue_command_hook(unique_ptr<CommandBuilder>& command)
+void enqueue_command_hook( unique_ptr<CommandBuilder>&command )
 {
   std::shared_ptr<std::vector<uint8_t>> bytes = std::make_shared<std::vector<uint8_t>>();
-  BitInserter bi(*bytes);
-  command->Serialize(bi);
-  auto cmd_view = CommandView::Create(PacketView<kLittleEndian>(bytes));
+  BitInserter bi( *bytes );
+  command->Serialize( bi );
+  auto cmd_view = CommandView::Create( PacketView<kLittleEndian>( bytes ) );
   cmd_view.IsValid();
   OpCode op_code = cmd_view.GetOpCode();
-  if ((uint16_t)op_code == 0xCDCD)
+  if( (uint16_t)op_code == 0xCDCD )
   {
     int x = 0;
     x = 9;
   }
+}
+
+static std::chrono::milliseconds getHciTimeoutMs() {
+  static auto sHciTimeoutMs = std::chrono::milliseconds(bluetooth::os::GetSystemPropertyUint32Base(
+      "bluetooth.hci.timeout_milliseconds", HciLayer::kHciTimeoutMs.count()));
+  return sHciTimeoutMs;
+}
+
+static std::chrono::milliseconds getHciTimeoutRestartMs() {
+  static auto sRestartHciTimeoutMs =
+      std::chrono::milliseconds(bluetooth::os::GetSystemPropertyUint32Base(
+          "bluetooth.hci.restart_timeout_milliseconds", HciLayer::kHciTimeoutRestartMs.count()));
+  return sRestartHciTimeoutMs;
 }
 
 static void fail_if_reset_complete_not_success(CommandCompleteView complete) {
@@ -82,7 +96,10 @@ static void fail_if_reset_complete_not_success(CommandCompleteView complete) {
 }
 
 static void abort_after_time_out(OpCode op_code) {
-  log::fatal("Done waiting for debug information after HCI timeout ({})", OpCodeText(op_code));
+  log::fatal(
+      "Done waiting for debug information after HCI timeout ({}) for {}ms",
+      OpCodeText(op_code),
+      getHciTimeoutRestartMs().count());
 }
 
 class CommandQueueEntry {
@@ -127,6 +144,16 @@ class CommandQueueEntry {
 struct HciLayer::impl {
   impl(hal::HciHal* hal, HciLayer& module) : hal_(hal), module_(module) {
     hci_timeout_alarm_ = new Alarm(module.GetHandler());
+#ifdef _MSC_VER
+    acl_queue_.SetUpQueueName( "HciLayer::impl: acl up queue" );
+    acl_queue_.SetDownQueueName( "HciLayer::impl: acl down queue" );
+
+    sco_queue_.SetUpQueueName( "HciLayer::impl: sco up queue" );
+    sco_queue_.SetDownQueueName( "HciLayer::impl: sco down queue" );
+
+    iso_queue_.SetUpQueueName( "HciLayer::impl: iso up queue" );
+    iso_queue_.SetDownQueueName( "HciLayer::impl: iso down queue" );
+#endif
   }
 
   ~impl() {
@@ -283,7 +310,7 @@ struct HciLayer::impl {
 
   void on_hci_timeout(OpCode op_code) {
     common::StopWatch::DumpStopWatchLog();
-    log::error("Timed out waiting for {}", OpCodeText(op_code));
+    log::error("Timed out waiting for {} for {}ms", OpCodeText(op_code), getHciTimeoutMs().count());
 
     bluetooth::os::LogMetricHciTimeoutEvent(static_cast<uint32_t>(op_code));
 
@@ -302,7 +329,8 @@ struct HciLayer::impl {
     }
     if (hci_abort_alarm_ == nullptr) {
       hci_abort_alarm_ = new Alarm(module_.GetHandler());
-      hci_abort_alarm_->Schedule(BindOnce(&abort_after_time_out, op_code), kHciTimeoutRestartMs);
+      hci_abort_alarm_->Schedule(
+          BindOnce(&abort_after_time_out, op_code), getHciTimeoutRestartMs());
     } else {
       log::warn("Unable to schedul abort timer");
     }
@@ -333,7 +361,8 @@ struct HciLayer::impl {
     waiting_command_ = op_code;
     command_credits_ = 0;  // Only allow one outstanding command
     if (hci_timeout_alarm_ != nullptr) {
-      hci_timeout_alarm_->Schedule(BindOnce(&impl::on_hci_timeout, common::Unretained(this), op_code), kHciTimeoutMs);
+      hci_timeout_alarm_->Schedule(
+          BindOnce(&impl::on_hci_timeout, common::Unretained(this), op_code), getHciTimeoutMs());
     } else {
       log::warn("{} sent without an hci-timeout timer", OpCodeText(op_code));
     }
@@ -402,7 +431,8 @@ struct HciLayer::impl {
     }
     if (hci_abort_alarm_ == nullptr) {
       hci_abort_alarm_ = new Alarm(module_.GetHandler());
-      hci_abort_alarm_->Schedule(BindOnce(&abort_after_root_inflammation, vse_error_reason), kHciTimeoutRestartMs);
+      hci_abort_alarm_->Schedule(
+          BindOnce(&abort_after_root_inflammation, vse_error_reason), getHciTimeoutRestartMs());
     } else {
       log::warn("Abort timer already scheduled");
     }
@@ -832,10 +862,10 @@ void HciLayer::Start() {
   hal_callbacks_ = new hal_callbacks(*this);
 
   Handler* handler = GetHandler();
-  impl_->acl_queue_.GetDownEnd()->RegisterDequeue(handler, BindOn(impl_, &impl::on_outbound_acl_ready));
-  impl_->sco_queue_.GetDownEnd()->RegisterDequeue(handler, BindOn(impl_, &impl::on_outbound_sco_ready));
+  impl_->acl_queue_.GetDownEnd()->RegisterDequeue(handler, BindOn(impl_, &impl::on_outbound_acl_ready), FROM_HERE );
+  impl_->sco_queue_.GetDownEnd()->RegisterDequeue(handler, BindOn(impl_, &impl::on_outbound_sco_ready), FROM_HERE );
   impl_->iso_queue_.GetDownEnd()->RegisterDequeue(
-      handler, BindOn(impl_, &impl::on_outbound_iso_ready));
+      handler, BindOn(impl_, &impl::on_outbound_iso_ready), FROM_HERE );
   StartWithNoHalDependencies(handler);
   hal->registerIncomingPacketCallback(hal_callbacks_);
   EnqueueCommand(ResetBuilder::Create(), handler->BindOnce(&fail_if_reset_complete_not_success));

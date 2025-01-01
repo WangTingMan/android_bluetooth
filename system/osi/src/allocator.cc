@@ -65,6 +65,10 @@ void* osi_malloc(size_t size) {
     BT_HDR* hdr = reinterpret_cast<BT_HDR*>( ptr );
     if (hdr) {
       hdr->data = reinterpret_cast<uint8_t*>(ptr) + sizeof(BT_HDR);
+      hdr->event = 0;
+      hdr->layer_specific = 0;
+      hdr->len = 0;
+      hdr->offset = 0;
     }
   }
   log::assert_that(ptr != nullptr, "assert failed: ptr != nullptr");

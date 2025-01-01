@@ -24,7 +24,9 @@
 
 #include "os/log.h"
 #include "osi/include/future.h"
-
+#ifdef _MSC_VER
+#include <osi/include/properties.h>
+#endif
 using namespace bluetooth;
 
 namespace {
@@ -68,6 +70,14 @@ static future_t* init() {
 #else   // !defined(__ANDROID__)
   const char* path = "bt_stack.conf";
 #endif  // defined(__ANDROID__)
+#ifdef _MSC_VER
+  char buffer[BUILD_SANITY_PROPERTY_VALUE_MAX] = { 0 };
+  int size = osi_property_get( "persist.bluetooth.bt_stack_path", buffer, nullptr );
+  if( size > 0 )
+  {
+    path = buffer;
+  }
+#endif
   log::assert_that(path != NULL, "assert failed: path != NULL");
 
   log::info("attempt to load stack conf from {}", path);

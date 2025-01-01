@@ -80,6 +80,9 @@ bt_status_t btif_transfer_context(tBTIF_CBACK* p_cback, uint16_t event,
                                   tBTIF_COPY_CBACK* p_copy_cback) {
   tBTIF_CONTEXT_SWITCH_CBACK* p_msg = (tBTIF_CONTEXT_SWITCH_CBACK*)osi_malloc(
       sizeof(tBTIF_CONTEXT_SWITCH_CBACK) + param_len);
+#ifdef _MSC_VER
+  p_msg->p_param = reinterpret_cast<char*>( p_msg ) + sizeof( tBTIF_CONTEXT_SWITCH_CBACK );
+#endif
 
   log::verbose("btif_transfer_context event {}, len {}", event, param_len);
 

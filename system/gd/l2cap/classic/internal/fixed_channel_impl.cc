@@ -36,6 +36,10 @@ FixedChannelImpl::FixedChannelImpl(Cid cid, Link* link, os::Handler* l2cap_handl
       cid_ >= kFirstFixedChannel && cid_ <= kLastFixedChannel, "Invalid cid: {}", cid_);
   log::assert_that(link_ != nullptr, "assert failed: link_ != nullptr");
   log::assert_that(l2cap_handler_ != nullptr, "assert failed: l2cap_handler_ != nullptr");
+#ifdef _MSC_VER
+  channel_queue_.SetUpQueueName( "FixedChannelImpl::FixedChannelImpl: channel_queue up queue name" );
+  channel_queue_.SetDownQueueName( "FixedChannelImpl::FixedChannelImpl: channel_queue down queue name" );
+#endif
 }
 
 void FixedChannelImpl::RegisterOnCloseCallback(os::Handler* user_handler,
