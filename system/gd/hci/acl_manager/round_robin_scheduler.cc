@@ -222,6 +222,16 @@ std::unique_ptr<AclBuilder> RoundRobinScheduler::handle_enqueue_next_fragment() 
     if ((classic_buffer_full || le_buffer_full) && enqueue_registered_.exchange(false)) {
       hci_queue_end_->UnregisterEnqueue();
     }
+#ifdef _MSC_VER
+    /**
+     * Since we are not going to use epoll. For current design, we need post a new task
+     * to send next ACL packet.
+     */
+    if (acl_packet_credits_ > 0) {
+      enqueue_registered_.exchange( false );
+      send_next_fragment();
+    }
+#endif
   }
   return std::unique_ptr<AclBuilder>(raw_pointer);
 }

@@ -41,12 +41,12 @@ namespace acl_manager {
 struct acl_connection {
   acl_connection(AddressWithType address_with_type, AclConnection::QueueDownEnd* queue_down_end, os::Handler* handler)
       : address_with_type_(address_with_type),
-        assembler_(new acl_manager::assembler(address_with_type, queue_down_end, handler)) {}
+        assembler_(std::make_shared<acl_manager::assembler>(address_with_type, queue_down_end, handler)) {}
   ~acl_connection() {
-    delete assembler_;
+    assembler_->valid_ = false;
   }
   AddressWithType address_with_type_;
-  struct acl_manager::assembler* assembler_;
+  std::shared_ptr<acl_manager::assembler> assembler_;
   ConnectionManagementCallbacks* connection_management_callbacks_ = nullptr;
 };
 
@@ -193,7 +193,7 @@ struct classic_impl {
       auto callbacks = find_callbacks(address);
       if (callbacks != nullptr) execute(callbacks);
     }
-    bool send_packet_upward(uint16_t handle, std::function<void(struct acl_manager::assembler* assembler)> cb) {
+    bool send_packet_upward(uint16_t handle, std::function<void(std::shared_ptr<acl_manager::assembler>)> cb) {
       std::unique_lock<std::mutex> lock(acl_connections_guard_);
       auto connection = acl_connections_.find(handle);
       if (connection != acl_connections_.end()) cb(connection->second.assembler_);
@@ -244,7 +244,7 @@ struct classic_impl {
   } connections;
 
  public:
-  bool send_packet_upward(uint16_t handle, std::function<void(struct acl_manager::assembler* assembler)> cb) {
+  bool send_packet_upward(uint16_t handle, std::function<void(std::shared_ptr<acl_manager::assembler>)> cb) {
     return connections.send_packet_upward(handle, cb);
   }
 

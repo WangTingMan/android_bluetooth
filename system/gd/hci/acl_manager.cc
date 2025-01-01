@@ -129,10 +129,10 @@ struct AclManager::impl {
       auto handle = itr.GetHandle();
       if (!classic_impl_->send_packet_upward(
               handle,
-              [itr](struct acl_manager::assembler* assembler) {
+              [itr]( std::shared_ptr<acl_manager::assembler> assembler) {
                 assembler->on_incoming_packet(itr);
               }) &&
-          !le_impl_->send_packet_upward(handle, [itr](struct acl_manager::assembler* assembler) {
+          !le_impl_->send_packet_upward(handle, [itr]( std::shared_ptr<acl_manager::assembler> assembler) {
             assembler->on_incoming_packet(itr);
           })) {
         if (!timed_out) {
@@ -170,12 +170,12 @@ struct AclManager::impl {
     uint16_t handle = packet->GetHandle();
     if (handle == kQualcommDebugHandle || handle == kSamsungDebugHandle) return;
     if (classic_impl_->send_packet_upward(handle,
-                                          [&packet](struct acl_manager::assembler* assembler) {
+                                          [&packet]( std::shared_ptr<acl_manager::assembler> assembler) {
                                             assembler->on_incoming_packet(*packet);
                                           })) {
       return;
     }
-    if (le_impl_->send_packet_upward(handle, [&packet](struct acl_manager::assembler* assembler) {
+    if (le_impl_->send_packet_upward(handle, [&packet]( std::shared_ptr<acl_manager::assembler> assembler) {
           assembler->on_incoming_packet(*packet);
         })) {
       return;

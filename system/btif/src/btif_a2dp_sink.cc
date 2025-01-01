@@ -46,6 +46,10 @@ using bluetooth::common::MessageLoopThread;
 using LockGuard = std::lock_guard<std::mutex>;
 using namespace bluetooth;
 
+#ifndef __ANDROID__
+#define __ANDROID__
+#endif
+
 /**
  * The receiving queue buffer size.
  */

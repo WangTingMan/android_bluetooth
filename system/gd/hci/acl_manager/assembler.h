@@ -70,7 +70,7 @@ size_t GetL2capPduSize(packet::PacketView<packet::kLittleEndian> pdu) {
 
 }  // namespace
 
-struct assembler {
+struct assembler : public std::enable_shared_from_this<assembler> {
   assembler(AddressWithType address_with_type, AclConnection::QueueDownEnd* down_end, os::Handler* handler)
       : address_with_type_(address_with_type), down_end_(down_end), handler_(handler) {}
   AddressWithType address_with_type_;
@@ -79,7 +79,7 @@ struct assembler {
   PacketViewForRecombination recombination_stage_{};
   std::shared_ptr<std::atomic_bool> enqueue_registered_ = std::make_shared<std::atomic_bool>(false);
   std::queue<packet::PacketView<packet::kLittleEndian>> incoming_queue_;
-
+  bool valid_ = true;
   ~assembler() {
     if (enqueue_registered_->exchange(false)) {
       down_end_->UnregisterEnqueue();
@@ -88,6 +88,10 @@ struct assembler {
 
   // Invoked from some external Queue Reactable context
   std::unique_ptr<packet::PacketView<packet::kLittleEndian>> on_data_ready() {
+    if (!valid_) {
+      log::warn( "not valid assembler." );
+      return nullptr;
+    }
     auto packet = incoming_queue_.front();
     incoming_queue_.pop();
     if (incoming_queue_.empty() && enqueue_registered_->exchange(false)) {
@@ -97,6 +101,10 @@ struct assembler {
   }
 
   void on_incoming_packet(AclView packet) {
+    if (!valid_) {
+      log::warn( "not valid assembler." );
+      return;
+    }
     PacketView<packet::kLittleEndian> payload = packet.GetPayload();
     auto broadcast_flag = packet.GetBroadcastFlag();
     if (broadcast_flag == BroadcastFlag::ACTIVE_PERIPHERAL_BROADCAST) {
@@ -144,7 +152,7 @@ struct assembler {
     recombination_stage_ = PacketViewForRecombination();
     if (!enqueue_registered_->exchange(true)) {
       down_end_->RegisterEnqueue(
-          handler_, common::Bind(&assembler::on_data_ready, common::Unretained(this)));
+          handler_, common::Bind(&assembler::on_data_ready, shared_from_this()));
     }
   }
 };

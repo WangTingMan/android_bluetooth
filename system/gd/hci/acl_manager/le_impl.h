@@ -110,13 +110,12 @@ struct le_acl_connection {
       os::Handler* handler)
       : remote_address_(remote_address),
         pending_connection_(std::move(pending_connection)),
-        assembler_(new acl_manager::assembler(remote_address, queue_down_end, handler)) {}
+        assembler_(std::make_shared<acl_manager::assembler>(remote_address, queue_down_end, handler)) {}
   ~le_acl_connection() {
-    delete assembler_;
   }
   AddressWithType remote_address_;
   std::unique_ptr<LeAclConnection> pending_connection_;
-  acl_manager::assembler* assembler_;
+  std::shared_ptr<acl_manager::assembler> assembler_;
   LeConnectionManagementCallbacks* le_connection_management_callbacks_ = nullptr;
 };
 
@@ -230,7 +229,7 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
             !crash_on_unknown_handle_, "Received command for unknown handle:0x{:x}", handle);
       if (remove_afterwards) remove(handle);
     }
-    bool send_packet_upward(uint16_t handle, std::function<void(struct acl_manager::assembler* assembler)> cb) {
+    bool send_packet_upward(uint16_t handle, std::function<void(std::shared_ptr<acl_manager::assembler>)> cb) {
       std::unique_lock<std::mutex> lock(le_acl_connections_guard_);
       auto connection = le_acl_connections_.find(handle);
       if (connection != le_acl_connections_.end()) cb(connection->second.assembler_);
@@ -304,7 +303,7 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
         handler_->BindOnce(&LeAddressManager::OnCommandComplete, common::Unretained(le_address_manager_)));
   }
 
-  bool send_packet_upward(uint16_t handle, std::function<void(struct acl_manager::assembler* assembler)> cb) {
+  bool send_packet_upward(uint16_t handle, std::function<void(std::shared_ptr<acl_manager::assembler>)> cb) {
     return connections.send_packet_upward(handle, cb);
   }
 
