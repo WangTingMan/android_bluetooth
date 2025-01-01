@@ -27,6 +27,7 @@
 #include <bluetooth/log.h>
 
 #include <cstdint>
+#include <limits>
 
 #include "internal_include/bt_target.h"
 #include "osi/include/allocator.h"
@@ -45,6 +46,18 @@ using namespace bluetooth;
 
 /* Safety check in case we go crazy */
 #define MAX_NEST_LEVELS 5
+
+uint16_t get_next_transaction_id()
+{
+  static uint16_t s_transaction_id = 0;
+
+  uint16_t r_transaction_id = s_transaction_id++;
+  if (s_transaction_id >= std::numeric_limits<uint16_t>::max()) {
+    s_transaction_id = 0;
+  }
+  log::verbose( "get transaction id = {}", r_transaction_id );
+  return r_transaction_id;
+}
 
 /*******************************************************************************
  *
@@ -130,10 +143,10 @@ static void sdp_snd_service_search_req(tCONN_CB* p_ccb, uint8_t cont_len,
   p_cmd->offset = L2CAP_MIN_OFFSET;
   p = p_start = (uint8_t*)(p_cmd + 1) + L2CAP_MIN_OFFSET;
 
+  p_ccb->transaction_id = get_next_transaction_id();
   /* Build a service search request packet */
   UINT8_TO_BE_STREAM(p, SDP_PDU_SERVICE_SEARCH_REQ);
   UINT16_TO_BE_STREAM(p, p_ccb->transaction_id);
-  p_ccb->transaction_id++;
 
   /* Skip the length, we need to add it at the end */
   p_param_len = p;
@@ -636,10 +649,10 @@ static void process_service_search_attr_rsp(tCONN_CB* p_ccb, uint8_t* p_reply,
     p_msg->offset = L2CAP_MIN_OFFSET;
     p = p_start = (uint8_t*)(p_msg + 1) + L2CAP_MIN_OFFSET;
 
+    p_ccb->transaction_id = get_next_transaction_id();
     /* Build a service search request packet */
     UINT8_TO_BE_STREAM(p, SDP_PDU_SERVICE_SEARCH_ATTR_REQ);
     UINT16_TO_BE_STREAM(p, p_ccb->transaction_id);
-    p_ccb->transaction_id++;
 
     /* Skip the length, we need to add it at the end */
     p_param_len = p;
@@ -828,10 +841,10 @@ static void process_service_attr_rsp(tCONN_CB* p_ccb, uint8_t* p_reply,
     p_msg->offset = L2CAP_MIN_OFFSET;
     p = p_start = (uint8_t*)(p_msg + 1) + L2CAP_MIN_OFFSET;
 
+    p_ccb->transaction_id = get_next_transaction_id();
     /* Get all the attributes from the server */
     UINT8_TO_BE_STREAM(p, SDP_PDU_SERVICE_ATTR_REQ);
     UINT16_TO_BE_STREAM(p, p_ccb->transaction_id);
-    p_ccb->transaction_id++;
 
     /* Skip the length, we need to add it at the end */
     p_param_len = p;
