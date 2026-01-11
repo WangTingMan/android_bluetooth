@@ -38,6 +38,13 @@
 
 #include <base/files/file_path.h>
 
+static inline bool IsSpace( int c ) {
+  if (c >= -1 && c <= 255) {
+    return isspace( c );
+  }
+  return false;
+}
+
 using namespace bluetooth;
 
 void section_t::Set(std::string key, std::string value) {
@@ -471,12 +478,12 @@ error2:
 }
 
 static char* trim(char* str) {
-  while (isspace(*str)) ++str;
+  while (IsSpace(*str)) ++str;
 
   if (!*str) return str;
 
   char* end_str = str + strlen(str) - 1;
-  while (end_str > str && isspace(*end_str)) --end_str;
+  while (end_str > str && IsSpace(*end_str)) --end_str;
 
   end_str[1] = '\0';
   return str;

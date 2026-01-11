@@ -27,6 +27,13 @@
 #include <sstream>
 #include <system_error>
 
+static inline bool IsSpaceSafe( int c ) {
+  if (c >= -1 && c <= 255) {
+    return isspace( c );
+  }
+  return false;
+}
+
 namespace {
 
 struct IsSpace {
@@ -34,7 +41,7 @@ struct IsSpace {
     if (v < -1) {
       return false;
     }
-    return isspace(static_cast<int>(v));
+    return IsSpaceSafe(static_cast<int>(v));
   }
 };
 

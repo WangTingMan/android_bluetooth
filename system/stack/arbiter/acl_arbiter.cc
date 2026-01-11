@@ -27,6 +27,10 @@
 #include "stack/include/l2cdefs.h"
 #include "stack/include/main_thread.h"
 
+#ifdef _MSC_VER
+#define TARGET_FLOSS
+#endif
+
 namespace bluetooth {
 namespace shim {
 namespace arbiter {

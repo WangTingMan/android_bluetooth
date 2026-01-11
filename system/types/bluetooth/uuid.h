@@ -116,7 +116,7 @@ class Uuid final {
 
   constexpr Uuid(const UUID128Bit& val) : uu{val} {};
 
-private:
+public:
   // Network-byte-ordered ID (Big Endian).
   UUID128Bit uu;
 };

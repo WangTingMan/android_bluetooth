@@ -57,6 +57,13 @@
 #define strncasecmp _strnicmp
 #endif
 
+static inline bool IsSpace( int c ) {
+  if (c >= -1 && c <= 255) {
+    return isspace( c );
+  }
+  return false;
+}
+
 using namespace bluetooth;
 
 #ifdef __ANDROID__
@@ -820,12 +827,12 @@ static bool interop_database_remove_(interop_db_entry_t* entry) {
 }
 
 static char* trim(char* str) {
-  while (isspace(*str)) ++str;
+  while (IsSpace(*str)) ++str;
 
   if (!*str) return str;
 
   char* end_str = str + strlen(str) - 1;
-  while (end_str > str && isspace(*end_str)) --end_str;
+  while (end_str > str && IsSpace(*end_str)) --end_str;
 
   end_str[1] = '\0';
   return str;
