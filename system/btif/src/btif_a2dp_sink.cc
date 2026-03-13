@@ -666,14 +666,18 @@ uint8_t btif_a2dp_sink_enqueue_buf(BT_HDR* p_pkt) {
       reinterpret_cast<BT_HDR*>(osi_malloc(sizeof(*p_msg) + p_pkt->len));
   memcpy(p_msg, p_pkt, sizeof(*p_msg));
   p_msg->offset = 0;
+  p_msg->data = reinterpret_cast< uint8_t* >( p_msg ) + sizeof( BT_HDR );
   memcpy(p_msg->data, p_pkt->data + p_pkt->offset, p_pkt->len);
   fixed_queue_enqueue(btif_a2dp_sink_cb.rx_audio_queue, p_msg);
 
   if (fixed_queue_length(btif_a2dp_sink_cb.rx_audio_queue) ==
       MAX_INPUT_A2DP_FRAME_QUEUE_SZ) {
     osi_free(fixed_queue_try_dequeue(btif_a2dp_sink_cb.rx_audio_queue));
+#ifndef _MSC_VER
+    /* Give a chance to trigger the alarm */
     uint8_t ret = fixed_queue_length(btif_a2dp_sink_cb.rx_audio_queue);
     return ret;
+#endif
   }
 
   // Avoid other checks if alarm has already been initialized.
