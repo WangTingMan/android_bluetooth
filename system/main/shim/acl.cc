@@ -968,7 +968,11 @@ struct shim::legacy::Acl::impl {
                        std::unique_ptr<packet::RawBuilder> packet) {
     log::assert_that(IsLeAcl(handle), "handle {} is not a LE connection",
                      handle);
+#ifdef _MSC_VER
+    GetAclManager()->HandleOutgoingAclPacket( handle, std::move( packet ) );
+#else
     handle_to_le_connection_map_[handle]->EnqueuePacket(std::move(packet));
+#endif
   }
 
   void DisconnectClassicConnections(std::promise<void> promise) {
