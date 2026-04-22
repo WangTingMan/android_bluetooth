@@ -20,14 +20,18 @@
 
 #include <com_android_bluetooth_flags.h>
 #include <fcntl.h>
-#ifndef _WIN32
+#ifdef _MSC_VER
+#include <string>
+#include <cutils/threads.h>
+#include <cutils/memory.h>
+#include <cutils/linux/uhid.h>
+#include <cstdint>
+#else
 #include <linux/uhid.h>
 #include <poll.h>
 #include <pthread.h>
-#endif
 #include <stdint.h>
 #include <string.h>
-#ifndef _WIN32
 #include <unistd.h>
 #endif
 
@@ -55,6 +59,14 @@ static tBTA_HH_RPT_CACHE_ENTRY sReportCache[BTA_HH_NV_LOAD_MAX];
 /* Max number of polling interrupt allowed */
 #define BTA_HH_UHID_INTERRUPT_COUNT_MAX 100
 
+#ifndef ssize_t
+#define ssize_t int64_t
+#endif
+
+#ifdef _MSC_VER
+bthh_callbacks_t* btif_get_callback();
+#endif
+
 using namespace bluetooth;
 
 static const bthh_report_type_t map_rtype_uhid_hh[] = {
@@ -76,7 +88,6 @@ void uhid_set_non_blocking(int fd) {
 #endif
 }
 
-#ifndef _MSC_VER
 static bool uhid_feature_req_handler(btif_hh_uhid_t* p_uhid,
                                      struct uhid_feature_req& req) {
   log::debug("Report type = {}, id = {}", req.rtype, req.rnum);
@@ -103,7 +114,6 @@ static bool uhid_feature_req_handler(btif_hh_uhid_t* p_uhid,
   btif_hh_getreport(p_uhid, map_rtype_uhid_hh[req.rtype], req.rnum, 0);
   return true;
 }
-#endif
 
 #if ENABLE_UHID_SET_REPORT
 static bool uhid_set_report_req_handler(btif_hh_uhid_t* p_uhid,
@@ -135,20 +145,28 @@ static bool uhid_set_report_req_handler(btif_hh_uhid_t* p_uhid,
 #endif  // ENABLE_UHID_SET_REPORT
 
 /*Internal function to perform UHID write and error checking*/
-static int uhid_write(int fd, const struct uhid_event* ev) {
-#ifndef _MSC_VER
-  ssize_t ret;
-  OSI_NO_INTR(ret = write(fd, ev, sizeof(*ev)));
-
+#ifdef _MSC_VER
+static int uhid_write( int fd, tAclLinkSpec* link_spec, const struct uhid_event* ev ) {
+#else
+static int uhid_write( int fd, const struct uhid_event* ev ) {
+#endif
+  ssize_t ret = 0;
+#ifdef _MSC_VER
+  btif_get_callback()->data_cb( &(link_spec->addrt.bda),
+    link_spec->addrt.type, (void*)ev, sizeof( *ev ) );
+  ret = (ssize_t)sizeof( *ev );
+#else
+  OSI_NO_INTR( ret = write( fd, ev, sizeof( *ev ) ) );
+#endif
   if (ret < 0) {
     int rtn = -errno;
-    log::error("Cannot write to uhid:{}", strerror(errno));
+    log::error( "Cannot write to uhid:{}", strerror( errno ) );
     return rtn;
-  } else if (ret != (ssize_t)sizeof(*ev)) {
-    log::error("Wrong size written to uhid: {} != {}", ret, sizeof(*ev));
+  }
+  else if (ret != (ssize_t)sizeof( *ev )) {
+    log::error( "Wrong size written to uhid: {} != {}", ret, sizeof( *ev ) );
     return -EFAULT;
   }
-#endif
 
   return 0;
 }
@@ -156,12 +174,14 @@ static int uhid_write(int fd, const struct uhid_event* ev) {
 /* Internal function to parse the events received from UHID driver*/
 static int uhid_read_event(btif_hh_uhid_t* p_uhid) {
   log::assert_that(p_uhid != nullptr, "assert failed: p_uhid != nullptr");
-#ifndef _MSC_VER
   struct uhid_event ev;
   memset(&ev, 0, sizeof(ev));
 
   ssize_t ret;
+#ifdef _MSC_VER
+#else
   OSI_NO_INTR(ret = read(p_uhid->fd, &ev, sizeof(ev)));
+#endif
 
   if (ret == 0) {
     log::error("Read HUP on uhid-cdev {}", strerror(errno));
@@ -247,7 +267,7 @@ static int uhid_read_event(btif_hh_uhid_t* p_uhid) {
     default:
       log::error("Invalid event from uhid-dev: {}\n", ev.type);
   }
-#endif
+
   return 0;
 }
 
@@ -279,23 +299,28 @@ static inline pthread_t create_thread(void* (*start_routine)(void*),
 
 /* Internal function to close the UHID driver*/
 static void uhid_fd_close(btif_hh_uhid_t* p_uhid) {
-#ifndef _MSC_VER
   if (p_uhid->fd >= 0) {
     struct uhid_event ev = {};
     ev.type = UHID_DESTROY;
-    uhid_write(p_uhid->fd, &ev);
+#ifdef _MSC_VER
+    uhid_write( p_uhid->fd, &(p_uhid->link_spec), &ev );
+#else
+    uhid_write( p_uhid->fd, &ev );
+#endif
     log::debug("Closing fd={}, addr:{}", p_uhid->fd, p_uhid->link_spec);
     close(p_uhid->fd);
     p_uhid->fd = -1;
   }
-#endif
 }
 
 /* Internal function to open the UHID driver*/
 static bool uhid_fd_open(btif_hh_device_t* p_dev) {
-#ifndef _MSC_VER
   if (p_dev->uhid.fd < 0) {
-    p_dev->uhid.fd = open(dev_path, O_RDWR | O_CLOEXEC);
+#ifdef _MSC_VER
+    p_dev->uhid.fd = 10;
+#else
+    p_dev->uhid.fd = open( dev_path, O_RDWR | O_CLOEXEC );
+#endif
     if (p_dev->uhid.fd < 0) {
       log::error("Failed to open uhid, err:{}", strerror(errno));
       return false;
@@ -307,7 +332,6 @@ static bool uhid_fd_open(btif_hh_device_t* p_dev) {
     p_dev->hh_poll_thread_id =
         create_thread(btif_hh_poll_event_thread, &p_dev->uhid);
   }
-#endif
   return true;
 }
 
@@ -416,17 +440,22 @@ static void* btif_hh_poll_event_thread(void* arg) {
   }
 
   /* Todo: Disconnect if loop exited due to a failure */
-  log::info("Polling thread stopped for device {}", p_uhid->link_spec);
+#ifdef _MSC_VER
+  log::info( "Just exit thread and waitig for event for {}", p_uhid->link_spec );
+#else
+  log::info( "Polling thread stopped for device {}", p_uhid->link_spec );
   p_uhid->hh_keep_polling = 0;
-  uhid_fd_close(p_uhid);
+  uhid_fd_close( p_uhid );
+#endif
   return 0;
 }
 
-int bta_hh_co_write(int fd, uint8_t* rpt, uint16_t len) {
-  log::verbose("UHID write {}", len);
 #ifdef _MSC_VER
-  return len;
+int bta_hh_co_write( int fd, tAclLinkSpec* link_spec, uint8_t* rpt, uint16_t len ) {
 #else
+int bta_hh_co_write( int fd, uint8_t * rpt, uint16_t len ) {
+#endif
+  log::verbose("UHID write {}", len);
   struct uhid_event ev;
   memset(&ev, 0, sizeof(ev));
   ev.type = UHID_INPUT;
@@ -437,6 +466,9 @@ int bta_hh_co_write(int fd, uint8_t* rpt, uint16_t len) {
   }
   memcpy(ev.u.input.data, rpt, len);
 
+#ifdef _MSC_VER 
+  return uhid_write( fd, link_spec, &ev );
+#else
   return uhid_write(fd, &ev);
 #endif
 }
@@ -581,12 +613,17 @@ void bta_hh_co_data(uint8_t dev_handle, uint8_t* p_rpt, uint16_t len) {
   }
 
   // Send the HID data to the kernel.
+#ifdef _MSC_VER
+  bta_hh_co_write( p_dev->uhid.fd, &(p_dev->link_spec), p_rpt, len );
+#else
   if ((p_dev->uhid.fd >= 0) && p_dev->uhid.ready_for_data) {
-    bta_hh_co_write(p_dev->uhid.fd, p_rpt, len);
-  } else {
-    log::warn("Error: fd = {}, ready {}, len = {}", p_dev->uhid.fd,
-              p_dev->uhid.ready_for_data, len);
+    bta_hh_co_write( p_dev->uhid.fd, p_rpt, len );
   }
+  else {
+    log::warn( "Error: fd = {}, ready {}, len = {}", p_dev->uhid.fd,
+      p_dev->uhid.ready_for_data, len );
+  }
+#endif
 }
 
 /*******************************************************************************
@@ -606,7 +643,6 @@ void bta_hh_co_send_hid_info(btif_hh_device_t* p_dev, const char* dev_name,
                              uint16_t vendor_id, uint16_t product_id,
                              uint16_t version, uint8_t ctry_code, int dscp_len,
                              uint8_t* p_dscp) {
-#ifndef _MSC_VER
   int result;
   struct uhid_event ev;
 
@@ -644,7 +680,11 @@ void bta_hh_co_send_hid_info(btif_hh_device_t* p_dev, const char* dev_name,
   ev.u.create.product = product_id;
   ev.u.create.version = version;
   ev.u.create.country = ctry_code;
-  result = uhid_write(p_dev->uhid.fd, &ev);
+#ifdef _MSC_VER
+  result = uhid_write( p_dev->uhid.fd, &(p_dev->link_spec), &ev );
+#else
+  result = uhid_write( p_dev->uhid.fd, &ev );
+#endif
 
   log::warn("wrote descriptor to fd = {}, dscp_len = {}, result = {}",
             p_dev->uhid.fd, dscp_len, result);
@@ -656,7 +696,6 @@ void bta_hh_co_send_hid_info(btif_hh_device_t* p_dev, const char* dev_name,
     close(p_dev->uhid.fd);
     p_dev->uhid.fd = -1;
   }
-#endif
 }
 
 /*******************************************************************************
@@ -755,7 +794,7 @@ void bta_hh_co_get_rpt_rsp(uint8_t dev_handle, uint8_t status,
     log::warn("No pending UHID_GET_REPORT");
     return;
   }
-#ifndef _MSC_VER
+
   if (len == 0 || len > UHID_DATA_MAX) {
     log::warn("Invalid report size = {}", len);
     return;
@@ -771,9 +810,12 @@ void bta_hh_co_get_rpt_rsp(uint8_t dev_handle, uint8_t status,
           },
       },
   };
-  memcpy(ev.u.feature_answer.data, p_rpt, len);
+  memcpy( ev.u.feature_answer.data, p_rpt, len );
 
-  uhid_write(p_dev->uhid.fd, &ev);
+#ifdef _MSC_VER
+  uhid_write( p_dev->uhid.fd, &(p_dev->link_spec), &ev );
+#else
+  uhid_write( p_dev->uhid.fd, &ev );
 #endif
   osi_free(context);
 }

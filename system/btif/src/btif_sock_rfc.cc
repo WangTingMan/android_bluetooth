@@ -91,6 +91,13 @@ typedef struct {
   int64_t tx_bytes;
   // Cumulative number of bytes received on this socket
   int64_t rx_bytes;
+
+#ifdef _MSC_VER
+  uint64_t socket_id;            // Socket ID in connected state
+  std::recursive_mutex m_mutex;
+  std::vector<std::shared_ptr<std::vector<uint8_t>>> buffers_to_send;
+#endif
+
 } rfc_slot_t;
 
 static rfc_slot_t rfc_slots[MAX_RFC_CHANNEL];
@@ -108,6 +115,12 @@ static bool send_app_scn(rfc_slot_t* rs);
 static void handle_discovery_comp(tBTA_JV_STATUS status, int scn, uint32_t id);
 
 static bool is_init_done(void) { return pth != -1; }
+
+#ifdef _MSC_VER
+static uint32_t btsock_rfc_get_size_for_buffer_to_send( uint32_t id );
+static uint32_t btsock_rfc_copy_buffer_to_send( uint32_t id, uint8_t* buffer, uint32_t size );
+extern bt_sock_callback_t s_sock_callback;
+#endif
 
 bt_status_t btsock_rfc_init(int poll_thread_handle, uid_set_t* set) {
   pth = poll_thread_handle;
@@ -351,6 +364,9 @@ bt_status_t btsock_rfc_listen(const char* service_name,
   //        close(rs->app_fd);
   slot->app_fd = INVALID_FD;  // Drop our reference to the fd.
   slot->app_uid = app_uid;
+#ifdef _MSC_VER
+  slot->fd = app_uid;
+#endif
   btsock_thread_add_fd(pth, slot->fd, BTSOCK_RFCOMM, SOCK_THREAD_FD_EXCEPTION,
                        slot->id);
 
@@ -449,8 +465,8 @@ static void cleanup_rfc_slot(rfc_slot_t* slot) {
   if (slot->fd != INVALID_FD) {
 #ifndef _MSC_VER
     shutdown(slot->fd, SHUT_RDWR);
+    close( slot->fd );
 #endif
-    close(slot->fd);
     log::info(
         "disconnected from RFCOMM socket connections for device: {}, scn: {}, "
         "app_uid: {}, id: {}",
@@ -499,12 +515,26 @@ static bool send_app_scn(rfc_slot_t* slot) {
   }
   log::debug("Sending scn for slot {}. bd_addr:{}", slot->id, slot->addr);
   slot->scn_notified = true;
+#ifdef _MSC_VER
+  if (s_sock_callback)
+  {
+    s_sock_callback( RFCOMM_SCN_NOTIFICATION, slot->app_uid, &slot->scn, sizeof( slot->scn ) );
+    return true;
+  }
+  return false;
+#else
   return sock_send_all(slot->fd, (const uint8_t*)&slot->scn,
                        sizeof(slot->scn)) == sizeof(slot->scn);
+#endif
 }
 
+#ifdef _MSC_VER
+static bool send_app_connect_signal( int fd, const RawAddress* addr, int channel,
+  int status, int send_fd, int app_id, int handle_id, uint64_t socket_id ) {
+#else
 static bool send_app_connect_signal(int fd, const RawAddress* addr, int channel,
                                     int status, int send_fd) {
+#endif
   sock_connect_signal_t cs;
   cs.size = sizeof(cs);
   cs.bd_addr = *addr;
@@ -514,11 +544,21 @@ static bool send_app_connect_signal(int fd, const RawAddress* addr, int channel,
   cs.max_tx_packet_size = 0;  // not used for RFCOMM
   cs.conn_uuid_lsb = 0;       // not used for RFCOMM
   cs.conn_uuid_msb = 0;       // not used for RFCOMM
+#ifdef _MSC_VER
+  if (s_sock_callback)
+  {
+    cs.connect_id = handle_id;
+    s_sock_callback( SOCK_CONNECTION_SIGNAL, app_id, &cs, sizeof( cs ) );
+    return true;
+  }
+  return false;
+#else
   if (send_fd == INVALID_FD)
     return sock_send_all(fd, (const uint8_t*)&cs, sizeof(cs)) == sizeof(cs);
 
   return sock_send_fd(fd, (const uint8_t*)&cs, sizeof(cs), send_fd) ==
          sizeof(cs);
+#endif
 }
 
 static void on_cl_rfc_init(tBTA_JV_RFCOMM_CL_INIT* p_init, uint32_t id) {
@@ -591,8 +631,13 @@ static uint32_t on_srv_rfc_connect(tBTA_JV_RFCOMM_SRV_OPEN* p_open,
                        srv_rs->id);
   btsock_thread_add_fd(pth, accept_rs->fd, BTSOCK_RFCOMM, SOCK_THREAD_FD_RD,
                        accept_rs->id);
+#ifdef _MSC_VER
+  send_app_connect_signal( srv_rs->fd, &accept_rs->addr, srv_rs->scn, 0,
+    accept_rs->app_fd, srv_rs->app_uid, id, accept_rs->socket_id );
+#else
   send_app_connect_signal(srv_rs->fd, &accept_rs->addr, srv_rs->scn, 0,
                           accept_rs->app_fd);
+#endif
   accept_rs->app_fd =
       INVALID_FD;  // Ownership of the application fd has been transferred.
   return srv_rs->id;
@@ -626,7 +671,11 @@ static void on_cli_rfc_connect(tBTA_JV_RFCOMM_OPEN* p_open, uint32_t id) {
       slot->f.server ? SOCKET_ROLE_LISTEN : SOCKET_ROLE_CONNECTION,
       slot->app_uid, slot->scn, 0, 0, slot->service_uuid.ToString().c_str());
 
+#ifdef _MSC_VER
+  if (send_app_connect_signal( slot->fd, &slot->addr, slot->scn, 0, -1, slot->app_uid, id, slot->socket_id )) {
+#else
   if (send_app_connect_signal(slot->fd, &slot->addr, slot->scn, 0, -1)) {
+#endif
     slot->f.connected = true;
   } else {
     log::error("unable to send connect completion signal to caller.");
@@ -635,6 +684,12 @@ static void on_cli_rfc_connect(tBTA_JV_RFCOMM_OPEN* p_open, uint32_t id) {
 
 static void on_rfc_close(tBTA_JV_RFCOMM_CLOSE* /* p_close */, uint32_t id) {
   log::verbose("id:{}", id);
+#ifdef _MSC_VER
+  if (s_sock_callback)
+  {
+    s_sock_callback( SOCK_DISCONNECT_SIGNAL, id, nullptr, 0 );
+  }
+#endif
   std::unique_lock<std::recursive_mutex> lock(slot_lock);
 
   // rfc_handle already closed when receiving rfcomm close event from stack.
@@ -899,11 +954,25 @@ typedef enum {
   SENT_ALL,
 } sent_status_t;
 
+#ifdef _MSC_VER
+static sent_status_t send_data_to_app( int fd, BT_HDR* p_buf, int connect_id ) {
+#else
 static sent_status_t send_data_to_app(int fd, BT_HDR* p_buf) {
+#endif
   if (p_buf->len == 0) return SENT_ALL;
 
   size_t sent = 0;
-#ifndef _MSC_VER
+#ifdef _MSC_VER
+  sock_received_data_t data_to_app;
+  data_to_app.sock_type = BTSOCK_RFCOMM;
+  data_to_app.data = p_buf->data + p_buf->offset;
+  data_to_app.size = p_buf->len;
+  if (s_sock_callback)
+  {
+    s_sock_callback( SOCK_RECEIVED_DATA_FROM_REMOTE, connect_id, &data_to_app, sizeof( data_to_app ) );
+    sent = p_buf->len;
+  }
+#else
   OSI_NO_INTR(
       sent = send(fd, p_buf->data + p_buf->offset, p_buf->len, MSG_DONTWAIT));
 #endif
@@ -926,7 +995,11 @@ static sent_status_t send_data_to_app(int fd, BT_HDR* p_buf) {
 static bool flush_incoming_que_on_wr_signal(rfc_slot_t* slot) {
   while (!list_is_empty(slot->incoming_queue)) {
     BT_HDR* p_buf = (BT_HDR*)list_front(slot->incoming_queue);
-    switch (send_data_to_app(slot->fd, p_buf)) {
+#ifdef _MSC_VER
+    switch (send_data_to_app( slot->fd, p_buf, slot->id )) {
+#else
+    switch (send_data_to_app( slot->fd, p_buf )) {
+#endif
       case SENT_NONE:
       case SENT_PARTIAL:
         // monitor the fd to get callback when app is ready to receive data
@@ -968,7 +1041,9 @@ void btsock_rfc_signaled(int /* fd */, int flags, uint32_t id) {
   if (flags & SOCK_THREAD_FD_RD && !slot->f.server) {
     if (slot->f.connected) {
       // Make sure there's data pending in case the peer closed the socket.
-#ifndef _MSC_VER
+#ifdef _MSC_VER
+      BTA_JvRfcommWrite( slot->rfc_handle, slot->id );
+#else
       int size = 0;
       if (!(flags & SOCK_THREAD_FD_EXCEPTION) ||
           (ioctl(slot->fd, FIONREAD, &size) == 0 && size)) {
@@ -1019,7 +1094,11 @@ int bta_co_rfc_data_incoming(uint32_t id, BT_HDR* p_buf) {
   bytes_rx = p_buf->len;
 
   if (list_is_empty(slot->incoming_queue)) {
-    switch (send_data_to_app(slot->fd, p_buf)) {
+#ifdef _MSC_VER
+    switch (send_data_to_app( slot->fd, p_buf, slot->id )) {
+#else
+    switch (send_data_to_app( slot->fd, p_buf )) {
+#endif
       case SENT_NONE:
       case SENT_PARTIAL:
         list_append(slot->incoming_queue, p_buf);
@@ -1049,6 +1128,10 @@ int bta_co_rfc_data_incoming(uint32_t id, BT_HDR* p_buf) {
 
 int bta_co_rfc_data_outgoing_size(uint32_t id, int* size) {
   *size = 0;
+#ifdef _MSC_VER
+  *size = btsock_rfc_get_size_for_buffer_to_send( id );
+  return true;
+#endif
   std::unique_lock<std::recursive_mutex> lock(slot_lock);
   rfc_slot_t* slot = find_rfc_slot_by_id(id);
   if (!slot) {
@@ -1075,7 +1158,9 @@ int bta_co_rfc_data_outgoing(uint32_t id, uint8_t* buf, uint16_t size) {
   }
 
   size_t received = 0;
-#ifndef _MSC_VER
+#ifdef _MSC_VER
+  received = btsock_rfc_copy_buffer_to_send( id, buf, size );
+#else
   OSI_NO_INTR(received = recv(slot->fd, buf, size, 0));
 #endif
   if (received != size) {
@@ -1103,3 +1188,103 @@ bt_status_t btsock_rfc_disconnect(const RawAddress* bd_addr) {
 
   return BT_STATUS_SUCCESS;
 }
+
+#ifdef _MSC_VER
+bt_status_t btsock_rfc_write_buffer_to_send( uint32_t id, std::shared_ptr<std::vector<uint8_t>> a_data )
+{
+  std::unique_lock<std::recursive_mutex> lock( slot_lock );
+  rfc_slot_t* slot = find_rfc_slot_by_id( id );
+  if (!slot)
+  {
+    log::error( "Cannot find such slot with id {}", id );
+    return BT_STATUS_SOCKET_ERROR;
+  }
+
+  std::lock_guard locker( slot->m_mutex );
+  slot->buffers_to_send.emplace_back( std::move( a_data ) );
+  return BT_STATUS_SUCCESS;
+}
+uint32_t btsock_rfc_get_size_for_buffer_to_send( uint32_t id )
+{
+  uint32_t size = 0;
+  std::unique_lock<std::recursive_mutex> lock( slot_lock );
+  rfc_slot_t* slot = find_rfc_slot_by_id( id );
+  if (!slot)
+  {
+    log::error( "Cannot find such slot with id {}", id );
+    return size;
+  }
+
+  std::lock_guard locker( slot->m_mutex );
+  for (auto& ele : slot->buffers_to_send)
+  {
+    size += ele->size();
+  }
+  return size;
+}
+uint32_t btsock_rfc_copy_buffer_to_send( uint32_t id, uint8_t* buffer, uint32_t a_size )
+{
+  uint32_t copied_size = 0;
+  std::unique_lock<std::recursive_mutex> lock( slot_lock );
+  rfc_slot_t* slot = find_rfc_slot_by_id( id );
+  if (!slot)
+  {
+    log::error( "Cannot find such slot with id {}", id );
+    return copied_size;
+  }
+
+  uint32_t size_need = a_size;
+  uint8_t* buffer_to_copy = buffer;
+  std::lock_guard locker( slot->m_mutex );
+  for (auto& ele : slot->buffers_to_send)
+  {
+    if (size_need <= 0)
+    {
+      break;
+    }
+
+    std::shared_ptr<std::vector<uint8_t>> buffer_ele = ele;
+    if (buffer_ele->size() <= size_need)
+    {
+      memcpy( buffer_to_copy, buffer_ele->data(), buffer_ele->size() );
+      copied_size += buffer_ele->size();
+      size_need -= buffer_ele->size();
+      buffer_to_copy += buffer_ele->size();
+      buffer_ele->clear();
+      continue;
+    }
+
+    if (buffer_ele->size() > size_need)
+    {
+      memcpy( buffer_to_copy, buffer_ele->data(), size_need );
+      copied_size += size_need;
+      size_need = 0;
+      buffer_to_copy += size_need;
+
+      auto buffer_it = buffer_ele->begin();
+      std::advance( buffer_it, size_need );
+      buffer_ele->erase( buffer_ele->begin(), buffer_it );
+      break;
+    }
+  }
+
+  std::vector<std::shared_ptr<std::vector<uint8_t>>> buffers_to_send_exchange;
+  for (auto& ele : slot->buffers_to_send)
+  {
+    if (!ele->empty())
+    {
+      buffers_to_send_exchange.push_back( ele );
+    }
+  }
+
+  slot->buffers_to_send.swap( buffers_to_send_exchange );
+
+  return copied_size;
+}
+void btsock_rfc_disconnect_by_connect_id( uint32_t connect_id )
+{
+  std::unique_lock<std::recursive_mutex> lock( slot_lock );
+  rfc_slot_t* slot = find_rfc_slot_by_id( connect_id );
+  cleanup_rfc_slot( slot );
+}
+#endif

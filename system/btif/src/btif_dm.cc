@@ -105,6 +105,7 @@
 #include "stack/sdp/sdpint.h"
 #include "storage/config_keys.h"
 #include "types/raw_address.h"
+#include "osi/include/properties.h"
 
 #include <utils/Timers.h>
 
@@ -2947,11 +2948,16 @@ DEV_CLASS btif_dm_get_local_class_of_device() {
       "Using class of device '0x{:x}, 0x{:x}, 0x{:x}' from CoD system property",
       device_class[0], device_class[1], device_class[2]);
 
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(_MSC_VER)
   // Per BAP 1.0.1, 8.2.3. Device discovery, the stack needs to set Class of
   // Device (CoD) field Major Service Class bit 14 to 0b1 when Unicast Server,
   // Unicast Client, Broadcast Source, Broadcast Sink, Scan Delegator, or
   // Broadcast Assistant is supported on this device
+#ifdef _MSC_VER
+  if( osi_property_get_bool( "bluetooth.profile.bap.unicast.client.enabled", false )||
+    osi_property_get_bool( "bluetooth.profile.bap.broadcast.assist.enabled", false ) ||
+    osi_property_get_bool( "bluetooth.profile.bap.broadcast.source.enabled", false ) ) {
+#else
   if (android::sysprop::BluetoothProperties::isProfileBapUnicastClientEnabled()
           .value_or(false) ||
       android::sysprop::BluetoothProperties::
@@ -2960,6 +2966,7 @@ DEV_CLASS btif_dm_get_local_class_of_device() {
       android::sysprop::BluetoothProperties::
           isProfileBapBroadcastSourceEnabled()
               .value_or(false)) {
+#endif
     device_class[1] |= 0x01 << 6;
   } else {
     device_class[1] &= ~(0x01 << 6);

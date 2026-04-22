@@ -29,6 +29,9 @@
 #include "os/log.h"
 #include "packet/packet_view.h"
 
+#include "main/shim/stack.h"
+#include "main/shim/acl.h"
+
 namespace bluetooth {
 namespace hci {
 namespace acl_manager {
@@ -105,6 +108,9 @@ struct assembler : public std::enable_shared_from_this<assembler> {
       log::warn( "not valid assembler." );
       return;
     }
+#ifdef _MSC_VER
+    uint16_t acl_handle = packet.GetHandle();
+#endif
     PacketView<packet::kLittleEndian> payload = packet.GetPayload();
     auto broadcast_flag = packet.GetBroadcastFlag();
     if (broadcast_flag == BroadcastFlag::ACTIVE_PERIPHERAL_BROADCAST) {
@@ -150,10 +156,20 @@ struct assembler : public std::enable_shared_from_this<assembler> {
 
     incoming_queue_.push(recombination_stage_);
     recombination_stage_ = PacketViewForRecombination();
+#ifdef _MSC_VER
+    auto assembled_packet_ = incoming_queue_.front();
+    incoming_queue_.pop();
+    auto packet_view = std::make_unique<PacketView<packet::kLittleEndian>>( assembled_packet_ );
+    handler_->Post( common::BindOnce( &shim::legacy::Acl::HandleAssembledL2capPacket,
+      base::Unretained( ::bluetooth::shim::Stack::GetInstance()->GetAcl() ),
+      acl_handle,
+      std::move( packet_view ) ) );
+#else
     if (!enqueue_registered_->exchange(true)) {
       down_end_->RegisterEnqueue(
           handler_, common::Bind(&assembler::on_data_ready, shared_from_this()));
     }
+#endif
   }
 };
 

@@ -169,6 +169,13 @@ typedef void (*bthh_handshake_callback)(RawAddress* bd_addr,
                                         tBT_TRANSPORT transport,
                                         bthh_status_t hh_status);
 
+#ifdef _MSC_VER
+typedef void (*bthh_data_callback)(RawAddress* bd_addr,
+  tBLE_ADDR_TYPE addr_type,
+  void* data,
+  int32_t data_size);
+#endif
+
 /** BT-HH callback structure. */
 typedef struct {
   /** set to sizeof(BtHfCallbacks) */
@@ -181,6 +188,9 @@ typedef struct {
   bthh_virtual_unplug_callback virtual_unplug_cb;
   bthh_handshake_callback handshake_cb;
 
+#ifdef _MSC_VER
+  bthh_data_callback data_cb;
+#endif
 } bthh_callbacks_t;
 
 /** Represents the standard BT-HH interface. */

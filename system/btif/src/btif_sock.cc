@@ -41,6 +41,7 @@
 #include "osi/include/thread.h"
 #include "types/bluetooth/uuid.h"
 #include "types/raw_address.h"
+#include "main_thread.h"
 
 using bluetooth::Uuid;
 using namespace bluetooth;
@@ -63,6 +64,13 @@ static bt_status_t btsock_disconnect_all(const RawAddress* bd_addr);
 static bt_status_t btsock_get_l2cap_local_cid(Uuid& conn_uuid, uint16_t* cid);
 static bt_status_t btsock_get_l2cap_remote_cid(Uuid& conn_uuid, uint16_t* cid);
 
+#ifdef _MSC_VER
+static void set_bt_sock_callback( bt_sock_callback_t callback );
+static void send_data_to_remote( int a_id, std::shared_ptr<std::vector<uint8_t>> a_data );
+static void disconnect_rfc_by_connect_id( int connect_id );
+bt_sock_callback_t s_sock_callback = nullptr;
+#endif
+
 static std::atomic_int thread_handle{-1};
 static thread_t* thread;
 
@@ -76,6 +84,11 @@ const btsock_interface_t* btif_sock_get_interface(void) {
       btsock_disconnect_all,
       btsock_get_l2cap_local_cid,
       btsock_get_l2cap_remote_cid,
+#ifdef _MSC_VER
+      set_bt_sock_callback,
+      send_data_to_remote,
+      disconnect_rfc_by_connect_id
+#endif
   };
 
   return &interface;
@@ -300,3 +313,20 @@ static bt_status_t btsock_get_l2cap_local_cid(Uuid& conn_uuid, uint16_t* cid) {
 static bt_status_t btsock_get_l2cap_remote_cid(Uuid& conn_uuid, uint16_t* cid) {
   return btsock_l2cap_get_l2cap_remote_cid(conn_uuid, cid);
 }
+
+#ifdef _MSC_VER
+void set_bt_sock_callback( bt_sock_callback_t callback )
+{
+  s_sock_callback = callback;
+}
+void send_data_to_remote( int a_id, std::shared_ptr<std::vector<uint8_t>> a_data )
+{
+  btsock_rfc_write_buffer_to_send( a_id, a_data );
+  btsock_signaled( 2, BTSOCK_RFCOMM, SOCK_THREAD_FD_RD, a_id );
+}
+void disconnect_rfc_by_connect_id( int connect_id )
+{
+  do_in_main_thread( FROM_HERE,
+    base::Bind( &btsock_rfc_disconnect_by_connect_id, connect_id ) );
+}
+#endif

@@ -17,6 +17,7 @@
 #include <base/functional/bind.h>
 #include <bluetooth/log.h>
 
+#include <mutex>
 #include <unordered_map>
 
 #include "bta/include/bta_gatt_api.h"

@@ -37,6 +37,7 @@
 #include "osi/include/stack_power_telemetry.h"
 #include "packet/raw_builder.h"
 #include "storage/storage_module.h"
+#include "hci/acl_manager.h"
 
 namespace bluetooth {
 namespace hci {
@@ -588,8 +589,16 @@ struct HciLayer::hal_callbacks : public hal::HciHalCallbacks {
   void aclDataReceived(hal::HciPacket data_bytes) override {
     auto packet = packet::PacketView<packet::kLittleEndian>(
         std::make_shared<std::vector<uint8_t>>(std::move(data_bytes)));
+#ifdef _MSC_VER
+    auto acl = std::make_shared<AclView>( AclView::Create( packet ) );
+    const ModuleRegistry* module_registry = module_.GetModuleRegistry();
+    Module* acl_module = module_registry->GetExternal( &::bluetooth::hci::AclManager::Factory );
+    ::bluetooth::hci::AclManager* acl_module_detail = dynamic_cast<::bluetooth::hci::AclManager*>( acl_module );
+    acl_module_detail->HandleIncomingAclPacket( acl );
+#else
     auto acl = std::make_unique<AclView>(AclView::Create(packet));
     module_.impl_->incoming_acl_buffer_.Enqueue(std::move(acl), module_.GetHandler());
+#endif
   }
 
   void scoDataReceived(hal::HciPacket data_bytes) override {

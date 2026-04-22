@@ -3479,7 +3479,10 @@ bool btif_av_both_enable(void) {
 }
 
 bool is_a2dp_source_property_enabled(void) {
-#ifdef __ANDROID__
+#ifdef _MSC_VER
+  return osi_property_get_bool( "bluetooth.profile.a2dp.source.enabled", false );
+#endif
+#if defined(__ANDROID__)
   return android::sysprop::BluetoothProperties::isProfileA2dpSourceEnabled()
       .value_or(false);
 #else
@@ -3488,7 +3491,10 @@ bool is_a2dp_source_property_enabled(void) {
 }
 
 bool is_a2dp_sink_property_enabled(void) {
-#ifdef __ANDROID__
+#ifdef _MSC_VER
+  return osi_property_get_bool( "bluetooth.profile.a2dp.sink.enabled", false );
+#endif
+#if defined(__ANDROID__)
   return android::sysprop::BluetoothProperties::isProfileA2dpSinkEnabled()
       .value_or(false);
 #else

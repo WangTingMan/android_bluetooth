@@ -90,7 +90,7 @@ BluetoothAudioHalVersion GetAidlInterfaceVersion() {
       return BluetoothAudioHalVersion::VERSION_UNAVAILABLE;
     }
 
-    auto aidl_retval = provider_factory->getInterfaceVersion(&version);
+    auto aidl_retval = provider_factory->m_getInterfaceVersion(&version);
     if (!aidl_retval.isOk()) {
       log::error("BluetoothAudioHal::getInterfaceVersion failure: {}",
                  aidl_retval.getDescription());

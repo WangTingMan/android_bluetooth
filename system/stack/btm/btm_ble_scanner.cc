@@ -20,6 +20,8 @@
 #include "ble_scanner_hci_interface.h"
 #include "stack/btm/btm_ble_int.h"
 
+#include <mutex>
+
 using namespace bluetooth;
 
 std::mutex lock1;

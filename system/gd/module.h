@@ -91,6 +91,13 @@ class Module {
  public:
   virtual ~Module() = default;
 
+#ifdef _MSC_VER
+  const ModuleRegistry* GetModuleRegistryExternal() const
+  {
+    return GetModuleRegistry();
+  }
+#endif
+
  protected:
   // Populate the provided list with modules that must start before yours
   virtual void ListDependencies(ModuleList* list) const = 0;
@@ -158,6 +165,13 @@ class ModuleRegistry {
 
   // Stop all running modules in reverse order of start
   void StopAll();
+
+#ifdef _MSC_VER
+  Module* GetExternal( const ModuleFactory* module ) const
+  {
+    return Get( module );
+  }
+#endif
 
  protected:
   Module* Get(const ModuleFactory* module) const;

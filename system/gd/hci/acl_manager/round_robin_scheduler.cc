@@ -91,6 +91,14 @@ uint16_t RoundRobinScheduler::GetLeCredits() {
   return le_acl_packet_credits_;
 }
 
+#ifdef _MSC_VER
+void RoundRobinScheduler::ScheduleOutgoingAclPacket( uint16_t handle,
+  std::unique_ptr<packet::RawBuilder> packet )
+{
+  buffer_packet( handle, std::move( packet ) );
+}
+#endif
+
 void RoundRobinScheduler::start_round_robin() {
   if (acl_packet_credits_ == 0 && le_acl_packet_credits_ == 0) {
     return;
@@ -124,9 +132,11 @@ void RoundRobinScheduler::start_round_robin() {
         le_acl_packet_credits_ == 0 && acl_queue_handler->second.connection_type_ == ConnectionType::LE;
     if (!acl_queue_handler->second.dequeue_is_registered_ && !classic_buffer_full && !le_buffer_full) {
       acl_queue_handler->second.dequeue_is_registered_ = true;
+#ifndef _MSC_VER
       uint16_t acl_handle = acl_queue_handler->first;
       acl_queue_handler->second.queue_->GetDownEnd()->RegisterDequeue(
-          handler_, common::Bind(&RoundRobinScheduler::buffer_packet, common::Unretained(this), acl_handle), FROM_HERE );
+        handler_, common::Bind( &RoundRobinScheduler::buffer_packet, common::Unretained( this ), acl_handle ) );
+#endif
     }
     acl_queue_handler = std::next(acl_queue_handler);
     if (acl_queue_handler == acl_queue_handlers_.end()) {
@@ -137,7 +147,16 @@ void RoundRobinScheduler::start_round_robin() {
   starting_point_ = std::next(starting_point_);
 }
 
-void RoundRobinScheduler::buffer_packet(uint16_t acl_handle) {
+#ifdef _MSC_VER
+void RoundRobinScheduler::buffer_packet
+  (
+  uint16_t acl_handle,
+  std::unique_ptr<packet::RawBuilder> a_packet
+  )
+{
+#else
+void RoundRobinScheduler::buffer_packet( uint16_t acl_handle ) {
+#endif
   BroadcastFlag broadcast_flag = BroadcastFlag::POINT_TO_POINT;
   auto acl_queue_handler = acl_queue_handlers_.find(acl_handle);
   if( acl_queue_handler == acl_queue_handlers_.end()) {
@@ -147,7 +166,15 @@ void RoundRobinScheduler::buffer_packet(uint16_t acl_handle) {
 
   // Wrap packet and enqueue it
   uint16_t handle = acl_queue_handler->first;
+#ifdef _MSC_VER
+  std::unique_ptr<packet::BasePacketBuilder> packet = std::move( a_packet );
+  if (!packet)
+  {
+    packet = acl_queue_handler->second.queue_->GetDownEnd()->TryDequeue();
+  }
+#else
   auto packet = acl_queue_handler->second.queue_->GetDownEnd()->TryDequeue();
+#endif
   log::assert_that(packet != nullptr, "assert failed: packet != nullptr");
 
   ConnectionType connection_type = acl_queue_handler->second.connection_type_;

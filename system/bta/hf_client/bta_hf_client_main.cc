@@ -266,6 +266,33 @@ tBTA_HF_CLIENT_CB_ARR bta_hf_client_cb_arr;
 static const tBTA_SYS_REG bta_hf_client_reg = {bta_hf_client_hdl_event,
                                                BTA_HfClientDisable};
 
+#ifdef _MSC_VER
+void clear( tBTA_HF_CLIENT_CB* cb )
+{
+  cb->handle = 0;
+  cb->peer_addr = RawAddress::kEmpty;
+  cb->p_disc_db = nullptr;
+  cb->conn_handle = 0;
+  cb->peer_features = 0;
+  cb->chld_features = 0;
+  cb->peer_version = 0;
+  cb->peer_scn = 0;
+  cb->role = 0;
+  cb->sco_idx = 0;
+  cb->sco_state = 0;
+  cb->sco_close_rfc = false;
+  cb->negotiated_codec = 0;
+  cb->svc_conn = 0;
+  cb->send_at_reply = false;
+  memset( &cb->at_cb, 0x00, sizeof( tBTA_HF_CLIENT_AT_CB ) );
+  cb->state = 0;
+  cb->is_allocated = false;
+  cb->collision_timer = nullptr;
+  cb->peer_hf_indicators.clear();
+  cb->enabled_hf_indicators.clear();
+}
+#endif
+
 /*******************************************************************************
  *
  * Function         bta_hf_client_cb_arr_init
@@ -313,7 +340,11 @@ void bta_hf_client_cb_init(tBTA_HF_CLIENT_CB* client_cb, uint16_t handle) {
 
   // Memset the rest of the block
   // memset(client_cb, 0, sizeof(tBTA_HF_CLIENT_CB));
+#ifdef _MSC_VER
+  clear( client_cb );
+#else
   *client_cb = {};
+#endif
 
   // Re allocate any variables required
   client_cb->collision_timer = alarm_new("bta_hf_client.scb_collision_timer");

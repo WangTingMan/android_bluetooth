@@ -406,9 +406,11 @@ class ShimAclConnection {
         send_data_upwards_(send_data_upwards),
         queue_up_end_(queue_up_end),
         creation_time_(creation_time) {
+#ifndef _MSC_VER
     queue_up_end_->RegisterDequeue(
         handler_, common::Bind(&ShimAclConnection::data_ready_callback,
                                common::Unretained(this)), FROM_HERE );
+#endif
   }
 
   virtual ~ShimAclConnection() {
@@ -437,8 +439,13 @@ class ShimAclConnection {
     return packet;
   }
 
+#ifdef _MSC_VER
+  void data_ready_callback( std::unique_ptr<packet::PacketView<packet::kLittleEndian>> a_assembled_packet ) {
+    auto packet = std::move( a_assembled_packet );
+#else
   void data_ready_callback() {
     auto packet = queue_up_end_->TryDequeue();
+#endif
     uint16_t length = packet->size();
     std::vector<uint8_t> preamble;
     preamble.push_back(LowByte(handle_));
@@ -937,7 +944,11 @@ struct shim::legacy::Acl::impl {
                             std::unique_ptr<packet::RawBuilder> packet) {
     log::assert_that(IsClassicAcl(handle),
                      "handle {} is not a classic connection", handle);
+#ifdef _MSC_VER
+    GetAclManager()->HandleOutgoingAclPacket(handle, std::move(packet));
+#else
     handle_to_classic_connection_map_[handle]->EnqueuePacket(std::move(packet));
+#endif
   }
 
   void Flush(HciHandle handle) {
@@ -1485,6 +1496,29 @@ bool shim::legacy::Acl::CheckForOrphanedAclConnections() const {
   }
   return orphaned_acl_connections;
 }
+
+#ifdef _MSC_VER
+void shim::legacy::Acl::HandleAssembledL2capPacket
+  (
+  uint16_t handle,
+  std::unique_ptr<packet::PacketView<packet::kLittleEndian>> a_assembled_packet
+  )
+{
+  auto classic_it = pimpl_->handle_to_classic_connection_map_.find( handle );
+  if (classic_it != pimpl_->handle_to_classic_connection_map_.end())
+  {
+    classic_it->second->data_ready_callback( std::move( a_assembled_packet ) );
+    return;
+  }
+
+  auto le_it = pimpl_->handle_to_le_connection_map_.find( handle );
+  if (le_it != pimpl_->handle_to_le_connection_map_.end())
+  {
+    le_it->second->data_ready_callback( std::move( a_assembled_packet ) );
+    return;
+  }
+}
+#endif
 
 void shim::legacy::Acl::on_incoming_acl_credits(uint16_t handle,
                                                 uint16_t credits) {

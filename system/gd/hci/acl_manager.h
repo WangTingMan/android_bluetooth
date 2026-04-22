@@ -31,6 +31,7 @@
 #include "hci/le_scanning_manager.h"
 #include "module.h"
 #include "os/handler.h"
+#include "packet/raw_builder.h"
 
 namespace bluetooth {
 namespace shim {
@@ -147,6 +148,12 @@ class AclManager : public Module {
   virtual void SetSystemSuspendState(bool suspended);
 
   static const ModuleFactory Factory;
+
+#ifdef _MSC_VER
+  void HandleIncomingAclPacket( std::shared_ptr<AclView> packet );
+  void HandleOutgoingAclPacket( uint16_t handle,
+    std::unique_ptr<packet::RawBuilder> packet );
+#endif
 
  protected:
   void ListDependencies(ModuleList* list) const override;

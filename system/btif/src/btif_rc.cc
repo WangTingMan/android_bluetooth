@@ -3350,6 +3350,13 @@ static void handle_notification_response(tBTA_AV_META_MSG* pmeta_msg,
 
     log::verbose("Notification completed: 0x{:2X}", p_rsp->event_id);
 
+#ifdef _MSC_VER
+    if (nullptr == p_dev->rc_supported_event_list)
+    {
+      p_dev->rc_supported_event_list = list_new( osi_free );
+    }
+#endif
+
     node = list_begin(p_dev->rc_supported_event_list);
 
     while (node != NULL) {

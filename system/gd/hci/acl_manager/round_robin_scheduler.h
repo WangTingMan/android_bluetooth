@@ -25,6 +25,7 @@
 #include "hci/controller.h"
 #include "hci/hci_packets.h"
 #include "os/handler.h"
+#include "packet/raw_builder.h"
 
 namespace bluetooth {
 namespace hci {
@@ -53,9 +54,19 @@ class RoundRobinScheduler {
   uint16_t GetCredits();
   uint16_t GetLeCredits();
 
+#ifdef _MSC_VER
+  void ScheduleOutgoingAclPacket( uint16_t handle,
+    std::unique_ptr<packet::RawBuilder> packet );
+#endif
+
  private:
   void start_round_robin();
-  void buffer_packet(uint16_t acl_handle);
+#ifdef _MSC_VER
+  void buffer_packet( uint16_t acl_handle,
+    std::unique_ptr<packet::RawBuilder> packet = nullptr );
+#else
+  void buffer_packet( uint16_t acl_handle );
+#endif
   void unregister_all_connections();
   void send_next_fragment();
   std::unique_ptr<AclBuilder> handle_enqueue_next_fragment();

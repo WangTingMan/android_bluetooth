@@ -61,8 +61,32 @@ typedef struct {
   // The connection uuid. (L2CAP only)
   uint64_t conn_uuid_lsb;
   uint64_t conn_uuid_msb;
+
+#ifdef _MSC_VER
+  int connect_id;
+#endif
+
 } sock_connect_signal_t;
 #pragma pack()
+
+#ifdef _MSC_VER
+typedef struct
+{
+  btsock_type_t sock_type;
+  uint8_t* data;
+  uint32_t size;
+} sock_received_data_t;
+
+typedef enum
+{
+  RFCOMM_SCN_NOTIFICATION,
+  SOCK_CONNECTION_SIGNAL,
+  SOCK_DISCONNECT_SIGNAL,
+  SOCK_RECEIVED_DATA_FROM_REMOTE
+} bt_sock_callback_type_t;
+
+typedef void (*bt_sock_callback_t)(bt_sock_callback_type_t, int, void*, int);
+#endif
 
 typedef struct {
   /** set to size of this struct*/
@@ -127,6 +151,15 @@ typedef struct {
    */
   bt_status_t (*get_l2cap_remote_cid)(bluetooth::Uuid& conn_uuid,
                                       uint16_t* cid);
+
+#ifdef _MSC_VER
+
+  void (*set_bt_sock_callback)(bt_sock_callback_t callback);
+
+  void (*send_data_to_remote)(int connect_id, std::shared_ptr<std::vector<uint8_t>> a_data);
+
+  void (*disconnect_rfc_by_connect_id)(int connect_id);
+#endif
 
 } btsock_interface_t;
 

@@ -34,7 +34,23 @@ using ::bluetooth::common::StopWatchLegacy;
 BluetoothAudioPortImpl::BluetoothAudioPortImpl(
     IBluetoothTransportInstance* transport_instance,
     const std::shared_ptr<IBluetoothAudioProvider>& provider)
-    : transport_instance_(transport_instance), provider_(provider) {}
+    : transport_instance_(transport_instance), provider_(provider) {
+#ifdef _MSC_VER
+  using namespace std::placeholders;
+  m_getPresentationPosition = std::bind( &BluetoothAudioPortImpl::getPresentationPosition, this, _1 );
+  m_startStream = std::bind( &BluetoothAudioPortImpl::startStream, this, _1 );
+  m_stopStream = std::bind( &BluetoothAudioPortImpl::stopStream, this );
+  m_suspendStream = std::bind( &BluetoothAudioPortImpl::suspendStream, this );
+  m_updateSourceMetadata = std::bind( &BluetoothAudioPortImpl::updateSourceMetadata, this, _1 );
+  m_updateSinkMetadata = std::bind( &BluetoothAudioPortImpl::updateSinkMetadata, this, _1 );
+  m_setLatencyMode = std::bind( &BluetoothAudioPortImpl::setLatencyMode, this, _1 );
+  m_getInterfaceVersion = std::bind( &BluetoothAudioPortImpl::getInterfaceVersion, this, _1 );
+  m_getInterfaceHash = std::bind( &BluetoothAudioPortImpl::getInterfaceHash, this, _1 );
+  auto session_type = transport_instance_->GetSessionType();
+  std::string name = BnBluetoothAudioPort::makeServiceName( toString( session_type ) );
+  setObjectName( name );
+#endif
+}
 
 BluetoothAudioPortImpl::~BluetoothAudioPortImpl() {}
 

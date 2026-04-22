@@ -94,9 +94,11 @@ struct AclManager::impl {
     }
 
     hci_queue_end_ = hci_layer_->GetAclQueueEnd();
+#ifndef _MSC_VER
     hci_queue_end_->RegisterDequeue(handler_,
                                     common::Bind(&impl::dequeue_and_route_acl_packet_to_connection,
                                                  common::Unretained(this)), FROM_HERE );
+#endif
   }
 
   void Stop() {
@@ -160,8 +162,14 @@ struct AclManager::impl {
     if (!waiting_packets_.empty()) {
       retry_unknown_acl(/* timed_out = */ false);
     }
-
+#ifdef _MSC_VER
+    std::unique_lock locker( m_mutex );
+    auto packet = packets_.front();
+    packets_.pop();
+    locker.unlock();
+#else
     auto packet = hci_queue_end_->TryDequeue();
+#endif
     log::assert_that(packet != nullptr, "assert failed: packet != nullptr");
     if (!packet->IsValid()) {
       log::info("Dropping invalid packet of size {}", packet->size());
@@ -212,6 +220,11 @@ struct AclManager::impl {
   std::unique_ptr<os::Alarm> unknown_acl_alarm_;
   std::vector<AclView> waiting_packets_;
   static constexpr std::chrono::seconds kWaitBeforeDroppingUnknownAcl{1};
+
+#ifdef _MSC_VER
+  std::recursive_mutex m_mutex;
+  std::queue<std::shared_ptr<AclView>> packets_;
+#endif
 };
 
 AclManager::AclManager() : pimpl_(std::make_unique<impl>(*this)) {}
@@ -418,6 +431,26 @@ void AclManager::OnLeSuspendInitiatedDisconnect(uint16_t handle, ErrorCode reaso
 void AclManager::SetSystemSuspendState(bool suspended) {
   CallOn(pimpl_->le_impl_, &le_impl::set_system_suspend_state, suspended);
 }
+
+#ifdef _MSC_VER
+void AclManager::HandleIncomingAclPacket( std::shared_ptr<AclView> packet )
+{
+  std::unique_lock locker( pimpl_->m_mutex );
+  pimpl_->packets_.push( std::move( packet ) );
+  locker.unlock();
+
+  GetHandler()->Post( common::BindOnce( &impl::dequeue_and_route_acl_packet_to_connection,
+    common::Unretained( pimpl_.get() ) ) );
+}
+void AclManager::HandleOutgoingAclPacket( uint16_t handle,
+  std::unique_ptr<packet::RawBuilder> packet )
+{
+  GetHandler()->Post( common::BindOnce( &RoundRobinScheduler::ScheduleOutgoingAclPacket,
+    common::Unretained( pimpl_->round_robin_scheduler_ ),
+    handle,
+    std::move( packet ) ) );
+}
+#endif
 
 LeAddressManager* AclManager::GetLeAddressManager() {
   return pimpl_->le_impl_->le_address_manager_;

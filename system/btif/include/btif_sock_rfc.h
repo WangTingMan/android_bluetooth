@@ -45,4 +45,9 @@ bt_status_t btsock_rfc_connect(const RawAddress* bd_addr,
 void btsock_rfc_signaled(int fd, int flags, uint32_t user_id);
 bt_status_t btsock_rfc_disconnect(const RawAddress* bd_addr);
 
+#ifdef _MSC_VER
+bt_status_t btsock_rfc_write_buffer_to_send( uint32_t id, std::shared_ptr<std::vector<uint8_t>> a_data );
+void btsock_rfc_disconnect_by_connect_id( uint32_t connect_id );
+#endif
+
 #endif

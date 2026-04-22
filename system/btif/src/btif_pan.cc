@@ -63,6 +63,7 @@
 #include "stack/include/main_thread.h"
 #include "stack/include/pan_api.h"
 #include "types/raw_address.h"
+#include "osi/include/properties.h"
 
 #ifdef __ANDROID__
 #include <android/sysprop/BluetoothProperties.sysprop.h>
@@ -132,6 +133,12 @@ void btif_pan_init() {
     btpan_cb.enabled = 1;
 
     int role = BTPAN_ROLE_NONE;
+#ifdef _MSC_VER
+    if (osi_property_get_bool( "bluetooth.profile.pan.nap.enabled", false)) {
+      role |= BTPAN_ROLE_PANNAP;
+    }
+#endif
+
 #ifdef __ANDROID__
     if (android::sysprop::BluetoothProperties::isProfilePanNapEnabled()
             .value_or(false)) {

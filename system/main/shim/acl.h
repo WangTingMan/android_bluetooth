@@ -115,6 +115,10 @@ class Acl : public hci::acl_manager::ConnectionCallbacks,
   void DisconnectAllForSuspend();
   void SetSystemSuspendState(bool suspended);
 
+#ifdef _MSC_VER
+  void HandleAssembledL2capPacket( uint16_t handle, std::unique_ptr<packet::PacketView<packet::kLittleEndian>> a_assembled_packet );
+#endif
+
  protected:
   void on_incoming_acl_credits(uint16_t handle, uint16_t credits);
   void write_data_sync(uint16_t hci_handle,

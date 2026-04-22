@@ -104,7 +104,11 @@ void BTA_HhDisable(void) {
  *
  ******************************************************************************/
 void BTA_HhClose(uint8_t dev_handle) {
+#ifdef _MSC_VER
+  BT_HDR* p_buf = (BT_HDR*)osi_malloc( sizeof( BT_HDR ) );
+#else
   BT_HDR* p_buf = (BT_HDR*)osi_calloc(sizeof(BT_HDR));
+#endif
 
   p_buf->event = BTA_HH_API_CLOSE_EVT;
   p_buf->layer_specific = (uint16_t)dev_handle;
@@ -293,7 +297,11 @@ void BTA_HhSendData(uint8_t dev_handle, const tAclLinkSpec& /* link_spec */,
  *
  ******************************************************************************/
 void BTA_HhGetDscpInfo(uint8_t dev_handle) {
-  BT_HDR* p_buf = (BT_HDR*)osi_calloc(sizeof(BT_HDR));
+#ifdef _MSC_VER
+  BT_HDR* p_buf = (BT_HDR*)osi_malloc( sizeof( BT_HDR ) );
+#else
+  BT_HDR* p_buf = (BT_HDR*)osi_calloc( sizeof( BT_HDR ) );
+#endif
 
   p_buf->event = BTA_HH_API_GET_DSCP_EVT;
   p_buf->layer_specific = (uint16_t)dev_handle;
