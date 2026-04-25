@@ -456,6 +456,15 @@ void bnepu_build_bnep_hdr(tBNEP_CONN* p_bcb, BT_HDR* p_buf, uint16_t protocol,
     source_addr = bluetooth::ToRawAddress(
         bluetooth::shim::GetController()->GetMacAddress());
 
+#ifdef _MSC_VER
+  static uint32_t ip_packet_count = 0;
+  if( ip_packet_count < 20 )
+  {
+    type = BNEP_FRAME_GENERAL_ETHERNET;
+  }
+  ip_packet_count++;
+#endif
+
   switch (type) {
     case BNEP_FRAME_GENERAL_ETHERNET:
       p = bnepu_init_hdr(p_buf, 15,

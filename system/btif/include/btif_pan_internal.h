@@ -63,6 +63,9 @@ typedef struct {
   tBTA_PAN_ROLE local_role;
   tBTA_PAN_ROLE remote_role;
   RawAddress eth_addr;
+#ifdef _WIN32
+  int virtual_net_id;
+#endif
 } btpan_conn_t;
 
 typedef struct {

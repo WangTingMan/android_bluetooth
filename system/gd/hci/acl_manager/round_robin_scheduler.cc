@@ -111,7 +111,14 @@ void RoundRobinScheduler::start_round_robin() {
       log::warn("Buffer of connection_type {} is full", connection_type);
       return;
     }
+#ifdef _MSC_VER
+    if( acl_packet_credits_ > 0 || le_acl_packet_credits_ > 0 )
+    {
+      send_next_fragment();
+    }
+#else
     send_next_fragment();
+#endif
     return;
   }
   if (acl_queue_handlers_.empty()) {
@@ -204,7 +211,14 @@ void RoundRobinScheduler::buffer_packet( uint16_t acl_handle ) {
   unregister_all_connections();
 
   acl_queue_handler->second.number_of_sent_packets_ += fragments_to_send_.size();
+#ifdef _MSC_VER
+  if( acl_packet_credits_ > 0 || le_acl_packet_credits_ > 0 ) {
+    enqueue_registered_.exchange( false );
+    send_next_fragment();
+  }
+#else
   send_next_fragment();
+#endif
 }
 
 void RoundRobinScheduler::unregister_all_connections() {
@@ -226,12 +240,37 @@ void RoundRobinScheduler::send_next_fragment() {
 
 // Invoked from some external Queue Reactable context 1
 std::unique_ptr<AclBuilder> RoundRobinScheduler::handle_enqueue_next_fragment() {
+
+#ifdef _MSC_VER
+  if( fragments_to_send_.empty() )
+  {
+    log::info( "no packet neet to send" );
+    return nullptr;
+  }
+#endif
+
   ConnectionType connection_type = fragments_to_send_.front().first;
   if (connection_type == ConnectionType::CLASSIC) {
+#ifdef _MSC_VER
+    if( acl_packet_credits_ == 0 )
+    {
+      log::info( "acl_packet_credits_==0, wait for next fragment schedule task" );
+      return nullptr;
+    }
+#else
     log::assert_that(acl_packet_credits_ > 0, "assert failed: acl_packet_credits_ > 0");
+#endif
     acl_packet_credits_ -= 1;
   } else {
+#ifdef _MSC_VER
+    if( le_acl_packet_credits_ == 0 )
+    {
+      log::info( "le_acl_packet_credits_==0, wait for next fragment schedule task" );
+      return nullptr;
+    }
+#else
     log::assert_that(le_acl_packet_credits_ > 0, "assert failed: le_acl_packet_credits_ > 0");
+#endif
     le_acl_packet_credits_ -= 1;
   }
 
@@ -254,7 +293,7 @@ std::unique_ptr<AclBuilder> RoundRobinScheduler::handle_enqueue_next_fragment() 
      * Since we are not going to use epoll. For current design, we need post a new task
      * to send next ACL packet.
      */
-    if (acl_packet_credits_ > 0) {
+    if (acl_packet_credits_ > 0 || le_acl_packet_credits_ > 0 ) {
       enqueue_registered_.exchange( false );
       send_next_fragment();
     }
@@ -299,6 +338,13 @@ void RoundRobinScheduler::incoming_acl_credits(uint16_t handle, uint16_t credits
   if (credit_was_zero) {
     start_round_robin();
   }
+
+#ifdef _MSC_VER
+  if( credits > 0 )
+  {
+    send_next_fragment();
+  }
+#endif
 }
 
 }  // namespace acl_manager

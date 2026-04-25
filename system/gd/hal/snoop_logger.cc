@@ -40,6 +40,10 @@
 #include "os/parameter_provider.h"
 #include "os/system_properties.h"
 
+#ifdef _MSC_VER
+#include <android/log.h>
+#endif
+
 #ifdef USE_FAKE_TIMERS
 #include "os/fake_timer/fake_timerfd.h"
 using bluetooth::os::fake_timer::fake_timerfd_get_clock;
@@ -542,6 +546,11 @@ void SnoopLogger::OpenNextSnoopLogFile() {
   std::lock_guard<std::recursive_mutex> lock(file_mutex_);
   CloseCurrentSnoopLogFile();
 
+#ifdef _MSC_VER
+  std::string snoop_file_name;
+  snoop_file_name = __rotate_file( snoop_log_path_, 10 );
+#endif
+
   auto last_file_path = get_last_log_path(snoop_log_path_);
 
   if (os::FileExists(snoop_log_path_)) {
@@ -554,11 +563,14 @@ void SnoopLogger::OpenNextSnoopLogFile() {
   } else {
     log::info("Previous log file \"{}\" does not exist, skip renaming", snoop_log_path_);
   }
-#ifndef _MSC_VER
+#ifdef _MSC_VER
+  btsnoop_ostream_.open( snoop_file_name, std::ios::binary | std::ios::out );
+  log::info( "open a new hci snoop log file: {}", snoop_file_name );
+#else
   mode_t prevmask = umask(0);
-#endif
   // do not use std::ios::app as we want override the existing file
-  btsnoop_ostream_.open(snoop_log_path_, std::ios::binary | std::ios::out);
+  btsnoop_ostream_.open( snoop_log_path_, std::ios::binary | std::ios::out );
+#endif
 #ifdef USE_FAKE_TIMERS
   file_creation_time = fake_timerfd_get_clock();
 #endif

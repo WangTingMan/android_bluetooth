@@ -69,6 +69,14 @@
 #include <android/sysprop/BluetoothProperties.sysprop.h>
 #endif
 
+#include <cutils/virtual_net.h>
+
+#ifdef _MSC_VER
+#define ETH_P_IP 0x0800
+#define ETH_P_ARP 0x0806
+#define ETH_P_IPV6 0x86DD
+#endif
+
 #define FORWARD_IGNORE 1
 #define FORWARD_SUCCESS 0
 #define FORWARD_FAILURE (-1)
@@ -101,6 +109,20 @@ static void btpan_tap_fd_signaled(int fd, int type, int flags,
 static void btpan_cleanup_conn(btpan_conn_t* conn);
 static void bta_pan_callback(tBTA_PAN_EVT event, tBTA_PAN* p_data);
 static void btu_exec_tap_fd_read(const int fd);
+
+#ifdef _MSC_VER
+void route_ip_packet_to_remote_with_type
+  (
+  int         a_virtual_net_id,
+  uint16_t    a_packet_type,
+  const char* a_ip_packet,
+  uint16_t    a_size
+  );
+extern "C" void ip_packet_callback_impl( int id, uint16_t a_protocol, const char* p, uint16_t a_size )
+{
+  do_in_main_thread( FROM_HERE, base::Bind( route_ip_packet_to_remote_with_type, id, a_protocol, p, a_size ) );
+}
+#endif
 
 static btpan_interface_t pan_if = {
     sizeof(pan_if), btpan_jni_init,   nullptr,          btpan_get_local_role,
@@ -178,6 +200,9 @@ static bt_status_t btpan_jni_init(const btpan_callbacks_t* callbacks) {
                btpan_cb.enabled);
   callback = *callbacks;
   jni_initialized = true;
+#ifdef _MSC_VER
+  set_ip_packet_callback( &ip_packet_callback_impl );
+#endif
   if (stack_initialized && !btpan_cb.enabled) btif_pan_init();
   return BT_STATUS_SUCCESS;
 }
@@ -277,10 +302,8 @@ void destroy_tap_read_thread(void) {
   }
 }
 
+#ifdef OS_POSIX
 static int tap_if_up(const char* devname, const RawAddress& addr) {
-#ifdef _MSC_VER
-  log::verbose( "network fake up on windows", devname );
-#else
   struct ifreq ifr;
   int sk, err;
 
@@ -339,14 +362,10 @@ static int tap_if_up(const char* devname, const RawAddress& addr) {
     return -1;
   }
   close(sk);
-#endif
-  log::verbose("network interface: {} is up", devname);
   return 0;
 }
 
 static int tap_if_down(const char* devname) {
-#ifdef _MSC_VER
-#else
   struct ifreq ifr;
   int sk;
 
@@ -361,9 +380,9 @@ static int tap_if_down(const char* devname) {
   ioctl(sk, SIOCSIFFLAGS, (caddr_t)&ifr);
 
   close(sk);
-#endif
   return 0;
 }
+#endif
 
 void btpan_set_flow_control(bool enable) {
   if (btpan_cb.tap_fd == -1) return;
@@ -378,6 +397,8 @@ void btpan_set_flow_control(bool enable) {
 
 int btpan_tap_open() {
 #ifdef _MSC_VER
+  int id = open_virtual_net( TAP_IF_NAME );
+  return id;
 #else
   struct ifreq ifr;
   int fd, err;
@@ -419,8 +440,41 @@ int btpan_tap_open() {
 int btpan_tap_send(int tap_fd, const RawAddress& src, const RawAddress& dst,
                    uint16_t proto, const char* buf, uint16_t len,
                    bool /* ext */, bool /* forward */) {
-#ifdef _MSC_VER
-#else
+#ifdef _WIN32
+  int status = 0;
+  uint16_t ethernet_packet_type = proto;
+  if( ethernet_packet_type == ETH_P_IP )
+  {
+    uint8_t virtual_net_mac_addr_retrieved[RawAddress::kLength] = { 0 };
+    uint8_t original_mac[RawAddress::kLength] = { 0 };
+    status = retrieve_virtual_net_mac( tap_fd, virtual_net_mac_addr_retrieved, RawAddress::kLength );
+    if( status )
+    {
+      status = replace_mac_for_ip_packet( ( uint8_t* )buf, len, virtual_net_mac_addr_retrieved, RawAddress::kLength,
+        original_mac, RawAddress::kLength );
+    }
+  }
+
+  if( ethernet_packet_type == ETH_P_IP ||
+    ethernet_packet_type == ETH_P_IPV6 )
+  {
+    status = send_ip_packet_virtual_net( tap_fd, buf, len );
+  }
+  else if( ethernet_packet_type == ETH_P_ARP )
+  {
+    bool found = false;
+    auto local_address = bluetooth::ToRawAddress( bluetooth::shim::GetController()->GetMacAddress() );
+    status = send_arp_packet_virtual_net( tap_fd, ( const char* )local_address.address,
+      bluetooth::hci::Address::kLength, buf, len );
+  }
+  else
+  {
+    log::error( "cannot send such packet. type: {}", ethernet_packet_type );
+  }
+  return status;
+#endif
+
+#ifdef OS_POSIX
   if (tap_fd != INVALID_FD) {
     tETH_HDR eth_hdr;
     eth_hdr.h_dest = dst;
@@ -445,7 +499,11 @@ int btpan_tap_send(int tap_fd, const RawAddress& src, const RawAddress& dst,
 }
 
 int btpan_tap_close(int fd) {
+#ifdef _WIN32
+  close_virtual_net( fd );
+#else
   if (tap_if_down(TAP_IF_NAME) == 0) close(fd);
+#endif
   if (pan_pth >= 0) btsock_thread_wakeup(pan_pth);
   return 0;
 }
@@ -484,6 +542,14 @@ static void btpan_open_conn(btpan_conn_t* conn, tBTA_PAN* p_data) {
     conn->handle = p_data->open.handle;
     if (btpan_cb.tap_fd < 0) {
       btpan_cb.tap_fd = btpan_tap_open();
+#ifdef _WIN32
+      conn->virtual_net_id = btpan_cb.tap_fd;
+      if( btpan_cb.tap_fd >= 0 ) {
+        btpan_cb.flow = 1;
+        conn->state = PAN_STATE_OPEN;
+      }
+      start_virtual_net( conn->virtual_net_id );
+#endif
       if (btpan_cb.tap_fd >= 0) create_tap_read_thread(btpan_cb.tap_fd);
     }
 
@@ -551,13 +617,10 @@ void btpan_close_handle(btpan_conn_t* p) {
 }
 
 static inline bool should_forward(tETH_HDR* hdr) {
-#ifdef _MSC_VER
-#else
   uint16_t proto = ntohs(hdr->h_proto);
   if (proto == ETH_P_IP || proto == ETH_P_ARP || proto == ETH_P_IPV6)
     return true;
   log::verbose("unknown proto:{:x}", proto);
-#endif
   return false;
 }
 
@@ -672,6 +735,7 @@ static void bta_pan_callback(tBTA_PAN_EVT event, tBTA_PAN* p_data) {
                         sizeof(tBTA_PAN), NULL);
 }
 
+#ifdef OS_POSIX
 #define IS_EXCEPTION(e) ((e) & (POLLHUP | POLLRDHUP | POLLERR | POLLNVAL))
 static void btu_exec_tap_fd_read(int fd) {
   struct pollfd ufd;
@@ -743,11 +807,9 @@ static void btu_exec_tap_fd_read(int fd) {
     ufd.fd = fd;
     ufd.events = POLLIN;
     ufd.revents = 0;
-#ifndef _MSC_VER
     int ret;
     OSI_NO_INTR(ret = poll(&ufd, 1, 0));
     if (ret <= 0 || IS_EXCEPTION(ufd.revents)) break;
-#endif
   }
 
   if (btpan_cb.flow) {
@@ -755,6 +817,149 @@ static void btu_exec_tap_fd_read(int fd) {
     btsock_thread_add_fd(pan_pth, fd, 0, SOCK_THREAD_FD_RD, 0);
   }
 }
+#endif
+
+#ifdef _WIN32
+
+static void btu_exec_tap_fd_read( int fd )
+{
+  log::warn( "should not invoke this function." );
+}
+
+void route_ip_packet_to_remote
+  (
+  tETH_HDR*   a_ethernet_header,
+  const char* a_ip_packet,
+  uint16_t    a_size
+  )
+{
+  if( a_size < 1 )
+  {
+    return;
+  }
+
+  btpan_cb.congest_packet_size = 0;
+  // Don't occupy BTU context too long, avoid buffer overruns and
+  // give other profiles a chance to run by limiting the amount of memory
+  // PAN can use.
+  BT_HDR* buffer = ( BT_HDR* )osi_malloc( PAN_BUF_SIZE );
+  buffer->offset = PAN_MINIMUM_OFFSET;
+  buffer->len = PAN_BUF_SIZE - sizeof( BT_HDR ) - buffer->offset;
+
+  uint8_t* packet = ( uint8_t* )buffer + sizeof( BT_HDR ) + buffer->offset;
+
+  // If we don't have an undelivered packet left over, pull one from the TAP
+  // driver.
+  // We save it in the congest_packet right away in case we can't deliver it
+  // in this
+  // attempt.
+  if( !btpan_cb.congest_packet_size )
+  {
+    uint8_t* p = btpan_cb.congest_packet;
+    memcpy( p, a_ethernet_header, sizeof( tETH_HDR ) );
+    p += sizeof( tETH_HDR );
+    memcpy( p, a_ip_packet, a_size );
+    btpan_cb.congest_packet_size = sizeof( tETH_HDR ) + a_size;
+  }
+
+  memcpy( packet, btpan_cb.congest_packet,
+    MIN( btpan_cb.congest_packet_size, buffer->len ) );
+  buffer->len = MIN( btpan_cb.congest_packet_size, buffer->len );
+
+  if( buffer->len > sizeof( tETH_HDR ) && should_forward( ( tETH_HDR* )packet ) )
+  {
+    // Extract the ethernet header from the buffer since the PAN_WriteBuf
+    // inside
+    // forward_bnep can't handle two pointers that point inside the same GKI
+    // buffer.
+    tETH_HDR hdr;
+    memcpy( &hdr, packet, sizeof( tETH_HDR ) );
+
+    // Skip the ethernet header.
+    buffer->len -= sizeof( tETH_HDR );
+    buffer->offset += sizeof( tETH_HDR );
+    if( forward_bnep( &hdr, buffer ) != FORWARD_CONGEST )
+      btpan_cb.congest_packet_size = 0;
+  }
+  else
+  {
+    log::warn( "dropping packet of length {}", buffer->len );
+    btpan_cb.congest_packet_size = 0;
+    osi_free( buffer );
+  }
+}
+
+void route_ip_packet_to_remote_with_type
+  (
+  int         a_virtual_net_id,
+  uint16_t    a_packet_type,
+  const char* a_ip_packet,
+  uint16_t    a_size
+  )
+{
+  tETH_HDR ethernet_header;
+  memset( &ethernet_header, 0x00, sizeof( tETH_HDR ) );
+  bool try_to_replace_mac = false;
+  if( a_packet_type != ETH_P_ARP )
+  {
+    if( a_size < 20 )
+    {
+      log::error( "the IP packet must at leat 20 bytes long!" );
+      return;
+    }
+
+    uint8_t version = ( a_ip_packet[0] >> 4 ) & 0x0F;
+    if( version == 4 )
+    {
+      ethernet_header.h_proto = htons( ETH_P_IP );
+      try_to_replace_mac = true;
+    }
+    else if( version == 6 )
+    {
+      ethernet_header.h_proto = htons( ETH_P_IPV6 );
+    }
+    else
+    {
+      log::error( "wrong IP packet!" );
+      return;
+    }
+  }
+  else
+  {
+    ethernet_header.h_proto = htons( ETH_P_ARP );
+    log::error( "route an ARP to remote device!" );
+  }
+
+  bool found = false;
+  for( int i = 0; i < MAX_PAN_CONNS; ++i )
+  {
+    if( btpan_cb.conns[i].virtual_net_id == a_virtual_net_id )
+    {
+      found = true;
+      auto local_address = bluetooth::ToRawAddress( bluetooth::shim::GetController()->GetMacAddress() );
+      ethernet_header.h_src = local_address;
+      ethernet_header.h_dest = btpan_cb.conns[i].peer;
+      break;
+    }
+  }
+
+  if( try_to_replace_mac )
+  {
+    uint8_t virtual_net_mac_addr[RawAddress::kLength] = { 0 };
+    uint8_t virtual_net_mac_addr_retrieved[RawAddress::kLength] = { 0 };
+    int status = replace_mac_for_ip_packet( ( uint8_t* )a_ip_packet, a_size, ethernet_header.h_src.address,
+      RawAddress::kLength, virtual_net_mac_addr, RawAddress::kLength );
+    if( status == 0 )
+    {
+      status = retrieve_virtual_net_mac( a_virtual_net_id, virtual_net_mac_addr_retrieved, RawAddress::kLength );
+    }
+  }
+
+  route_ip_packet_to_remote( &ethernet_header, a_ip_packet, a_size );
+
+  release_packet( a_virtual_net_id, a_packet_type, a_ip_packet );
+}
+#endif
 
 static void btif_pan_close_all_conns() {
   if (!stack_initialized) return;

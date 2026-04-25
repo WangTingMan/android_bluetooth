@@ -71,7 +71,11 @@ std::string Address::ToStringForLogging() const {
 }
 
 std::string Address::ToRedactedStringForLogging() const {
+#ifdef _MSC_VER
+  return _ToMaskedColonSepHexString( 0 );
+#else
   return _ToMaskedColonSepHexString(4);
+#endif
 }
 
 std::string Address::ToLegacyConfigString() const {
