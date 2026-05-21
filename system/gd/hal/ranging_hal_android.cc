@@ -30,6 +30,10 @@
 
 #include "ranging_hal.h"
 
+#ifdef _MSC_VER
+#include <osi/include/properties.h>
+#endif
+
 using aidl::android::hardware::bluetooth::ranging::BluetoothChannelSoundingParameters;
 using aidl::android::hardware::bluetooth::ranging::BnBluetoothChannelSoundingSessionCallback;
 using aidl::android::hardware::bluetooth::ranging::ChannelSoudingRawData;
@@ -245,6 +249,15 @@ class RangingHalAndroid : public RangingHal {
 
   void Start() override {
     std::string instance = std::string() + IBluetoothChannelSounding::descriptor + "/default";
+#ifdef _MSC_VER
+    bool cs_enabled = osi_property_get_bool( "persist.bluetooth.channel_sounding_enable", false );
+    if (!cs_enabled)
+    {
+      log::warn( "channel sounding disabled, ignore start channel sounding module" );
+      return;
+    }
+#endif
+
     log::info("AServiceManager_isDeclared {}", AServiceManager_isDeclared(instance.c_str()));
     if (AServiceManager_isDeclared(instance.c_str())) {
       ::ndk::SpAIBinder binder(AServiceManager_waitForService(instance.c_str()));
