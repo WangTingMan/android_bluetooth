@@ -9,7 +9,10 @@ package {
 
 cc_library_static {
     name: "lib-bt-packets",
-    defaults: ["bluetooth_cflags"],
+    defaults: [
+        "bluetooth_cflags",
+        "bluetooth_tidy",
+    ],
     host_supported: true,
     export_include_dirs: [
         "./",
@@ -20,10 +23,8 @@ cc_library_static {
         "lib-bt-packets-base",
         "libbluetooth_log",
     ],
-    apex_available: [
-        "com.android.btservices",
-    ],
-    min_sdk_version: "30",
+    apex_available: ["com.android.bt"],
+    min_sdk_version: "36",
 }
 
 cc_test {
@@ -82,9 +83,6 @@ cc_test {
         "libbluetooth_log",
         "libchrome",
         "libgmock",
-    ],
-    cflags: [
-        "-Wno-unused-parameter",
     ],
     target: {
         android: {

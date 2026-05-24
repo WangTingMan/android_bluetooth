@@ -16,17 +16,21 @@
 
 package com.android.bluetooth.hfpclient;
 
+import static android.bluetooth.BluetoothProfile.CONNECTION_POLICY_ALLOWED;
+import static android.bluetooth.BluetoothProfile.CONNECTION_POLICY_FORBIDDEN;
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTED;
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTING;
+import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTED;
 import static android.content.pm.PackageManager.FEATURE_WATCH;
 
-import android.annotation.RequiresPermission;
+import static java.util.Objects.requireNonNull;
+import static java.util.Objects.requireNonNullElseGet;
+
 import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothHeadsetClient;
 import android.bluetooth.BluetoothHeadsetClientCall;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.BluetoothSinkAudioPolicy;
 import android.bluetooth.BluetoothStatusCodes;
-import android.bluetooth.IBluetoothHeadsetClient;
-import android.content.AttributionSource;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -42,49 +46,90 @@ import android.util.Log;
 
 import com.android.bluetooth.Utils;
 import com.android.bluetooth.btservice.AdapterService;
-import com.android.bluetooth.btservice.ProfileService;
-import com.android.bluetooth.btservice.storage.DatabaseManager;
+import com.android.bluetooth.btservice.ConnectableProfile;
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
 /**
  * Provides Bluetooth Headset Client (HF Role) profile, as a service in the Bluetooth application.
  */
-public class HeadsetClientService extends ProfileService {
+public class HeadsetClientService extends ConnectableProfile {
     private static final String TAG = HeadsetClientService.class.getSimpleName();
+
+    @VisibleForTesting static final int MAX_HFP_SCO_VOICE_CALL_VOLUME = 15; // HFP 1.5 spec.
+    @VisibleForTesting static final int MIN_HFP_SCO_VOICE_CALL_VOLUME = 1; // HFP 1.5 spec.
+    static final String HFP_CLIENT_STOP_TAG = "hfp_client_stop_tag";
+
+    // Maximum number of devices we can try connecting to in one session
+    private static final int MAX_STATE_MACHINES_POSSIBLE = 100;
+
+    private static HeadsetClientService sHeadsetClientService;
 
     // This is also used as a lock for shared data in {@link HeadsetClientService}
     @GuardedBy("mStateMachineMap")
     private final HashMap<BluetoothDevice, HeadsetClientStateMachine> mStateMachineMap =
             new HashMap<>();
 
-    private static HeadsetClientService sHeadsetClientService;
-    private NativeInterface mNativeInterface = null;
-    private HandlerThread mSmThread = null;
-    private HeadsetClientStateMachineFactory mSmFactory = null;
-    private DatabaseManager mDatabaseManager;
-    private AudioManager mAudioManager = null;
-    private BatteryManager mBatteryManager = null;
+    private final HandlerThread mSmThread;
+    private final AudioManager mAudioManager;
+    private final HeadsetClientNativeInterface mNativeInterface;
+    private final BatteryManager mBatteryManager;
+    private final int mMaxAmVcVol;
+    private final int mMinAmVcVol;
+
     private int mLastBatteryLevel = -1;
-    // Maxinum number of devices we can try connecting to in one session
-    private static final int MAX_STATE_MACHINES_POSSIBLE = 100;
 
-    private final Object mStartStopLock = new Object();
+    public HeadsetClientService(AdapterService adapterService) {
+        this(adapterService, null);
+    }
 
-    public static final String HFP_CLIENT_STOP_TAG = "hfp_client_stop_tag";
+    @VisibleForTesting
+    HeadsetClientService(
+            AdapterService adapterService, HeadsetClientNativeInterface nativeInterface) {
+        super(BluetoothProfile.HEADSET_CLIENT, requireNonNull(adapterService));
+        mAudioManager = requireNonNull(obtainSystemService(AudioManager.class));
+        mMaxAmVcVol = mAudioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
+        mMinAmVcVol = mAudioManager.getStreamMinVolume(AudioManager.STREAM_VOICE_CALL);
 
-    public HeadsetClientService(Context ctx) {
-        super(ctx);
+        mNativeInterface =
+                requireNonNullElseGet(
+                        nativeInterface,
+                        () -> new HeadsetClientNativeInterface(adapterService, this));
+        mNativeInterface.initialize();
+
+        mBatteryManager = obtainSystemService(BatteryManager.class);
+
+        // start AudioManager in a known state
+        mAudioManager.setHfpEnabled(false);
+
+        synchronized (mStateMachineMap) {
+            mStateMachineMap.clear();
+        }
+
+        IntentFilter filter = new IntentFilter(AudioManager.ACTION_VOLUME_CHANGED);
+        filter.setPriority(IntentFilter.SYSTEM_HIGH_PRIORITY);
+        filter.addAction(Intent.ACTION_BATTERY_CHANGED);
+        registerReceiver(mBroadcastReceiver, filter);
+
+        // Start the HfpClientConnectionService to create connection with telecom when HFP
+        // connection is available on non-wearable device.
+        if (getPackageManager() != null && !getPackageManager().hasSystemFeature(FEATURE_WATCH)) {
+            Intent startIntent = new Intent(this, HfpClientConnectionService.class);
+            startService(startIntent);
+        }
+
+        // Create the thread on which all State Machines will run
+        mSmThread = new HandlerThread("HeadsetClient.SM");
+        mSmThread.start();
+
+        setHeadsetClientService(this);
     }
 
     public static boolean isEnabled() {
@@ -93,101 +138,65 @@ public class HeadsetClientService extends ProfileService {
 
     @Override
     public IProfileServiceBinder initBinder() {
-        return new BluetoothHeadsetClientBinder(this);
+        return new HeadsetClientServiceBinder(this);
     }
 
     @Override
-    public void start() {
-        synchronized (mStartStopLock) {
-            Log.d(TAG, "start()");
-            if (getHeadsetClientService() != null) {
-                throw new IllegalStateException("start() called twice");
+    public void cleanup() {
+        Log.i(TAG, "cleanup()");
+
+        synchronized (HeadsetClientService.class) {
+            if (sHeadsetClientService == null) {
+                Log.w(TAG, "cleanup() called before initialization");
+                return;
             }
 
-            mDatabaseManager =
-                    Objects.requireNonNull(
-                            AdapterService.getAdapterService().getDatabase(),
-                            "DatabaseManager cannot be null when HeadsetClientService starts");
-
-            // Setup the JNI service
-            mNativeInterface = NativeInterface.getInstance();
-            mNativeInterface.initialize();
-
-            mBatteryManager = getSystemService(BatteryManager.class);
-
-            mAudioManager = getSystemService(AudioManager.class);
-            if (mAudioManager == null) {
-                Log.e(TAG, "AudioManager service doesn't exist?");
-            } else {
-                // start AudioManager in a known state
-                mAudioManager.setHfpEnabled(false);
-            }
-
-            mSmFactory = new HeadsetClientStateMachineFactory();
-            synchronized (mStateMachineMap) {
-                mStateMachineMap.clear();
-            }
-
-            IntentFilter filter = new IntentFilter(AudioManager.ACTION_VOLUME_CHANGED);
-            filter.setPriority(IntentFilter.SYSTEM_HIGH_PRIORITY);
-            filter.addAction(Intent.ACTION_BATTERY_CHANGED);
-            registerReceiver(mBroadcastReceiver, filter);
-
-            // Start the HfpClientConnectionService to create connection with telecom when HFP
-            // connection is available on non-wearable device.
+            // Stop the HfpClientConnectionService for non-wearables devices.
             if (getPackageManager() != null
                     && !getPackageManager().hasSystemFeature(FEATURE_WATCH)) {
-                Intent startIntent = new Intent(this, HfpClientConnectionService.class);
-                startService(startIntent);
+                Intent stopIntent = new Intent(this, HfpClientConnectionService.class);
+                sHeadsetClientService.stopService(stopIntent);
             }
-
-            // Create the thread on which all State Machines will run
-            mSmThread = new HandlerThread("HeadsetClient.SM");
-            mSmThread.start();
-
-            setHeadsetClientService(this);
         }
+
+        setHeadsetClientService(null);
+
+        unregisterReceiver(mBroadcastReceiver);
+
+        synchronized (mStateMachineMap) {
+            for (HeadsetClientStateMachine sm : mStateMachineMap.values()) {
+                sm.doQuit();
+            }
+            mStateMachineMap.clear();
+        }
+
+        // Stop the handler thread
+        mSmThread.quit();
+
+        mNativeInterface.cleanup();
     }
 
-    @Override
-    public void stop() {
-        synchronized (mStartStopLock) {
-            synchronized (HeadsetClientService.class) {
-                if (sHeadsetClientService == null) {
-                    Log.w(TAG, "stop() called without start()");
-                    return;
-                }
+    int hfToAmVol(int hfVol) {
+        int amRange = mMaxAmVcVol - mMinAmVcVol;
+        int hfRange = MAX_HFP_SCO_VOICE_CALL_VOLUME - MIN_HFP_SCO_VOICE_CALL_VOLUME;
+        int amVol =
+                (int)
+                                Math.round(
+                                        (hfVol - MIN_HFP_SCO_VOICE_CALL_VOLUME)
+                                                * ((double) amRange / hfRange))
+                        + mMinAmVcVol;
+        Log.d(TAG, "HF -> AM " + hfVol + " " + amVol);
+        return amVol;
+    }
 
-                // Stop the HfpClientConnectionService for non-wearables devices.
-                if (getPackageManager() != null
-                        && !getPackageManager().hasSystemFeature(FEATURE_WATCH)) {
-                    Intent stopIntent = new Intent(this, HfpClientConnectionService.class);
-                    sHeadsetClientService.stopService(stopIntent);
-                }
-            }
-
-            setHeadsetClientService(null);
-
-            unregisterReceiver(mBroadcastReceiver);
-
-            synchronized (mStateMachineMap) {
-                for (Iterator<Map.Entry<BluetoothDevice, HeadsetClientStateMachine>> it =
-                                mStateMachineMap.entrySet().iterator();
-                        it.hasNext(); ) {
-                    HeadsetClientStateMachine sm =
-                            mStateMachineMap.get((BluetoothDevice) it.next().getKey());
-                    sm.doQuit();
-                    it.remove();
-                }
-            }
-
-            // Stop the handler thread
-            mSmThread.quit();
-            mSmThread = null;
-
-            mNativeInterface.cleanup();
-            mNativeInterface = null;
-        }
+    int amToHfVol(int amVol) {
+        int amRange = (mMaxAmVcVol > mMinAmVcVol) ? (mMaxAmVcVol - mMinAmVcVol) : 1;
+        int hfRange = MAX_HFP_SCO_VOICE_CALL_VOLUME - MIN_HFP_SCO_VOICE_CALL_VOLUME;
+        int hfVol =
+                (int) Math.round((amVol - mMinAmVcVol) * ((double) hfRange / amRange))
+                        + MIN_HFP_SCO_VOICE_CALL_VOLUME;
+        Log.d(TAG, "AM -> HF " + amVol + " " + hfVol);
+        return hfVol;
     }
 
     private final BroadcastReceiver mBroadcastReceiver =
@@ -197,8 +206,7 @@ public class HeadsetClientService extends ProfileService {
                     String action = intent.getAction();
 
                     // We handle the volume changes for Voice calls here since HFP audio volume
-                    // control does
-                    // not go through audio manager (audio mixer). see
+                    // control does not go through audio manager (audio mixer). see
                     // ({@link HeadsetClientStateMachine#SET_SPEAKER_VOLUME} in
                     // {@link HeadsetClientStateMachine} for details.
                     if (action.equals(AudioManager.ACTION_VOLUME_CHANGED)) {
@@ -212,7 +220,7 @@ public class HeadsetClientService extends ProfileService {
                         if (streamType == AudioManager.STREAM_VOICE_CALL) {
                             int streamValue =
                                     intent.getIntExtra(AudioManager.EXTRA_VOLUME_STREAM_VALUE, -1);
-                            int hfVol = HeadsetClientStateMachine.amToHfVol(streamValue);
+                            int hfVol = amToHfVol(streamValue);
                             Log.d(
                                     TAG,
                                     "Setting volume to audio manager: "
@@ -242,7 +250,6 @@ public class HeadsetClientService extends ProfileService {
                         Log.d(
                                 TAG,
                                 "Send battery level update BIEV(2," + batteryLevel + ") command");
-
                         synchronized (mStateMachineMap) {
                             for (HeadsetClientStateMachine sm : mStateMachineMap.values()) {
                                 if (sm != null) {
@@ -274,330 +281,8 @@ public class HeadsetClientService extends ProfileService {
                 call.isInBandRing());
     }
 
-    /** Handlers for incoming service calls */
-    @VisibleForTesting
-    static class BluetoothHeadsetClientBinder extends IBluetoothHeadsetClient.Stub
-            implements IProfileServiceBinder {
-        private HeadsetClientService mService;
-
-        BluetoothHeadsetClientBinder(HeadsetClientService svc) {
-            mService = svc;
-        }
-
-        @Override
-        public void cleanup() {
-            mService = null;
-        }
-
-        @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
-        private HeadsetClientService getService(AttributionSource source) {
-            // Cache mService because it can change while getService is called
-            HeadsetClientService service = mService;
-
-            if (Utils.isInstrumentationTestMode()) {
-                return service;
-            }
-
-            if (!Utils.checkServiceAvailable(service, TAG)
-                    || !Utils.checkCallerIsSystemOrActiveOrManagedUser(service, TAG)
-                    || !Utils.checkConnectPermissionForDataDelivery(service, source, TAG)) {
-                return null;
-            }
-
-            return service;
-        }
-
-        @Override
-        public boolean connect(BluetoothDevice device, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.connect(device);
-        }
-
-        @Override
-        public boolean disconnect(BluetoothDevice device, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.disconnect(device);
-        }
-
-        @Override
-        public List<BluetoothDevice> getConnectedDevices(AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return Collections.emptyList();
-            }
-
-            return service.getConnectedDevices();
-        }
-
-        @Override
-        public List<BluetoothDevice> getDevicesMatchingConnectionStates(
-                int[] states, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return Collections.emptyList();
-            }
-
-            return service.getDevicesMatchingConnectionStates(states);
-        }
-
-        @Override
-        public int getConnectionState(BluetoothDevice device, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return BluetoothProfile.STATE_DISCONNECTED;
-            }
-
-            return service.getConnectionState(device);
-        }
-
-        @Override
-        public boolean setConnectionPolicy(
-                BluetoothDevice device, int connectionPolicy, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.setConnectionPolicy(device, connectionPolicy);
-        }
-
-        @Override
-        public int getConnectionPolicy(BluetoothDevice device, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return BluetoothProfile.CONNECTION_POLICY_UNKNOWN;
-            }
-
-            return service.getConnectionPolicy(device);
-        }
-
-        @Override
-        public boolean startVoiceRecognition(BluetoothDevice device, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.startVoiceRecognition(device);
-        }
-
-        @Override
-        public boolean stopVoiceRecognition(BluetoothDevice device, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.stopVoiceRecognition(device);
-        }
-
-        @Override
-        public int getAudioState(BluetoothDevice device, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return BluetoothHeadsetClient.STATE_AUDIO_DISCONNECTED;
-            }
-
-            return service.getAudioState(device);
-        }
-
-        @Override
-        public void setAudioRouteAllowed(
-                BluetoothDevice device, boolean allowed, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                Log.w(TAG, "Service handle is null for setAudioRouteAllowed!");
-                return;
-            }
-
-            service.setAudioRouteAllowed(device, allowed);
-        }
-
-        @Override
-        public boolean getAudioRouteAllowed(BluetoothDevice device, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                Log.w(TAG, "Service handle is null for getAudioRouteAllowed!");
-                return false;
-            }
-
-            return service.getAudioRouteAllowed(device);
-        }
-
-        @Override
-        public boolean connectAudio(BluetoothDevice device, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.connectAudio(device);
-        }
-
-        @Override
-        public boolean disconnectAudio(BluetoothDevice device, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.disconnectAudio(device);
-        }
-
-        @Override
-        public boolean acceptCall(BluetoothDevice device, int flag, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.acceptCall(device, flag);
-        }
-
-        @Override
-        public boolean rejectCall(BluetoothDevice device, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.rejectCall(device);
-        }
-
-        @Override
-        public boolean holdCall(BluetoothDevice device, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.holdCall(device);
-        }
-
-        @Override
-        public boolean terminateCall(
-                BluetoothDevice device, BluetoothHeadsetClientCall call, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                Log.w(TAG, "service is null");
-                return false;
-            }
-
-            return service.terminateCall(device, call != null ? call.getUUID() : null);
-        }
-
-        @Override
-        public boolean explicitCallTransfer(BluetoothDevice device, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.explicitCallTransfer(device);
-        }
-
-        @Override
-        public boolean enterPrivateMode(
-                BluetoothDevice device, int index, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.enterPrivateMode(device, index);
-        }
-
-        @Override
-        public BluetoothHeadsetClientCall dial(
-                BluetoothDevice device, String number, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return null;
-            }
-
-            return toLegacyCall(service.dial(device, number));
-        }
-
-        @Override
-        public List<BluetoothHeadsetClientCall> getCurrentCalls(
-                BluetoothDevice device, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            List<BluetoothHeadsetClientCall> currentCalls = new ArrayList<>();
-            if (service == null) {
-                return currentCalls;
-            }
-
-            List<HfpClientCall> calls = service.getCurrentCalls(device);
-            if (calls != null) {
-                for (HfpClientCall call : calls) {
-                    currentCalls.add(toLegacyCall(call));
-                }
-            }
-            return currentCalls;
-        }
-
-        @Override
-        public boolean sendDTMF(BluetoothDevice device, byte code, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.sendDTMF(device, code);
-        }
-
-        @Override
-        public boolean getLastVoiceTagNumber(BluetoothDevice device, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.getLastVoiceTagNumber(device);
-        }
-
-        @Override
-        public Bundle getCurrentAgEvents(BluetoothDevice device, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return null;
-            }
-
-            return service.getCurrentAgEvents(device);
-        }
-
-        @Override
-        public boolean sendVendorAtCommand(
-                BluetoothDevice device, int vendorId, String atCommand, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.sendVendorAtCommand(device, vendorId, atCommand);
-        }
-
-        @Override
-        public Bundle getCurrentAgFeatures(BluetoothDevice device, AttributionSource source) {
-            HeadsetClientService service = getService(source);
-            if (service == null) {
-                return null;
-            }
-
-            return service.getCurrentAgFeaturesBundle(device);
-        }
-    }
-
     // API methods
-    public static synchronized HeadsetClientService getHeadsetClientService() {
+    private static synchronized HeadsetClientService getHeadsetClientService() {
         if (sHeadsetClientService == null) {
             Log.w(TAG, "getHeadsetClientService(): service is null");
             return null;
@@ -609,16 +294,16 @@ public class HeadsetClientService extends ProfileService {
         return sHeadsetClientService;
     }
 
-    /** Set a {@link HeadsetClientService} instance. */
-    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
+    @VisibleForTesting
     public static synchronized void setHeadsetClientService(HeadsetClientService instance) {
         Log.d(TAG, "setHeadsetClientService(): set to: " + instance);
         sHeadsetClientService = instance;
     }
 
+    @Override
     public boolean connect(BluetoothDevice device) {
         Log.d(TAG, "connect " + device);
-        if (getConnectionPolicy(device) == BluetoothProfile.CONNECTION_POLICY_FORBIDDEN) {
+        if (getConnectionPolicy(device) == CONNECTION_POLICY_FORBIDDEN) {
             Log.w(
                     TAG,
                     "Connection not allowed: <"
@@ -642,6 +327,7 @@ public class HeadsetClientService extends ProfileService {
      * @param device is the device with which we are attempting to disconnect the profile
      * @return true if hfp client profile successfully disconnected, false otherwise
      */
+    @Override
     public boolean disconnect(BluetoothDevice device) {
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm == null) {
@@ -650,8 +336,7 @@ public class HeadsetClientService extends ProfileService {
         }
 
         int connectionState = sm.getConnectionState(device);
-        if (connectionState != BluetoothProfile.STATE_CONNECTED
-                && connectionState != BluetoothProfile.STATE_CONNECTING) {
+        if (connectionState != STATE_CONNECTED && connectionState != STATE_CONNECTING) {
             return false;
         }
 
@@ -663,24 +348,26 @@ public class HeadsetClientService extends ProfileService {
      * @return A list of connected {@link BluetoothDevice}.
      */
     public List<BluetoothDevice> getConnectedDevices() {
-        ArrayList<BluetoothDevice> connectedDevices = new ArrayList<>();
+        List<BluetoothDevice> connectedDevices = new ArrayList<>();
         synchronized (mStateMachineMap) {
-            for (BluetoothDevice bd : mStateMachineMap.keySet()) {
-                HeadsetClientStateMachine sm = mStateMachineMap.get(bd);
-                if (sm != null && sm.getConnectionState(bd) == BluetoothProfile.STATE_CONNECTED) {
+            for (var entry : mStateMachineMap.entrySet()) {
+                BluetoothDevice bd = entry.getKey();
+                HeadsetClientStateMachine sm = entry.getValue();
+                if (sm != null && sm.getConnectionState(bd) == STATE_CONNECTED) {
                     connectedDevices.add(bd);
                 }
             }
+            return connectedDevices;
         }
-        return connectedDevices;
     }
 
     List<BluetoothDevice> getDevicesMatchingConnectionStates(int[] states) {
-        List<BluetoothDevice> devices = new ArrayList<BluetoothDevice>();
+        List<BluetoothDevice> devices = new ArrayList<>();
         synchronized (mStateMachineMap) {
-            for (BluetoothDevice bd : mStateMachineMap.keySet()) {
+            for (var entry : mStateMachineMap.entrySet()) {
+                BluetoothDevice bd = entry.getKey();
+                HeadsetClientStateMachine sm = entry.getValue();
                 for (int state : states) {
-                    HeadsetClientStateMachine sm = mStateMachineMap.get(bd);
                     if (sm != null && sm.getConnectionState(bd) == state) {
                         devices.add(bd);
                     }
@@ -699,13 +386,14 @@ public class HeadsetClientService extends ProfileService {
      *     BluetoothProfile#STATE_CONNECTED} if this profile is connected, or {@link
      *     BluetoothProfile#STATE_DISCONNECTING} if this profile is being disconnected
      */
+    @Override
     public int getConnectionState(BluetoothDevice device) {
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm != null) {
             return sm.getConnectionState(device);
         }
 
-        return BluetoothProfile.STATE_DISCONNECTED;
+        return STATE_DISCONNECTED;
     }
 
     /**
@@ -722,33 +410,19 @@ public class HeadsetClientService extends ProfileService {
      * @param connectionPolicy is the connection policy to set to for this profile
      * @return true if connectionPolicy is set, false on error
      */
+    @Override
     public boolean setConnectionPolicy(BluetoothDevice device, int connectionPolicy) {
         Log.d(TAG, "Saved connectionPolicy " + device + " = " + connectionPolicy);
 
-        if (!mDatabaseManager.setProfileConnectionPolicy(
-                device, BluetoothProfile.HEADSET_CLIENT, connectionPolicy)) {
+        if (!mAdapterService.setProfileConnectionPolicy(device, mProfileId, connectionPolicy)) {
             return false;
         }
-        if (connectionPolicy == BluetoothProfile.CONNECTION_POLICY_ALLOWED) {
+        if (connectionPolicy == CONNECTION_POLICY_ALLOWED) {
             connect(device);
-        } else if (connectionPolicy == BluetoothProfile.CONNECTION_POLICY_FORBIDDEN) {
+        } else if (connectionPolicy == CONNECTION_POLICY_FORBIDDEN) {
             disconnect(device);
         }
         return true;
-    }
-
-    /**
-     * Get the connection policy of the profile.
-     *
-     * <p>The connection policy can be any of: {@link BluetoothProfile#CONNECTION_POLICY_ALLOWED},
-     * {@link BluetoothProfile#CONNECTION_POLICY_FORBIDDEN}, {@link
-     * BluetoothProfile#CONNECTION_POLICY_UNKNOWN}
-     *
-     * @param device Bluetooth device
-     * @return connection policy of the device
-     */
-    public int getConnectionPolicy(BluetoothDevice device) {
-        return mDatabaseManager.getProfileConnectionPolicy(device, BluetoothProfile.HEADSET_CLIENT);
     }
 
     boolean startVoiceRecognition(BluetoothDevice device) {
@@ -758,7 +432,7 @@ public class HeadsetClientService extends ProfileService {
             return false;
         }
         int connectionState = sm.getConnectionState(device);
-        if (connectionState != BluetoothProfile.STATE_CONNECTED) {
+        if (connectionState != STATE_CONNECTED) {
             return false;
         }
         sm.sendMessage(HeadsetClientStateMachine.VOICE_RECOGNITION_START);
@@ -772,7 +446,7 @@ public class HeadsetClientService extends ProfileService {
             return false;
         }
         int connectionState = sm.getConnectionState(device);
-        if (connectionState != BluetoothProfile.STATE_CONNECTED) {
+        if (connectionState != STATE_CONNECTED) {
             return false;
         }
         sm.sendMessage(HeadsetClientStateMachine.VOICE_RECOGNITION_STOP);
@@ -785,7 +459,7 @@ public class HeadsetClientService extends ProfileService {
      * <p>Can be one of {@link STATE_AUDIO_CONNECTED}, {@link STATE_AUDIO_CONNECTING}, or {@link
      * STATE_AUDIO_DISCONNECTED}.
      */
-    public int getAudioState(BluetoothDevice device) {
+    int getAudioState(BluetoothDevice device) {
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm == null) {
             Log.e(TAG, "SM does not exist for device " + device);
@@ -795,8 +469,7 @@ public class HeadsetClientService extends ProfileService {
         return sm.getAudioState(device);
     }
 
-    public void setAudioRouteAllowed(BluetoothDevice device, boolean allowed) {
-        enforceCallingOrSelfPermission(BLUETOOTH_PERM, "Need BLUETOOTH permission");
+    void setAudioRouteAllowed(BluetoothDevice device, boolean allowed) {
         Log.i(
                 TAG,
                 "setAudioRouteAllowed: device="
@@ -805,17 +478,20 @@ public class HeadsetClientService extends ProfileService {
                         + allowed
                         + ", "
                         + Utils.getUidPidString());
-        HeadsetClientStateMachine sm = mStateMachineMap.get(device);
-        if (sm != null) {
-            sm.setAudioRouteAllowed(allowed);
+        synchronized (mStateMachineMap) {
+            HeadsetClientStateMachine sm = mStateMachineMap.get(device);
+            if (sm != null) {
+                sm.setAudioRouteAllowed(allowed);
+            }
         }
     }
 
-    public boolean getAudioRouteAllowed(BluetoothDevice device) {
-        enforceCallingOrSelfPermission(BLUETOOTH_PERM, "Need BLUETOOTH permission");
-        HeadsetClientStateMachine sm = mStateMachineMap.get(device);
-        if (sm != null) {
-            return sm.getAudioRouteAllowed();
+    boolean getAudioRouteAllowed(BluetoothDevice device) {
+        synchronized (mStateMachineMap) {
+            HeadsetClientStateMachine sm = mStateMachineMap.get(device);
+            if (sm != null) {
+                return sm.getAudioRouteAllowed();
+            }
         }
         return false;
     }
@@ -828,7 +504,6 @@ public class HeadsetClientService extends ProfileService {
      * @param policies to be set policies
      */
     public void setAudioPolicy(BluetoothDevice device, BluetoothSinkAudioPolicy policies) {
-        enforceCallingOrSelfPermission(BLUETOOTH_PERM, "Need BLUETOOTH permission");
         Log.i(
                 TAG,
                 "setAudioPolicy: device="
@@ -844,28 +519,12 @@ public class HeadsetClientService extends ProfileService {
     }
 
     /**
-     * sets the audio policy feature support status for the corresponding device.
-     *
-     * @param device for whom the policies to be set
-     * @param supported support status
-     */
-    public void setAudioPolicyRemoteSupported(BluetoothDevice device, boolean supported) {
-        enforceCallingOrSelfPermission(BLUETOOTH_PERM, "Need BLUETOOTH permission");
-        Log.i(TAG, "setAudioPolicyRemoteSupported: " + supported);
-        HeadsetClientStateMachine sm = getStateMachine(device);
-        if (sm != null) {
-            sm.setAudioPolicyRemoteSupported(supported);
-        }
-    }
-
-    /**
      * gets the audio policy feature support status for the corresponding device.
      *
      * @param device for whom the policies to be set
      * @return int support status
      */
     public int getAudioPolicyRemoteSupported(BluetoothDevice device) {
-        enforceCallingOrSelfPermission(BLUETOOTH_PERM, "Need BLUETOOTH permission");
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm != null) {
             return sm.getAudioPolicyRemoteSupported();
@@ -873,7 +532,7 @@ public class HeadsetClientService extends ProfileService {
         return BluetoothStatusCodes.FEATURE_NOT_CONFIGURED;
     }
 
-    public boolean connectAudio(BluetoothDevice device) {
+    boolean connectAudio(BluetoothDevice device) {
         Log.i(TAG, "connectAudio: device=" + device + ", " + Utils.getUidPidString());
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm == null) {
@@ -891,7 +550,7 @@ public class HeadsetClientService extends ProfileService {
         return true;
     }
 
-    public boolean disconnectAudio(BluetoothDevice device) {
+    boolean disconnectAudio(BluetoothDevice device) {
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm == null) {
             Log.e(TAG, "SM does not exist for device " + device);
@@ -905,7 +564,7 @@ public class HeadsetClientService extends ProfileService {
         return true;
     }
 
-    public boolean holdCall(BluetoothDevice device) {
+    boolean holdCall(BluetoothDevice device) {
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm == null) {
             Log.e(TAG, "SM does not exist for device " + device);
@@ -913,8 +572,7 @@ public class HeadsetClientService extends ProfileService {
         }
 
         int connectionState = sm.getConnectionState(device);
-        if (connectionState != BluetoothProfile.STATE_CONNECTED
-                && connectionState != BluetoothProfile.STATE_CONNECTING) {
+        if (connectionState != STATE_CONNECTED && connectionState != STATE_CONNECTING) {
             return false;
         }
         Message msg = sm.obtainMessage(HeadsetClientStateMachine.HOLD_CALL);
@@ -922,8 +580,8 @@ public class HeadsetClientService extends ProfileService {
         return true;
     }
 
-    public boolean acceptCall(BluetoothDevice device, int flag) {
-        /* Phonecalls from a single device are supported, hang up any calls on the other phone */
+    boolean acceptCall(BluetoothDevice device, int flag) {
+        /* Phone calls from a single device are supported, hang up any calls on the other phone */
         synchronized (mStateMachineMap) {
             for (Map.Entry<BluetoothDevice, HeadsetClientStateMachine> entry :
                     mStateMachineMap.entrySet()) {
@@ -937,7 +595,7 @@ public class HeadsetClientService extends ProfileService {
                                 + device
                                 + ". Possibly disconnecting on "
                                 + entry.getValue());
-                if (connectionState == BluetoothProfile.STATE_CONNECTED) {
+                if (connectionState == STATE_CONNECTED) {
                     entry.getValue()
                             .obtainMessage(HeadsetClientStateMachine.TERMINATE_CALL)
                             .sendToTarget();
@@ -951,7 +609,7 @@ public class HeadsetClientService extends ProfileService {
         }
 
         int connectionState = sm.getConnectionState(device);
-        if (connectionState != BluetoothProfile.STATE_CONNECTED) {
+        if (connectionState != STATE_CONNECTED) {
             return false;
         }
         Message msg = sm.obtainMessage(HeadsetClientStateMachine.ACCEPT_CALL);
@@ -960,7 +618,7 @@ public class HeadsetClientService extends ProfileService {
         return true;
     }
 
-    public boolean rejectCall(BluetoothDevice device) {
+    boolean rejectCall(BluetoothDevice device) {
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm == null) {
             Log.e(TAG, "SM does not exist for device " + device);
@@ -968,8 +626,7 @@ public class HeadsetClientService extends ProfileService {
         }
 
         int connectionState = sm.getConnectionState(device);
-        if (connectionState != BluetoothProfile.STATE_CONNECTED
-                && connectionState != BluetoothProfile.STATE_CONNECTING) {
+        if (connectionState != STATE_CONNECTED && connectionState != STATE_CONNECTING) {
             return false;
         }
 
@@ -978,7 +635,7 @@ public class HeadsetClientService extends ProfileService {
         return true;
     }
 
-    public boolean terminateCall(BluetoothDevice device, UUID uuid) {
+    boolean terminateCall(BluetoothDevice device, UUID uuid) {
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm == null) {
             Log.e(TAG, "SM does not exist for device " + device);
@@ -986,8 +643,7 @@ public class HeadsetClientService extends ProfileService {
         }
 
         int connectionState = sm.getConnectionState(device);
-        if (connectionState != BluetoothProfile.STATE_CONNECTED
-                && connectionState != BluetoothProfile.STATE_CONNECTING) {
+        if (connectionState != STATE_CONNECTED && connectionState != STATE_CONNECTING) {
             return false;
         }
 
@@ -997,7 +653,7 @@ public class HeadsetClientService extends ProfileService {
         return true;
     }
 
-    public boolean enterPrivateMode(BluetoothDevice device, int index) {
+    boolean enterPrivateMode(BluetoothDevice device, int index) {
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm == null) {
             Log.e(TAG, "SM does not exist for device " + device);
@@ -1005,8 +661,7 @@ public class HeadsetClientService extends ProfileService {
         }
 
         int connectionState = sm.getConnectionState(device);
-        if (connectionState != BluetoothProfile.STATE_CONNECTED
-                && connectionState != BluetoothProfile.STATE_CONNECTING) {
+        if (connectionState != STATE_CONNECTED && connectionState != STATE_CONNECTING) {
             return false;
         }
 
@@ -1016,7 +671,7 @@ public class HeadsetClientService extends ProfileService {
         return true;
     }
 
-    public HfpClientCall dial(BluetoothDevice device, String number) {
+    HfpClientCall dial(BluetoothDevice device, String number) {
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm == null) {
             Log.e(TAG, "SM does not exist for device " + device);
@@ -1024,8 +679,7 @@ public class HeadsetClientService extends ProfileService {
         }
 
         int connectionState = sm.getConnectionState(device);
-        if (connectionState != BluetoothProfile.STATE_CONNECTED
-                && connectionState != BluetoothProfile.STATE_CONNECTING) {
+        if (connectionState != STATE_CONNECTED && connectionState != STATE_CONNECTING) {
             return null;
         }
 
@@ -1034,7 +688,7 @@ public class HeadsetClientService extends ProfileService {
                 SystemProperties.getBoolean(
                         "bluetooth.headset_client.three_way_calling.enabled", true);
         if (!support_three_way_calling && !getCurrentCalls(device).isEmpty()) {
-            Log.e(TAG, String.format("dial(%s): Line is busy, reject dialing", device));
+            Log.e(TAG, "dial(" + device + "): Line is busy, reject dialing");
             return null;
         }
 
@@ -1053,7 +707,7 @@ public class HeadsetClientService extends ProfileService {
         return call;
     }
 
-    public boolean sendDTMF(BluetoothDevice device, byte code) {
+    boolean sendDTMF(BluetoothDevice device, byte code) {
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm == null) {
             Log.e(TAG, "SM does not exist for device " + device);
@@ -1061,8 +715,7 @@ public class HeadsetClientService extends ProfileService {
         }
 
         int connectionState = sm.getConnectionState(device);
-        if (connectionState != BluetoothProfile.STATE_CONNECTED
-                && connectionState != BluetoothProfile.STATE_CONNECTING) {
+        if (connectionState != STATE_CONNECTED && connectionState != STATE_CONNECTING) {
             return false;
         }
         Message msg = sm.obtainMessage(HeadsetClientStateMachine.SEND_DTMF);
@@ -1071,11 +724,11 @@ public class HeadsetClientService extends ProfileService {
         return true;
     }
 
-    public boolean getLastVoiceTagNumber(BluetoothDevice device) {
+    boolean getLastVoiceTagNumber(BluetoothDevice device) {
         return false;
     }
 
-    public List<HfpClientCall> getCurrentCalls(BluetoothDevice device) {
+    List<HfpClientCall> getCurrentCalls(BluetoothDevice device) {
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm == null) {
             Log.e(TAG, "SM does not exist for device " + device);
@@ -1083,13 +736,13 @@ public class HeadsetClientService extends ProfileService {
         }
 
         int connectionState = sm.getConnectionState(device);
-        if (connectionState != BluetoothProfile.STATE_CONNECTED) {
+        if (connectionState != STATE_CONNECTED) {
             return null;
         }
         return sm.getCurrentCalls();
     }
 
-    public boolean explicitCallTransfer(BluetoothDevice device) {
+    boolean explicitCallTransfer(BluetoothDevice device) {
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm == null) {
             Log.e(TAG, "SM does not exist for device " + device);
@@ -1097,8 +750,7 @@ public class HeadsetClientService extends ProfileService {
         }
 
         int connectionState = sm.getConnectionState(device);
-        if (connectionState != BluetoothProfile.STATE_CONNECTED
-                && connectionState != BluetoothProfile.STATE_CONNECTING) {
+        if (connectionState != STATE_CONNECTED && connectionState != STATE_CONNECTING) {
             return false;
         }
         Message msg = sm.obtainMessage(HeadsetClientStateMachine.EXPLICIT_CALL_TRANSFER);
@@ -1107,7 +759,7 @@ public class HeadsetClientService extends ProfileService {
     }
 
     /** Send vendor AT command. */
-    public boolean sendVendorAtCommand(BluetoothDevice device, int vendorId, String atCommand) {
+    boolean sendVendorAtCommand(BluetoothDevice device, int vendorId, String atCommand) {
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm == null) {
             Log.e(TAG, "SM does not exist for device " + device);
@@ -1115,7 +767,7 @@ public class HeadsetClientService extends ProfileService {
         }
 
         int connectionState = sm.getConnectionState(device);
-        if (connectionState != BluetoothProfile.STATE_CONNECTED) {
+        if (connectionState != STATE_CONNECTED) {
             return false;
         }
 
@@ -1126,7 +778,7 @@ public class HeadsetClientService extends ProfileService {
         return true;
     }
 
-    public Bundle getCurrentAgEvents(BluetoothDevice device) {
+    Bundle getCurrentAgEvents(BluetoothDevice device) {
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm == null) {
             Log.e(TAG, "SM does not exist for device " + device);
@@ -1134,42 +786,41 @@ public class HeadsetClientService extends ProfileService {
         }
 
         int connectionState = sm.getConnectionState(device);
-        if (connectionState != BluetoothProfile.STATE_CONNECTED) {
+        if (connectionState != STATE_CONNECTED) {
             return null;
         }
         return sm.getCurrentAgEvents();
     }
 
-    public Bundle getCurrentAgFeaturesBundle(BluetoothDevice device) {
+    Bundle getCurrentAgFeaturesBundle(BluetoothDevice device) {
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm == null) {
             Log.e(TAG, "SM does not exist for device " + device);
             return null;
         }
         int connectionState = sm.getConnectionState(device);
-        if (connectionState != BluetoothProfile.STATE_CONNECTED) {
+        if (connectionState != STATE_CONNECTED) {
             return null;
         }
         return sm.getCurrentAgFeaturesBundle();
     }
 
-    public Set<Integer> getCurrentAgFeatures(BluetoothDevice device) {
+    Set<Integer> getCurrentAgFeatures(BluetoothDevice device) {
         HeadsetClientStateMachine sm = getStateMachine(device);
         if (sm == null) {
             Log.e(TAG, "SM does not exist for device " + device);
             return null;
         }
         int connectionState = sm.getConnectionState(device);
-        if (connectionState != BluetoothProfile.STATE_CONNECTED) {
+        if (connectionState != STATE_CONNECTED) {
             return null;
         }
         return sm.getCurrentAgFeatures();
     }
 
     // Handle messages from native (JNI) to java
-    public void messageFromNative(StackEvent stackEvent) {
-        Objects.requireNonNull(
-                stackEvent.device, "Device should never be null, event: " + stackEvent);
+    void messageFromNative(StackEvent stackEvent) {
+        requireNonNull(stackEvent.device);
 
         HeadsetClientStateMachine sm =
                 getStateMachine(stackEvent.device, isConnectionEvent(stackEvent));
@@ -1180,7 +831,7 @@ public class HeadsetClientService extends ProfileService {
         sm.sendMessage(StackEvent.STACK_EVENT, stackEvent);
     }
 
-    private boolean isConnectionEvent(StackEvent stackEvent) {
+    private static boolean isConnectionEvent(StackEvent stackEvent) {
         if (stackEvent.type == StackEvent.EVENT_TYPE_CONNECTION_STATE_CHANGED) {
             if ((stackEvent.valueInt == HeadsetClientHalConstants.CONNECTION_STATE_CONNECTING)
                     || (stackEvent.valueInt
@@ -1257,7 +908,13 @@ public class HeadsetClientService extends ProfileService {
 
             // Allocate a new SM
             Log.d(TAG, "Creating a new state machine");
-            sm = mSmFactory.make(this, mSmThread, mNativeInterface);
+            sm =
+                    new HeadsetClientStateMachine(
+                            mAdapterService,
+                            this,
+                            mAdapterService.getHeadsetService(),
+                            mSmThread.getLooper(),
+                            mNativeInterface);
             mStateMachineMap.put(device, sm);
             return sm;
         }
@@ -1287,9 +944,7 @@ public class HeadsetClientService extends ProfileService {
     }
 
     void handleBatteryLevelChanged(BluetoothDevice device, int batteryLevel) {
-        AdapterService.getAdapterService()
-                .getRemoteDevices()
-                .handleAgBatteryLevelChanged(device, batteryLevel);
+        mAdapterService.getRemoteDevices().handleAgBatteryLevelChanged(device, batteryLevel);
     }
 
     @Override
@@ -1312,10 +967,6 @@ public class HeadsetClientService extends ProfileService {
         synchronized (mStateMachineMap) {
             return mStateMachineMap;
         }
-    }
-
-    protected void setSMFactory(HeadsetClientStateMachineFactory factory) {
-        mSmFactory = factory;
     }
 
     protected AudioManager getAudioManager() {

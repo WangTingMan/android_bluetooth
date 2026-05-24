@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,7 @@ import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 
-import androidx.test.InstrumentationRegistry;
-import androidx.test.runner.AndroidJUnit4;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import com.android.bluetooth.TestUtils;
 import com.android.bluetooth.audio_util.Image;
@@ -32,6 +31,7 @@ import com.android.bluetooth.avrcpcontroller.BipImageDescriptor;
 import com.android.bluetooth.avrcpcontroller.BipImageFormat;
 import com.android.bluetooth.avrcpcontroller.BipImageProperties;
 import com.android.bluetooth.avrcpcontroller.BipPixel;
+import com.android.bluetooth.tests.R;
 
 import org.junit.After;
 import org.junit.Before;
@@ -39,13 +39,14 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.util.Arrays;
 
+/** Test cases for {@link CoverArt}. */
 @RunWith(AndroidJUnit4.class)
 public class CoverArtTest {
-    private Resources mTestResources;
+
+    private final Resources mTestResources = TestUtils.getTestApplicationResources();
 
     private static final BipPixel PIXEL_THUMBNAIL = BipPixel.createFixed(200, 200);
     private static final String IMAGE_HANDLE_1 = "0000001";
@@ -58,11 +59,8 @@ public class CoverArtTest {
 
     @Before
     public void setUp() throws Exception {
-        mTestResources =
-                TestUtils.getTestApplicationResources(InstrumentationRegistry.getTargetContext());
-
-        m200by200Image = loadImage(com.android.bluetooth.tests.R.raw.image_200_200);
-        m200by200ImageBlue = loadImage(com.android.bluetooth.tests.R.raw.image_200_200_blue);
+        m200by200Image = loadImage(R.raw.image_200_200);
+        m200by200ImageBlue = loadImage(R.raw.image_200_200_blue);
         mImage = new Image(null, m200by200Image);
         mImage2 = new Image(null, m200by200ImageBlue);
     }
@@ -73,7 +71,6 @@ public class CoverArtTest {
         mImage = null;
         m200by200ImageBlue = null;
         m200by200Image = null;
-        mTestResources = null;
     }
 
     private Bitmap loadImage(int resId) {
@@ -81,19 +78,19 @@ public class CoverArtTest {
         return BitmapFactory.decodeStream(imageInputStream);
     }
 
-    private Bitmap toBitmap(byte[] imageBytes) {
+    private static Bitmap toBitmap(byte[] imageBytes) {
         ByteArrayInputStream inputStream = new ByteArrayInputStream(imageBytes);
         return BitmapFactory.decodeStream(inputStream);
     }
 
-    private BipImageDescriptor getDescriptor(int encoding, int width, int height) {
+    private static BipImageDescriptor getDescriptor(int encoding, int width, int height) {
         return new BipImageDescriptor.Builder()
                 .setEncoding(encoding)
                 .setFixedDimensions(width, height)
                 .build();
     }
 
-    private boolean containsThumbnailFormat(BipImageProperties properties) {
+    private static boolean containsThumbnailFormat(BipImageProperties properties) {
         if (properties == null) return false;
 
         for (BipImageFormat format : properties.getNativeFormats()) {
@@ -117,7 +114,7 @@ public class CoverArtTest {
         return false;
     }
 
-    private boolean isThumbnailFormat(Bitmap image) {
+    private static boolean isThumbnailFormat(Bitmap image) {
         if (image == null) return false;
         return (200 == image.getHeight() && 200 == image.getWidth());
     }

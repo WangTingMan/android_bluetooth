@@ -16,11 +16,12 @@
 
 package com.android.bluetooth.avrcpcontroller;
 
+import android.annotation.SuppressLint;
 import android.util.Log;
 
-import com.google.common.base.Ascii;
-
 import java.util.HashSet;
+import java.util.Locale;
+import java.util.Objects;
 
 /**
  * Represents the set of possible transformations available for a variant of an image to get the
@@ -37,14 +38,16 @@ import java.util.HashSet;
  * pixel=“1280*960” size=“500000” transformation="stretch"/> </image-descriptor>
  */
 public class BipTransformation {
-    private static final String TAG = "avrcpcontroller.BipTransformation";
+    private static final String TAG =
+            AvrcpControllerUtils.TAG_PREFIX_AVRCP_CONTROLLER
+                    + BipTransformation.class.getSimpleName();
 
     public static final int UNKNOWN = -1;
     public static final int STRETCH = 0;
     public static final int FILL = 1;
     public static final int CROP = 2;
 
-    public final HashSet<Integer> mSupportedTransformations = new HashSet<Integer>(3);
+    public final HashSet<Integer> mSupportedTransformations = new HashSet<>(3);
 
     /** Create an empty set of BIP Transformations */
     public BipTransformation() {}
@@ -53,22 +56,14 @@ public class BipTransformation {
     public BipTransformation(String transformations) {
         if (transformations == null) return;
 
-        transformations = Ascii.toLowerCase(transformations.trim());
+        transformations = transformations.trim().toLowerCase(Locale.ROOT);
         String[] tokens = transformations.split(" ");
         for (String token : tokens) {
             switch (token) {
-                case "stretch":
-                    addTransformation(STRETCH);
-                    break;
-                case "fill":
-                    addTransformation(FILL);
-                    break;
-                case "crop":
-                    addTransformation(CROP);
-                    break;
-                default:
-                    Log.e(TAG, "Found unknown transformation '" + token + "'");
-                    break;
+                case "stretch" -> addTransformation(STRETCH);
+                case "fill" -> addTransformation(FILL);
+                case "crop" -> addTransformation(CROP);
+                default -> Log.e(TAG, "Found unknown transformation '" + token + "'");
             }
         }
     }
@@ -118,7 +113,7 @@ public class BipTransformation {
      *     BipTransformation.* constants, but doesn't *have* to be
      * @return True if the transformation constant is valid, False otherwise
      */
-    private boolean isValid(int transformation) {
+    private static boolean isValid(int transformation) {
         return transformation >= STRETCH && transformation <= CROP;
     }
 
@@ -143,27 +138,38 @@ public class BipTransformation {
 
     @Override
     public boolean equals(Object o) {
-        if (o == this) return true;
-        if (o == null && !supportsAny()) return true;
-        if (!(o instanceof BipTransformation)) return false;
+        if (o == this) {
+            return true;
+        }
+        if (o == null && !supportsAny()) {
+            return true;
+        }
+        if (!(o instanceof BipTransformation t)) {
+            return false;
+        }
 
-        BipTransformation t = (BipTransformation) o;
         return mSupportedTransformations.equals(t.mSupportedTransformations);
     }
 
     @Override
+    public int hashCode() {
+        return Objects.hash(mSupportedTransformations);
+    }
+
+    @Override
+    @SuppressLint("ToStringReturnsNull")
     public String toString() {
         if (!supportsAny()) return null;
-        String transformations = "";
+        StringBuilder transformations = new StringBuilder();
         if (isSupported(STRETCH)) {
-            transformations += "stretch ";
+            transformations.append("stretch ");
         }
         if (isSupported(FILL)) {
-            transformations += "fill ";
+            transformations.append("fill ");
         }
         if (isSupported(CROP)) {
-            transformations += "crop ";
+            transformations.append("crop ");
         }
-        return transformations.trim();
+        return transformations.toString().trim();
     }
 }

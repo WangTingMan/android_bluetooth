@@ -17,9 +17,8 @@
 #ifndef ANDROID_INCLUDE_BT_HH_H
 #define ANDROID_INCLUDE_BT_HH_H
 
-#include <base/strings/stringprintf.h>
-#include <ble_address_with_type.h>
-#include <raw_address.h>
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/ble_address_with_type.h>
 #include <stdint.h>
 
 #include <string>
@@ -44,8 +43,7 @@ typedef enum {
 
 __END_DECLS
 
-inline std::string bthh_connection_state_text(
-    const bthh_connection_state_t& state) {
+inline std::string bthh_connection_state_text(const bthh_connection_state_t& state) {
   switch (state) {
     CASE_RETURN_TEXT(BTHH_CONN_STATE_CONNECTED);
     CASE_RETURN_TEXT(BTHH_CONN_STATE_CONNECTING);
@@ -54,7 +52,7 @@ inline std::string bthh_connection_state_text(
     CASE_RETURN_TEXT(BTHH_CONN_STATE_ACCEPTING);
     CASE_RETURN_TEXT(BTHH_CONN_STATE_UNKNOWN);
     default:
-      return base::StringPrintf("UNKNOWN[%d]", state);
+      return std::format("UNKNOWN[{}]", static_cast<int>(state));
   }
 }
 
@@ -87,11 +85,7 @@ typedef enum {
 } bthh_protocol_mode_t;
 
 /* Report types */
-typedef enum {
-  BTHH_INPUT_REPORT = 1,
-  BTHH_OUTPUT_REPORT,
-  BTHH_FEATURE_REPORT
-} bthh_report_type_t;
+typedef enum { BTHH_INPUT_REPORT = 1, BTHH_OUTPUT_REPORT, BTHH_FEATURE_REPORT } bthh_report_type_t;
 
 /* Info for which profiles to enable */
 typedef struct {
@@ -114,60 +108,48 @@ typedef struct {
 /** Callback for connection state change.
  *  state will have one of the values from bthh_connection_state_t
  */
-typedef void (*bthh_connection_state_callback)(RawAddress* bd_addr,
-                                               tBLE_ADDR_TYPE addr_type,
+typedef void (*bthh_connection_state_callback)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
                                                tBT_TRANSPORT transport,
                                                bthh_connection_state_t state);
 
 /** Callback for vitual unplug api.
  *  the status of the vitual unplug
  */
-typedef void (*bthh_virtual_unplug_callback)(RawAddress* bd_addr,
-                                             tBLE_ADDR_TYPE addr_type,
-                                             tBT_TRANSPORT transport,
-                                             bthh_status_t hh_status);
+typedef void (*bthh_virtual_unplug_callback)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
+                                             tBT_TRANSPORT transport, bthh_status_t hh_status);
 
 /** Callback for get hid info
  *  hid_info will contain attr_mask, sub_class, app_id, vendor_id, product_id,
  * version, ctry_code, len
  */
-typedef void (*bthh_hid_info_callback)(RawAddress* bd_addr,
-                                       tBLE_ADDR_TYPE addr_type,
-                                       tBT_TRANSPORT transport,
-                                       bthh_hid_info_t hid_info);
+typedef void (*bthh_hid_info_callback)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
+                                       tBT_TRANSPORT transport, bthh_hid_info_t hid_info);
 
 /** Callback for get protocol api.
  *  the protocol mode is one of the value from bthh_protocol_mode_t
  */
-typedef void (*bthh_protocol_mode_callback)(RawAddress* bd_addr,
-                                            tBLE_ADDR_TYPE addr_type,
-                                            tBT_TRANSPORT transport,
-                                            bthh_status_t hh_status,
+typedef void (*bthh_protocol_mode_callback)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
+                                            tBT_TRANSPORT transport, bthh_status_t hh_status,
                                             bthh_protocol_mode_t mode);
 
 /** Callback for get/set_idle_time api.
  */
-typedef void (*bthh_idle_time_callback)(RawAddress* bd_addr,
-                                        tBLE_ADDR_TYPE addr_type,
-                                        tBT_TRANSPORT transport,
-                                        bthh_status_t hh_status, int idle_rate);
+typedef void (*bthh_idle_time_callback)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
+                                        tBT_TRANSPORT transport, bthh_status_t hh_status,
+                                        int idle_rate);
 
 /** Callback for get report api.
  *  if staus is ok rpt_data contains the report data
  */
-typedef void (*bthh_get_report_callback)(RawAddress* bd_addr,
-                                         tBLE_ADDR_TYPE addr_type,
-                                         tBT_TRANSPORT transport,
-                                         bthh_status_t hh_status,
+typedef void (*bthh_get_report_callback)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
+                                         tBT_TRANSPORT transport, bthh_status_t hh_status,
                                          uint8_t* rpt_data, int rpt_size);
 
 /** Callback for set_report/set_protocol api and if error
  *  occurs for get_report/get_protocol api.
  */
-typedef void (*bthh_handshake_callback)(RawAddress* bd_addr,
-                                        tBLE_ADDR_TYPE addr_type,
-                                        tBT_TRANSPORT transport,
-                                        bthh_status_t hh_status);
+typedef void (*bthh_handshake_callback)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
+                                        tBT_TRANSPORT transport, bthh_status_t hh_status);
 
 #ifdef _MSC_VER
 typedef void (*bthh_data_callback)(RawAddress* bd_addr,
@@ -191,6 +173,7 @@ typedef struct {
 #ifdef _MSC_VER
   bthh_data_callback data_cb;
 #endif
+
 } bthh_callbacks_t;
 
 /** Represents the standard BT-HH interface. */
@@ -204,30 +187,27 @@ typedef struct {
   bt_status_t (*init)(bthh_callbacks_t* callbacks);
 
   /** connect to hid device */
-  bt_status_t (*connect)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
-                         tBT_TRANSPORT transport);
+  bt_status_t (*connect)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type, tBT_TRANSPORT transport);
 
   /** dis-connect from hid device */
-  bt_status_t (*disconnect)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
-                            tBT_TRANSPORT transport, bool reconnect_allowed);
+  bt_status_t (*disconnect)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type, tBT_TRANSPORT transport,
+                            bool reconnect_allowed);
 
   /** Virtual UnPlug (VUP) the specified HID device */
   bt_status_t (*virtual_unplug)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
                                 tBT_TRANSPORT transport);
 
   /** Set the HID device descriptor for the specified HID device. */
-  bt_status_t (*set_info)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
-                          tBT_TRANSPORT transport, bthh_hid_info_t hid_info);
+  bt_status_t (*set_info)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type, tBT_TRANSPORT transport,
+                          bthh_hid_info_t hid_info);
 
   /** Get the HID proto mode. */
   bt_status_t (*get_protocol)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
-                              tBT_TRANSPORT transport,
-                              bthh_protocol_mode_t protocolMode);
+                              tBT_TRANSPORT transport, bthh_protocol_mode_t protocolMode);
 
   /** Set the HID proto mode. */
   bt_status_t (*set_protocol)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
-                              tBT_TRANSPORT transport,
-                              bthh_protocol_mode_t protocolMode);
+                              tBT_TRANSPORT transport, bthh_protocol_mode_t protocolMode);
 
   /** Get the HID Idle Time */
   bt_status_t (*get_idle_time)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
@@ -238,47 +218,41 @@ typedef struct {
                                tBT_TRANSPORT transport, uint8_t idleTime);
 
   /** Send a GET_REPORT to HID device. */
-  bt_status_t (*get_report)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
-                            tBT_TRANSPORT transport,
-                            bthh_report_type_t reportType, uint8_t reportId,
-                            int bufferSize);
+  bt_status_t (*get_report)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type, tBT_TRANSPORT transport,
+                            bthh_report_type_t reportType, uint8_t reportId, int bufferSize);
 
   /** Send a GET_REPORT_REPLY to HID driver. */
   bt_status_t (*get_report_reply)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
-                                  tBT_TRANSPORT transport, bthh_status_t status,
-                                  char* report, uint16_t size);
+                                  tBT_TRANSPORT transport, bthh_status_t status, char* report,
+                                  uint16_t size);
 
   /** Send a SET_REPORT to HID device. */
-  bt_status_t (*set_report)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
-                            tBT_TRANSPORT transport,
+  bt_status_t (*set_report)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type, tBT_TRANSPORT transport,
                             bthh_report_type_t reportType, char* report);
 
   /** Send data to HID device. */
-  bt_status_t (*send_data)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type,
-                           tBT_TRANSPORT transport, char* data);
+  bt_status_t (*send_data)(RawAddress* bd_addr, tBLE_ADDR_TYPE addr_type, tBT_TRANSPORT transport,
+                           char* data);
 
   /** Closes the interface. */
   void (*cleanup)(void);
 
   /** Configure which profiles can be enabled. Affected after re-init */
   void (*configure_enabled_profiles)(bool enable_hidp, bool enable_hogp);
-
 } bthh_interface_t;
 __END_DECLS
 
 #if __has_include(<bluetooth/log.h>)
 #include <bluetooth/log.h>
 
-namespace fmt {
+namespace std {
 template <>
-struct formatter<bthh_connection_state_t>
-    : enum_formatter<bthh_connection_state_t> {};
+struct formatter<bthh_connection_state_t> : enum_formatter<bthh_connection_state_t> {};
 template <>
-struct formatter<bthh_protocol_mode_t> : enum_formatter<bthh_protocol_mode_t> {
-};
+struct formatter<bthh_protocol_mode_t> : enum_formatter<bthh_protocol_mode_t> {};
 template <>
 struct formatter<bthh_report_type_t> : enum_formatter<bthh_report_type_t> {};
-}  // namespace fmt
+}  // namespace std
 
 #endif  // __has_include(<bluetooth/log.h>)
 

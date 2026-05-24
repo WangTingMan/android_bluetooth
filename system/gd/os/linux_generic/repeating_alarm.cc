@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@
 
 #include "common/bind.h"
 #include "os/linux_generic/linux.h"
-#include "os/log.h"
 #include "os/utils.h"
 
 #ifdef __ANDROID__
@@ -37,15 +36,16 @@ namespace bluetooth {
 namespace os {
 using common::Closure;
 
-RepeatingAlarm::RepeatingAlarm(Handler* handler) : handler_(handler), fd_(TIMERFD_CREATE(ALARM_CLOCK, 0)) {
+RepeatingAlarm::RepeatingAlarm(Thread* thread)
+    : thread_(thread), fd_(TIMERFD_CREATE(ALARM_CLOCK, 0)) {
   log::assert_that(fd_ != -1, "assert failed: fd_ != -1");
 
-  token_ = handler_->thread_->GetReactor()->Register(
-      fd_, common::Bind(&RepeatingAlarm::on_fire, common::Unretained(this)), common::Closure());
+  token_ = thread_->GetReactor()->Register(
+          fd_, common::Bind(&RepeatingAlarm::on_fire, common::Unretained(this)), common::Closure());
 }
 
 RepeatingAlarm::~RepeatingAlarm() {
-  handler_->thread_->GetReactor()->Unregister(token_);
+  thread_->GetReactor()->Unregister(token_);
 
   int close_status;
   RUN_NO_INTR(close_status = TIMERFD_CLOSE(fd_));
@@ -77,9 +77,8 @@ void RepeatingAlarm::on_fire() {
   auto bytes_read = read(fd_, &times_invoked, sizeof(uint64_t));
   lock.unlock();
   task.Run();
-  log::assert_that(
-      bytes_read == static_cast<ssize_t>(sizeof(uint64_t)),
-      "assert failed: bytes_read == static_cast<ssize_t>(sizeof(uint64_t))");
+  log::assert_that(bytes_read == static_cast<ssize_t>(sizeof(uint64_t)),
+                   "assert failed: bytes_read == static_cast<ssize_t>(sizeof(uint64_t))");
 }
 
 }  // namespace os

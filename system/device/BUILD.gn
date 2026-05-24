@@ -16,10 +16,10 @@
 
 static_library("device") {
   sources = [
-    "src/esco_parameters.cc",
-    "src/interop.cc",
     "src/device_iot_config.cc",
     "src/device_iot_config_int.cc",
+    "src/esco_parameters.cc",
+    "src/interop.cc",
   ]
 
   include_dirs = [
@@ -34,8 +34,6 @@ static_library("device") {
 
   deps = [
     "//bt/flags:bluetooth_flags_c_lib",
-    "//bt/system/gd/rust/shim:init_flags_bridge_header",
-    "//bt/system/gd/rust/shim:libbluetooth_rust_interop",
     "//bt/system/pdl:BluetoothGeneratedPackets_h",
   ]
 }
@@ -45,8 +43,8 @@ if (use.test) {
     include_dirs = [ "//bt/system" ]
 
     deps = [
-      "//bt/system/device",
       "//bt/system/btcore",
+      "//bt/system/device",
       "//bt/system/osi",
     ]
 
@@ -69,13 +67,11 @@ if (use.test) {
     ]
 
     deps = [
-      "//bt/system/device",
       "//bt/system/btcore",
+      "//bt/system/device",
     ]
 
-    configs += [
-      "//bt/system:target_defaults",
-    ]
+    configs += [ "//bt/system:target_defaults" ]
 
     libs = [
       "pthread",

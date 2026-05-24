@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,12 @@
 
 package android.bluetooth;
 
+import static java.util.Objects.requireNonNull;
+
 import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.annotation.RequiresNoPermission;
 import android.annotation.SystemApi;
 import android.os.Parcel;
 import android.os.Parcelable;
@@ -95,8 +98,8 @@ public final class BluetoothLeBroadcastSubgroupSettings implements Parcelable {
      * @hide
      */
     @SystemApi
-    @NonNull
-    public BluetoothLeAudioContentMetadata getContentMetadata() {
+    @RequiresNoPermission
+    public @NonNull BluetoothLeAudioContentMetadata getContentMetadata() {
         return mContentMetadata;
     }
 
@@ -107,6 +110,7 @@ public final class BluetoothLeBroadcastSubgroupSettings implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public @Quality int getPreferredQuality() {
         return mPreferredQuality;
     }
@@ -193,8 +197,8 @@ public final class BluetoothLeBroadcastSubgroupSettings implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setPreferredQuality(@Quality int preferredQuality) {
+        @RequiresNoPermission
+        public @NonNull Builder setPreferredQuality(@Quality int preferredQuality) {
             mPreferredQuality = preferredQuality;
             return this;
         }
@@ -208,10 +212,10 @@ public final class BluetoothLeBroadcastSubgroupSettings implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setContentMetadata(
+        @RequiresNoPermission
+        public @NonNull Builder setContentMetadata(
                 @NonNull BluetoothLeAudioContentMetadata contentMetadata) {
-            Objects.requireNonNull(contentMetadata, "contentMetadata cannot be null");
+            requireNonNull(contentMetadata);
             mContentMetadata = contentMetadata;
             return this;
         }
@@ -225,9 +229,9 @@ public final class BluetoothLeBroadcastSubgroupSettings implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public BluetoothLeBroadcastSubgroupSettings build() {
-            Objects.requireNonNull(mContentMetadata, "ContentMetadata is null");
+        @RequiresNoPermission
+        public @NonNull BluetoothLeBroadcastSubgroupSettings build() {
+            requireNonNull(mContentMetadata);
             if (mPreferredQuality != QUALITY_STANDARD && mPreferredQuality != QUALITY_HIGH) {
                 throw new IllegalArgumentException(
                         "Must set audio quality to either Standard or High");

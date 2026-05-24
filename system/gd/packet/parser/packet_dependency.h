@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,19 +22,19 @@
 #include "parent_def.h"
 
 class PacketDependency {
- private:
+private:
   std::map<std::string, std::vector<std::string>> dependencies;
   std::map<std::string, std::vector<std::string>> children_dependencies;
 
   std::set<std::string> CollectInitialParseAndMatchFields(
-      const ParentDef* parent,
-      std::map<std::string, std::set<std::string>>& initial_parse_and_match_fields) const;
+          const ParentDef* parent,
+          std::map<std::string, std::set<std::string>>& initial_parse_and_match_fields) const;
   void FinalizeParseAndMatchFields(
-      const ParentDef* parent,
-      std::map<std::string, std::set<std::string>>& initial_parse_and_match_fields,
-      std::vector<std::string>& available_fields);
+          const ParentDef* parent,
+          std::map<std::string, std::set<std::string>>& initial_parse_and_match_fields,
+          std::vector<std::string>& available_fields);
 
- public:
+public:
   PacketDependency(const ParentDef* root);
   std::vector<std::string>& GetDependencies(const std::string& packet_name);
   std::vector<std::string>& GetChildrenDependencies(const std::string& packet_name);

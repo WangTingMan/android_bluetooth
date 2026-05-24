@@ -18,11 +18,20 @@
 package com.android.bluetooth.hap;
 
 import static android.Manifest.permission.BLUETOOTH_CONNECT;
+import static android.Manifest.permission.BLUETOOTH_PRIVILEGED;
+import static android.bluetooth.BluetoothProfile.CONNECTION_POLICY_ALLOWED;
+import static android.bluetooth.BluetoothProfile.CONNECTION_POLICY_FORBIDDEN;
+import static android.bluetooth.BluetoothProfile.CONNECTION_POLICY_UNKNOWN;
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTED;
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTING;
+import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTED;
+import static android.bluetooth.BluetoothProfile.getConnectionStateName;
+import static android.bluetooth.BluetoothUtils.RemoteExceptionIgnoringConsumer;
 
-import static com.android.bluetooth.Utils.enforceBluetoothPrivilegedPermission;
+import static java.util.Collections.emptyList;
+import static java.util.Objects.requireNonNull;
+import static java.util.Objects.requireNonNullElseGet;
 
-import android.annotation.Nullable;
-import android.annotation.RequiresPermission;
 import android.bluetooth.BluetoothCsipSetCoordinator;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothHapClient;
@@ -31,155 +40,175 @@ import android.bluetooth.BluetoothLeAudio;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.BluetoothStatusCodes;
 import android.bluetooth.BluetoothUuid;
-import android.bluetooth.IBluetoothHapClient;
 import android.bluetooth.IBluetoothHapClientCallback;
-import android.content.AttributionSource;
 import android.content.Intent;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.ParcelUuid;
 import android.os.RemoteCallbackList;
-import android.os.RemoteException;
 import android.sysprop.BluetoothProperties;
 import android.util.Log;
 
 import com.android.bluetooth.Utils;
 import com.android.bluetooth.btservice.ActiveDeviceManager;
 import com.android.bluetooth.btservice.AdapterService;
-import com.android.bluetooth.btservice.ProfileService;
-import com.android.bluetooth.btservice.ServiceFactory;
-import com.android.bluetooth.btservice.storage.DatabaseManager;
-import com.android.bluetooth.csip.CsipSetCoordinatorService;
+import com.android.bluetooth.btservice.ConnectableProfile;
 import com.android.bluetooth.flags.Flags;
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
 
+import libcore.util.SneakyThrow;
+
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
-import java.util.ListIterator;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /** Provides Bluetooth Hearing Access profile, as a service. */
-public class HapClientService extends ProfileService {
-    private static final String TAG = "HapClientService";
+public class HapClientService extends ConnectableProfile {
+    private static final String TAG = HapClientService.class.getSimpleName();
 
     // Upper limit of all HearingAccess devices: Bonded or Connected
     private static final int MAX_HEARING_ACCESS_STATE_MACHINES = 10;
     private static final int SM_THREAD_JOIN_TIMEOUT_MS = 1000;
-    private static HapClientService sHapClient;
-    private final Map<BluetoothDevice, HapClientStateMachine> mStateMachines = new HashMap<>();
-    @VisibleForTesting HapClientNativeInterface mHapClientNativeInterface;
-    private AdapterService mAdapterService;
-    private DatabaseManager mDatabaseManager;
-    private HandlerThread mStateMachinesThread;
-    private Handler mHandler;
 
+    private final Map<BluetoothDevice, HapClientStateMachine> mStateMachines =
+            new ConcurrentHashMap<>();
     private final Map<BluetoothDevice, Integer> mDeviceCurrentPresetMap = new HashMap<>();
     private final Map<BluetoothDevice, Integer> mDeviceFeaturesMap = new HashMap<>();
     private final Map<BluetoothDevice, List<BluetoothHapPresetInfo>> mPresetsMap = new HashMap<>();
+    private final Handler mHandler;
+    private final Looper mStateMachinesLooper;
+    private final HandlerThread mStateMachinesThread;
+    private final HapClientNativeInterface mNativeInterface;
 
     @VisibleForTesting
     @GuardedBy("mCallbacks")
     final RemoteCallbackList<IBluetoothHapClientCallback> mCallbacks = new RemoteCallbackList<>();
 
-    @VisibleForTesting ServiceFactory mFactory = new ServiceFactory();
+    public HapClientService(AdapterService adapterService) {
+        this(adapterService, Flags.hapOnMainLooper() ? Looper.getMainLooper() : null, null);
+    }
+
+    @VisibleForTesting
+    HapClientService(
+            AdapterService adapterService,
+            Looper looper,
+            HapClientNativeInterface nativeInterface) {
+        super(BluetoothProfile.HAP_CLIENT, requireNonNull(adapterService));
+        mNativeInterface =
+                requireNonNullElseGet(
+                        nativeInterface,
+                        () ->
+                                new HapClientNativeInterface(
+                                        new HapClientNativeCallback(adapterService, this)));
+
+        if (Flags.hapOnMainLooper()) {
+            mStateMachinesLooper = requireNonNull(looper);
+            mHandler = new Handler(looper);
+            mStateMachinesThread = null;
+        } else {
+            if (looper == null) {
+                mHandler = new Handler(requireNonNull(Looper.getMainLooper()));
+                mStateMachinesThread = new HandlerThread("HapClientService.StateMachines");
+                mStateMachinesThread.start();
+                mStateMachinesLooper = mStateMachinesThread.getLooper();
+            } else {
+                mHandler = new Handler(looper);
+                mStateMachinesThread = null;
+                mStateMachinesLooper = looper;
+            }
+        }
+
+        // Initialize native interface
+        mNativeInterface.init();
+    }
+
+    public void syncPost(Consumer<HapClientService> consumer) {
+        syncPost(
+                (s) -> {
+                    consumer.accept(s);
+                    return null;
+                },
+                null);
+    }
+
+    public void post(Consumer<HapClientService> consumer) {
+        Utils.enforceMainLooperIsNotUsed();
+
+        mHandler.post(
+                () -> {
+                    // Service can become unavailable while the message is being posted
+                    if (!isAvailable()) {
+                        Log.e(TAG, "Service is no longer available.");
+                        return;
+                    }
+                    consumer.accept(this);
+                });
+    }
+
+    public <T> T syncPost(Function<HapClientService, T> function, T defaultValue) {
+        Utils.enforceMainLooperIsNotUsed();
+
+        FutureTask<T> task =
+                new FutureTask<>(
+                        () -> {
+                            // Service can become unavailable while the message is being posted
+                            if (!isAvailable()) {
+                                Log.e(TAG, "Service is no longer available.");
+                                return defaultValue;
+                            }
+                            return function.apply(this);
+                        });
+        mHandler.post(task);
+        try {
+            // Any method calling postAndWait should most likely be done in under 1 seconds.
+            return task.get(1, TimeUnit.SECONDS);
+        } catch (TimeoutException | InterruptedException e) {
+            SneakyThrow.sneakyThrow(e);
+        } catch (ExecutionException e) {
+            SneakyThrow.sneakyThrow(e.getCause());
+        }
+        return defaultValue;
+    }
+
+    void enforceMainLooperIsUsed() {
+        if (!Flags.hapOnMainLooper()) {
+            return;
+        }
+        // inline below once flag is rollout
+        Utils.enforceMainLooperIsUsed();
+    }
 
     public static boolean isEnabled() {
         return BluetoothProperties.isProfileHapClientEnabled().orElse(false);
     }
 
-    @VisibleForTesting
-    static synchronized void setHapClient(HapClientService instance) {
-        Log.d(TAG, "setHapClient(): set to: " + instance);
-        sHapClient = instance;
-    }
-
-    /**
-     * Get the HapClientService instance
-     *
-     * @return HapClientService instance
-     */
-    public static synchronized HapClientService getHapClientService() {
-        if (sHapClient == null) {
-            Log.w(TAG, "getHapClientService(): service is NULL");
-            return null;
-        }
-
-        if (!sHapClient.isAvailable()) {
-            Log.w(TAG, "getHapClientService(): service is not available");
-            return null;
-        }
-        return sHapClient;
-    }
-
-    public HapClientService(AdapterService adapterService) {
-        this(adapterService, new HapClientNativeInterface());
-    }
-
-    @VisibleForTesting
-    HapClientService(AdapterService adapterService, HapClientNativeInterface nativeInterface) {
-        super(adapterService);
-        mAdapterService = Objects.requireNonNull(adapterService);
-        mHapClientNativeInterface = Objects.requireNonNull(nativeInterface);
+    @Override
+    protected IProfileServiceBinder initBinder() {
+        return new HapClientServiceBinder(this);
     }
 
     @Override
     public void cleanup() {
-        Log.d(TAG, "cleanup()");
-    }
-
-    @Override
-    protected IProfileServiceBinder initBinder() {
-        return new BluetoothHapClientBinder(this);
-    }
-
-    @Override
-    public void start() {
-        Log.d(TAG, "start()");
-
-        if (sHapClient != null) {
-            throw new IllegalStateException("start() called twice");
-        }
-
-        // Get DatabaseManager
-        mDatabaseManager =
-                Objects.requireNonNull(
-                        mAdapterService.getDatabase(),
-                        "DatabaseManager cannot be null when HapClientService starts");
-
-        // Start handler thread for state machines
-        mHandler = new Handler(Looper.getMainLooper());
-        mStateMachines.clear();
-        mStateMachinesThread = new HandlerThread("HapClientService.StateMachines");
-        mStateMachinesThread.start();
-
-        // Initialize native interface
-        mHapClientNativeInterface.init();
-
-        // Mark service as started
-        setHapClient(this);
-    }
-
-    @Override
-    public void stop() {
-        Log.d(TAG, "stop()");
-        if (sHapClient == null) {
-            Log.w(TAG, "stop() called before start()");
-            return;
-        }
-
-        // Marks service as stopped
-        setHapClient(null);
+        Log.i(TAG, "cleanup()");
 
         // Destroy state machines and stop handler thread
         synchronized (mStateMachines) {
             for (HapClientStateMachine sm : mStateMachines.values()) {
                 sm.doQuit();
-                sm.cleanup();
             }
             mStateMachines.clear();
         }
@@ -188,38 +217,39 @@ public class HapClientService extends ProfileService {
             try {
                 mStateMachinesThread.quitSafely();
                 mStateMachinesThread.join(SM_THREAD_JOIN_TIMEOUT_MS);
-                mStateMachinesThread = null;
             } catch (InterruptedException e) {
                 // Do not rethrow as we are shutting down anyway
             }
         }
 
         // Unregister Handler and stop all queued messages.
-        if (mHandler != null) {
-            mHandler.removeCallbacksAndMessages(null);
-            mHandler = null;
-        }
+        mHandler.removeCallbacksAndMessages(null);
 
         // Cleanup GATT interface
-        mHapClientNativeInterface.cleanup();
+        mNativeInterface.cleanup();
 
         // Cleanup the internals
         mDeviceCurrentPresetMap.clear();
         mDeviceFeaturesMap.clear();
         mPresetsMap.clear();
 
-        if (mCallbacks != null) {
+        synchronized (mCallbacks) {
             mCallbacks.kill();
         }
     }
 
-    /** Process a change in the bonding state for a device */
+    @Override
     public void handleBondStateChanged(BluetoothDevice device, int fromState, int toState) {
-        mHandler.post(() -> bondStateChanged(device, toState));
+        if (Flags.hapOnMainLooper() && Flags.bondStateMachineLooper()) {
+            bondStateChanged(device, toState);
+        } else {
+            mHandler.post(() -> bondStateChanged(device, toState));
+        }
     }
 
     @VisibleForTesting
     void bondStateChanged(BluetoothDevice device, int bondState) {
+        enforceMainLooperIsUsed();
         Log.d(TAG, "Bond state changed for device: " + device + " state: " + bondState);
 
         // Remove state machine if the bonding for a device is removed
@@ -236,7 +266,7 @@ public class HapClientService extends ProfileService {
             if (sm == null) {
                 return;
             }
-            if (sm.getConnectionState() != BluetoothProfile.STATE_DISCONNECTED) {
+            if (sm.getConnectionState() != STATE_DISCONNECTED) {
                 Log.i(TAG, "Disconnecting device because it was unbonded.");
                 disconnect(device);
                 return;
@@ -256,13 +286,12 @@ public class HapClientService extends ProfileService {
             }
             Log.i(TAG, "removeStateMachine: removing state machine for device: " + device);
             sm.doQuit();
-            sm.cleanup();
             mStateMachines.remove(device);
         }
     }
 
     List<BluetoothDevice> getDevicesMatchingConnectionStates(int[] states) {
-        enforceCallingOrSelfPermission(BLUETOOTH_CONNECT, "Need BLUETOOTH_CONNECT permission");
+        enforceMainLooperIsUsed();
         ArrayList<BluetoothDevice> devices = new ArrayList<>();
         if (states == null) {
             return devices;
@@ -273,11 +302,11 @@ public class HapClientService extends ProfileService {
         }
         synchronized (mStateMachines) {
             for (BluetoothDevice device : bondedDevices) {
-                final ParcelUuid[] featureUuids = device.getUuids();
+                final ParcelUuid[] featureUuids = mAdapterService.getRemoteUuids(device);
                 if (!Utils.arrayContains(featureUuids, BluetoothUuid.HAS)) {
                     continue;
                 }
-                int connectionState = BluetoothProfile.STATE_DISCONNECTED;
+                int connectionState = STATE_DISCONNECTED;
                 HapClientStateMachine sm = mStateMachines.get(device);
                 if (sm != null) {
                     connectionState = sm.getConnectionState();
@@ -293,7 +322,17 @@ public class HapClientService extends ProfileService {
         }
     }
 
-    List<BluetoothDevice> getConnectedDevices() {
+    /**
+     * @return A list of connected {@link BluetoothDevice}.
+     */
+    public List<BluetoothDevice> getConnectedDevices() {
+        if (Flags.hapOnMainLooper()) {
+            // Getter can be accessed from Binder thread
+            return mStateMachines.values().stream()
+                    .filter(HapClientStateMachine::isConnected)
+                    .map(HapClientStateMachine::getDevice)
+                    .toList();
+        }
         synchronized (mStateMachines) {
             List<BluetoothDevice> devices = new ArrayList<>();
             for (HapClientStateMachine sm : mStateMachines.values()) {
@@ -314,12 +353,13 @@ public class HapClientService extends ProfileService {
      *     BluetoothProfile#STATE_CONNECTED} if this profile is connected, or {@link
      *     BluetoothProfile#STATE_DISCONNECTING} if this profile is being disconnected
      */
+    @Override
     public int getConnectionState(BluetoothDevice device) {
-        enforceCallingOrSelfPermission(BLUETOOTH_CONNECT, "Need BLUETOOTH_CONNECT permission");
+        enforceMainLooperIsUsed();
         synchronized (mStateMachines) {
             HapClientStateMachine sm = mStateMachines.get(device);
             if (sm == null) {
-                return BluetoothProfile.STATE_DISCONNECTED;
+                return STATE_DISCONNECTED;
             }
             return sm.getConnectionState();
         }
@@ -339,42 +379,26 @@ public class HapClientService extends ProfileService {
      * @param connectionPolicy is the connection policy to set to for this profile
      * @return true on success, otherwise false
      */
+    @Override
     public boolean setConnectionPolicy(BluetoothDevice device, int connectionPolicy) {
-        enforceBluetoothPrivilegedPermission(this);
+        enforceMainLooperIsUsed();
         Log.d(TAG, "Saved connectionPolicy " + device + " = " + connectionPolicy);
-        mDatabaseManager.setProfileConnectionPolicy(
-                device, BluetoothProfile.HAP_CLIENT, connectionPolicy);
-        if (connectionPolicy == BluetoothProfile.CONNECTION_POLICY_ALLOWED) {
+        mAdapterService.setProfileConnectionPolicy(device, mProfileId, connectionPolicy);
+        if (connectionPolicy == CONNECTION_POLICY_ALLOWED) {
             connect(device);
-        } else if (connectionPolicy == BluetoothProfile.CONNECTION_POLICY_FORBIDDEN) {
+        } else if (connectionPolicy == CONNECTION_POLICY_FORBIDDEN) {
             disconnect(device);
         }
         return true;
     }
 
-    /**
-     * Get the connection policy of the profile.
-     *
-     * <p>The connection policy can be any of: {@link BluetoothProfile#CONNECTION_POLICY_ALLOWED},
-     * {@link BluetoothProfile#CONNECTION_POLICY_FORBIDDEN}, {@link
-     * BluetoothProfile#CONNECTION_POLICY_UNKNOWN}
-     *
-     * @param device Bluetooth device
-     * @return connection policy of the device
-     */
-    public int getConnectionPolicy(BluetoothDevice device) {
-        return mDatabaseManager.getProfileConnectionPolicy(device, BluetoothProfile.HAP_CLIENT);
-    }
-
-    /**
-     * Check whether can connect to a peer device. The check considers a number of factors during
-     * the evaluation.
-     *
-     * @param device the peer device to connect to
-     * @return true if connection is allowed, otherwise false
-     */
-    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PACKAGE)
+    /** Check whether it can connect to a peer device. */
+    @Override
     public boolean okToConnect(BluetoothDevice device) {
+        enforceMainLooperIsUsed();
+        if (Flags.validateConnectionPolicyBeforeAcceptingConnection()) {
+            return super.okToConnect(device);
+        }
         // Check if this is an incoming connection in Quiet mode.
         if (mAdapterService.isQuietModeEnabled()) {
             Log.e(TAG, "okToConnect: cannot connect to " + device + " : quiet mode enabled");
@@ -388,8 +412,8 @@ public class HapClientService extends ProfileService {
         if (bondState != BluetoothDevice.BOND_BONDED) {
             Log.w(TAG, "okToConnect: return false, bondState=" + bondState);
             return false;
-        } else if (connectionPolicy != BluetoothProfile.CONNECTION_POLICY_UNKNOWN
-                && connectionPolicy != BluetoothProfile.CONNECTION_POLICY_ALLOWED) {
+        } else if (connectionPolicy != CONNECTION_POLICY_UNKNOWN
+                && connectionPolicy != CONNECTION_POLICY_ALLOWED) {
             // Otherwise, reject the connection if connectionPolicy is not valid.
             Log.w(TAG, "okToConnect: return false, connectionPolicy=" + connectionPolicy);
             return false;
@@ -397,8 +421,8 @@ public class HapClientService extends ProfileService {
         return true;
     }
 
-    @VisibleForTesting
-    synchronized void connectionStateChanged(BluetoothDevice device, int fromState, int toState) {
+    void connectionStateChanged(BluetoothDevice device, int fromState, int toState) {
+        enforceMainLooperIsUsed();
         if ((device == null) || (fromState == toState)) {
             Log.e(
                     TAG,
@@ -412,39 +436,40 @@ public class HapClientService extends ProfileService {
         }
 
         // Check if the device is disconnected - if unbond, remove the state machine
-        if (toState == BluetoothProfile.STATE_DISCONNECTED) {
+        if (toState == STATE_DISCONNECTED) {
             int bondState = mAdapterService.getBondState(device);
             if (bondState == BluetoothDevice.BOND_NONE) {
                 Log.d(TAG, device + " is unbond. Remove state machine");
                 removeStateMachine(device);
             }
         }
-        if (!Flags.audioRoutingCentralization()) {
-            ActiveDeviceManager adManager = mAdapterService.getActiveDeviceManager();
-            if (adManager != null) {
-                adManager.profileConnectionStateChanged(
-                        BluetoothProfile.HAP_CLIENT, device, fromState, toState);
-            }
+        ActiveDeviceManager adManager = mAdapterService.getActiveDeviceManager();
+        if (adManager != null) {
+            adManager.profileConnectionStateChanged(mProfileId, device, fromState, toState);
         }
     }
 
-    /**
-     * Connects the hearing access service client to the passed in device
-     *
-     * @param device is the device with which we will connect the hearing access service client
-     * @return true if hearing access service client successfully connected, false otherwise
-     */
+    @Override
     public boolean connect(BluetoothDevice device) {
-        enforceBluetoothPrivilegedPermission(this);
+        enforceMainLooperIsUsed();
         Log.d(TAG, "connect(): " + device);
-        if (device == null) {
-            return false;
+        if (Flags.validateConnectionPolicyBeforeAcceptingConnection()) {
+            requireNonNull(device);
+
+            if (!okToConnect(device)) {
+                return false;
+            }
+        } else {
+            if (device == null) {
+                return false;
+            }
+
+            if (getConnectionPolicy(device) == CONNECTION_POLICY_FORBIDDEN) {
+                return false;
+            }
         }
 
-        if (getConnectionPolicy(device) == BluetoothProfile.CONNECTION_POLICY_FORBIDDEN) {
-            return false;
-        }
-        ParcelUuid[] featureUuids = mAdapterService.getRemoteUuids(device);
+        final ParcelUuid[] featureUuids = mAdapterService.getRemoteUuids(device);
         if (!Utils.arrayContains(featureUuids, BluetoothUuid.HAS)) {
             Log.e(
                     TAG,
@@ -453,12 +478,18 @@ public class HapClientService extends ProfileService {
                             + " : Remote does not have Hearing Access Service UUID");
             return false;
         }
+
         synchronized (mStateMachines) {
             HapClientStateMachine smConnect = getOrCreateStateMachine(device);
             if (smConnect == null) {
                 Log.e(TAG, "Cannot connect to " + device + " : no state machine");
+                return false;
             }
-            smConnect.sendMessage(HapClientStateMachine.CONNECT);
+            if (Flags.hapOnMainLooper()) {
+                smConnect.dispatchMessage(HapClientStateMachine.MESSAGE_CONNECT);
+                return true;
+            }
+            smConnect.sendMessage(HapClientStateMachine.MESSAGE_CONNECT);
         }
 
         return true;
@@ -471,8 +502,9 @@ public class HapClientService extends ProfileService {
      *     client
      * @return true if hearing access service client successfully disconnected, false otherwise
      */
+    @Override
     public boolean disconnect(BluetoothDevice device) {
-        enforceBluetoothPrivilegedPermission(this);
+        enforceMainLooperIsUsed();
         Log.d(TAG, "disconnect(): " + device);
         if (device == null) {
             return false;
@@ -480,7 +512,11 @@ public class HapClientService extends ProfileService {
         synchronized (mStateMachines) {
             HapClientStateMachine sm = mStateMachines.get(device);
             if (sm != null) {
-                sm.sendMessage(HapClientStateMachine.DISCONNECT);
+                if (Flags.hapOnMainLooper()) {
+                    sm.dispatchMessage(HapClientStateMachine.MESSAGE_DISCONNECT);
+                    return true;
+                }
+                sm.sendMessage(HapClientStateMachine.MESSAGE_DISCONNECT);
             }
         }
 
@@ -506,28 +542,17 @@ public class HapClientService extends ProfileService {
                 return null;
             }
             Log.d(TAG, "Creating a new state machine for " + device);
-            sm =
-                    HapClientStateMachine.make(
-                            device,
-                            this,
-                            mHapClientNativeInterface,
-                            mStateMachinesThread.getLooper());
+            sm = new HapClientStateMachine(this, device, mNativeInterface, mStateMachinesLooper);
             mStateMachines.put(device, sm);
             return sm;
         }
     }
 
-    /**
-     * Gets the hearing access device group of the passed device
-     *
-     * @param device is the device with which we want to get the group identifier for
-     * @return group ID if device is part of the coordinated group, 0 otherwise
-     */
-    public int getHapGroup(BluetoothDevice device) {
-        CsipSetCoordinatorService csipClient = mFactory.getCsipSetCoordinatorService();
-
-        if (csipClient != null) {
-            Map<Integer, ParcelUuid> groups = csipClient.getGroupUuidMapByDevice(device);
+    int getHapGroup(BluetoothDevice device) {
+        final var csipSetCoordinator = mAdapterService.getCsipSetCoordinatorService();
+        if (csipSetCoordinator.isPresent()) {
+            final Map<Integer, ParcelUuid> groups =
+                    csipSetCoordinator.get().getGroupUuidMapByDevice(device);
             for (Map.Entry<Integer, ParcelUuid> entry : groups.entrySet()) {
                 if (entry.getValue().equals(BluetoothUuid.CAP)) {
                     return entry.getKey();
@@ -537,457 +562,192 @@ public class HapClientService extends ProfileService {
         return BluetoothCsipSetCoordinator.GROUP_ID_INVALID;
     }
 
-    /**
-     * Gets the currently active preset index for a HA device
-     *
-     * @param device is the device for which we want to get the currently active preset
-     * @return active preset index
-     */
-    public int getActivePresetIndex(BluetoothDevice device) {
+    int getActivePresetIndex(BluetoothDevice device) {
         return mDeviceCurrentPresetMap.getOrDefault(
                 device, BluetoothHapClient.PRESET_INDEX_UNAVAILABLE);
     }
 
-    /**
-     * Gets the currently active preset info for a HA device
-     *
-     * @param device is the device for which we want to get the currently active preset info
-     * @return active preset info or null if not available
-     */
-    public @Nullable BluetoothHapPresetInfo getActivePresetInfo(BluetoothDevice device) {
-        int index = getActivePresetIndex(device);
-        if (index == BluetoothHapClient.PRESET_INDEX_UNAVAILABLE) return null;
-
-        List<BluetoothHapPresetInfo> current_presets = mPresetsMap.get(device);
-        if (current_presets != null) {
-            for (BluetoothHapPresetInfo preset : current_presets) {
-                if (preset.getIndex() == index) {
-                    return preset;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Selects the currently active preset for a HA device
-     *
-     * @param device is the device for which we want to set the active preset
-     * @param presetIndex is an index of one of the available presets
-     */
-    public void selectPreset(BluetoothDevice device, int presetIndex) {
+    BluetoothHapPresetInfo getActivePresetInfo(BluetoothDevice device) {
+        int presetIndex = getActivePresetIndex(device);
         if (presetIndex == BluetoothHapClient.PRESET_INDEX_UNAVAILABLE) {
-            synchronized (mCallbacks) {
-                int n = mCallbacks.beginBroadcast();
-                for (int i = 0; i < n; i++) {
-                    try {
-                        mCallbacks
-                                .getBroadcastItem(i)
-                                .onPresetSelectionFailed(
-                                        device,
-                                        BluetoothStatusCodes.ERROR_HAP_INVALID_PRESET_INDEX);
-                    } catch (RemoteException e) {
-                        continue;
-                    }
-                }
-                mCallbacks.finishBroadcast();
+            return null;
+        }
+
+        return mPresetsMap.getOrDefault(device, emptyList()).stream()
+                .filter(preset -> preset.getIndex() == presetIndex)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void broadcastToClient(
+            RemoteExceptionIgnoringConsumer<IBluetoothHapClientCallback> consumer) {
+        synchronized (mCallbacks) {
+            int n = mCallbacks.beginBroadcast();
+            for (int i = 0; i < n; i++) {
+                consumer.accept(mCallbacks.getBroadcastItem(i));
             }
+            mCallbacks.finishBroadcast();
+        }
+    }
+
+    void selectPreset(BluetoothDevice device, int presetIndex) {
+        if (presetIndex == BluetoothHapClient.PRESET_INDEX_UNAVAILABLE) {
+            int status = BluetoothStatusCodes.ERROR_HAP_INVALID_PRESET_INDEX;
+            broadcastToClient(cb -> cb.onPresetSelectionFailed(device, status));
             return;
         }
 
-        mHapClientNativeInterface.selectActivePreset(device, presetIndex);
+        mNativeInterface.selectActivePreset(device, presetIndex);
     }
 
-    /**
-     * Selects the currently active preset for a HA device group.
-     *
-     * @param groupId is the device group identifier for which want to set the active preset
-     * @param presetIndex is an index of one of the available presets
-     */
-    public void selectPresetForGroup(int groupId, int presetIndex) {
-        int status = BluetoothStatusCodes.SUCCESS;
-
+    void selectPresetForGroup(int groupId, int presetIndex) {
         if (!isGroupIdValid(groupId)) {
-            status = BluetoothStatusCodes.ERROR_CSIP_INVALID_GROUP_ID;
-        } else if (!isPresetIndexValid(groupId, presetIndex)) {
-            status = BluetoothStatusCodes.ERROR_HAP_INVALID_PRESET_INDEX;
+            int status = BluetoothStatusCodes.ERROR_CSIP_INVALID_GROUP_ID;
+            broadcastToClient(cb -> cb.onPresetSelectionForGroupFailed(groupId, status));
+            return;
         }
-
-        if (status != BluetoothStatusCodes.SUCCESS) {
-            synchronized (mCallbacks) {
-                int n = mCallbacks.beginBroadcast();
-                for (int i = 0; i < n; i++) {
-                    try {
-                        mCallbacks
-                                .getBroadcastItem(i)
-                                .onPresetSelectionForGroupFailed(groupId, status);
-                    } catch (RemoteException e) {
-                        continue;
-                    }
-                }
-                mCallbacks.finishBroadcast();
-            }
+        if (!isPresetIndexValid(groupId, presetIndex)) {
+            int status = BluetoothStatusCodes.ERROR_HAP_INVALID_PRESET_INDEX;
+            broadcastToClient(cb -> cb.onPresetSelectionForGroupFailed(groupId, status));
             return;
         }
 
-        mHapClientNativeInterface.groupSelectActivePreset(groupId, presetIndex);
+        mNativeInterface.groupSelectActivePreset(groupId, presetIndex);
     }
 
-    /**
-     * Sets the next preset as a currently active preset for a HA device
-     *
-     * @param device is the device for which we want to set the active preset
-     */
-    public void switchToNextPreset(BluetoothDevice device) {
-        mHapClientNativeInterface.nextActivePreset(device);
+    void switchToNextPreset(BluetoothDevice device) {
+        mNativeInterface.nextActivePreset(device);
     }
 
-    /**
-     * Sets the next preset as a currently active preset for a HA device group
-     *
-     * @param groupId is the device group identifier for which want to set the active preset
-     */
-    public void switchToNextPresetForGroup(int groupId) {
-        mHapClientNativeInterface.groupNextActivePreset(groupId);
+    void switchToNextPresetForGroup(int groupId) {
+        mNativeInterface.groupNextActivePreset(groupId);
     }
 
-    /**
-     * Sets the previous preset as a currently active preset for a HA device
-     *
-     * @param device is the device for which we want to set the active preset
-     */
-    public void switchToPreviousPreset(BluetoothDevice device) {
-        mHapClientNativeInterface.previousActivePreset(device);
+    void switchToPreviousPreset(BluetoothDevice device) {
+        mNativeInterface.previousActivePreset(device);
     }
 
-    /**
-     * Sets the previous preset as a currently active preset for a HA device group
-     *
-     * @param groupId is the device group identifier for which want to set the active preset
-     */
-    public void switchToPreviousPresetForGroup(int groupId) {
-        mHapClientNativeInterface.groupPreviousActivePreset(groupId);
+    void switchToPreviousPresetForGroup(int groupId) {
+        mNativeInterface.groupPreviousActivePreset(groupId);
     }
 
-    /**
-     * Requests the preset name
-     *
-     * @param device is the device for which we want to get the preset name
-     * @param presetIndex is an index of one of the available presets
-     * @return a preset Info corresponding to the requested preset index or null if not available
-     */
-    public @Nullable BluetoothHapPresetInfo getPresetInfo(BluetoothDevice device, int presetIndex) {
-        BluetoothHapPresetInfo defaultValue = null;
-        if (presetIndex == BluetoothHapClient.PRESET_INDEX_UNAVAILABLE) return defaultValue;
+    BluetoothHapPresetInfo getPresetInfo(BluetoothDevice device, int presetIndex) {
+        if (presetIndex == BluetoothHapClient.PRESET_INDEX_UNAVAILABLE) {
+            return null;
+        }
 
         if (Utils.isPtsTestMode()) {
-            /* We want native to be called for PTS testing even we have all
-             * the data in the cache here
-             */
-            mHapClientNativeInterface.getPresetInfo(device, presetIndex);
+            // Force sending over the air command. Returned result is not affected.
+            mNativeInterface.getPresetInfo(device, presetIndex);
         }
+
+        return mPresetsMap.getOrDefault(device, emptyList()).stream()
+                .filter(preset -> preset.getIndex() == presetIndex)
+                .findFirst()
+                .orElse(null);
+    }
+
+    List<BluetoothHapPresetInfo> getAllPresetInfo(BluetoothDevice device) {
+        if (Utils.isPtsTestMode()) {
+            // Force sending over the air command. Returned result is not affected.
+            mNativeInterface.getAllPresetInfo(device);
+        }
+        return mPresetsMap.getOrDefault(device, emptyList());
+    }
+
+    int getFeatures(BluetoothDevice device) {
+        return mDeviceFeaturesMap.getOrDefault(device, 0x00);
+    }
+
+    /* WARNING: Matches status codes defined in bta_has.h */
+    @VisibleForTesting static final int PRESET_INFO_REASON_ALL_PRESET_INFO = 0;
+    @VisibleForTesting static final int PRESET_INFO_REASON_PRESET_INFO_UPDATE = 1;
+    private static final int PRESET_INFO_REASON_PRESET_DELETED = 2;
+    private static final int PRESET_INFO_REASON_PRESET_AVAILABILITY_CHANGED = 3;
+    private static final int PRESET_INFO_REASON_PRESET_INFO_REQUEST_RESPONSE = 4;
+
+    private static int nativeReasonToBluetoothStatusCodes(int nativeReason) {
+        return switch (nativeReason) {
+            case PRESET_INFO_REASON_ALL_PRESET_INFO ->
+                    BluetoothStatusCodes.REASON_LOCAL_STACK_REQUEST;
+            case PRESET_INFO_REASON_PRESET_INFO_UPDATE ->
+                    BluetoothStatusCodes.REASON_REMOTE_REQUEST;
+            case PRESET_INFO_REASON_PRESET_DELETED -> BluetoothStatusCodes.REASON_REMOTE_REQUEST;
+            case PRESET_INFO_REASON_PRESET_AVAILABILITY_CHANGED ->
+                    BluetoothStatusCodes.REASON_REMOTE_REQUEST;
+            case PRESET_INFO_REASON_PRESET_INFO_REQUEST_RESPONSE ->
+                    BluetoothStatusCodes.REASON_LOCAL_APP_REQUEST;
+            default -> BluetoothStatusCodes.ERROR_UNKNOWN;
+        };
+    }
+
+    private void notifyPresetInfoChanged(BluetoothDevice device, int nativeReason) {
         List<BluetoothHapPresetInfo> current_presets = mPresetsMap.get(device);
-        if (current_presets != null) {
-            for (BluetoothHapPresetInfo preset : current_presets) {
-                if (preset.getIndex() == presetIndex) {
-                    return preset;
-                }
-            }
-        }
-
-        return defaultValue;
-    }
-
-    /**
-     * Requests all presets info
-     *
-     * @param device is the device for which we want to get all presets info
-     * @return a list of all presets Info
-     */
-    public List<BluetoothHapPresetInfo> getAllPresetInfo(BluetoothDevice device) {
-        if (mPresetsMap.containsKey(device)) {
-            return mPresetsMap.get(device);
-        }
-        return Collections.emptyList();
-    }
-
-    /**
-     * Requests features
-     *
-     * @param device is the device for which we want to get features
-     * @return integer with feature bits set
-     */
-    public int getFeatures(BluetoothDevice device) {
-        if (mDeviceFeaturesMap.containsKey(device)) {
-            return mDeviceFeaturesMap.get(device);
-        }
-        return 0x00;
-    }
-
-    private int stackEventPresetInfoReasonToProfileStatus(int statusCode) {
-        switch (statusCode) {
-            case HapClientStackEvent.PRESET_INFO_REASON_ALL_PRESET_INFO:
-                return BluetoothStatusCodes.REASON_LOCAL_STACK_REQUEST;
-            case HapClientStackEvent.PRESET_INFO_REASON_PRESET_INFO_UPDATE:
-                return BluetoothStatusCodes.REASON_REMOTE_REQUEST;
-            case HapClientStackEvent.PRESET_INFO_REASON_PRESET_DELETED:
-                return BluetoothStatusCodes.REASON_REMOTE_REQUEST;
-            case HapClientStackEvent.PRESET_INFO_REASON_PRESET_AVAILABILITY_CHANGED:
-                return BluetoothStatusCodes.REASON_REMOTE_REQUEST;
-            case HapClientStackEvent.PRESET_INFO_REASON_PRESET_INFO_REQUEST_RESPONSE:
-                return BluetoothStatusCodes.REASON_LOCAL_APP_REQUEST;
-            default:
-                return BluetoothStatusCodes.ERROR_UNKNOWN;
-        }
-    }
-
-    private void notifyPresetInfoChanged(BluetoothDevice device, int infoReason) {
-        List current_presets = mPresetsMap.get(device);
         if (current_presets == null) return;
 
-        synchronized (mCallbacks) {
-            int n = mCallbacks.beginBroadcast();
-            for (int i = 0; i < n; i++) {
-                try {
-                    mCallbacks
-                            .getBroadcastItem(i)
-                            .onPresetInfoChanged(
-                                    device,
-                                    current_presets,
-                                    stackEventPresetInfoReasonToProfileStatus(infoReason));
-                } catch (RemoteException e) {
-                    continue;
-                }
-            }
-            mCallbacks.finishBroadcast();
-        }
-    }
-
-    private void notifyPresetInfoForGroupChanged(int groupId, int infoReason) {
-        List<BluetoothDevice> all_group_devices = getGroupDevices(groupId);
-        for (BluetoothDevice dev : all_group_devices) {
-            notifyPresetInfoChanged(dev, infoReason);
-        }
-    }
-
-    private void notifyFeaturesAvailable(BluetoothDevice device, int features) {
-        Log.d(TAG, "HAP device: " + device + ", features: " + String.format("0x%04X", features));
-    }
-
-    private void notifyActivePresetChanged(
-            BluetoothDevice device, int presetIndex, int reasonCode) {
-        synchronized (mCallbacks) {
-            int n = mCallbacks.beginBroadcast();
-            for (int i = 0; i < n; i++) {
-                try {
-                    mCallbacks
-                            .getBroadcastItem(i)
-                            .onPresetSelected(device, presetIndex, reasonCode);
-                } catch (RemoteException e) {
-                    continue;
-                }
-            }
-            mCallbacks.finishBroadcast();
-        }
-    }
-
-    private void notifyActivePresetChangedForGroup(int groupId, int presetIndex, int reasonCode) {
-        List<BluetoothDevice> all_group_devices = getGroupDevices(groupId);
-        for (BluetoothDevice dev : all_group_devices) {
-            notifyActivePresetChanged(dev, presetIndex, reasonCode);
-        }
-    }
-
-    private int stackEventStatusToProfileStatus(int statusCode) {
-        switch (statusCode) {
-            case HapClientStackEvent.STATUS_SET_NAME_NOT_ALLOWED:
-                return BluetoothStatusCodes.ERROR_REMOTE_OPERATION_REJECTED;
-            case HapClientStackEvent.STATUS_OPERATION_NOT_SUPPORTED:
-                return BluetoothStatusCodes.ERROR_REMOTE_OPERATION_NOT_SUPPORTED;
-            case HapClientStackEvent.STATUS_OPERATION_NOT_POSSIBLE:
-                return BluetoothStatusCodes.ERROR_REMOTE_OPERATION_REJECTED;
-            case HapClientStackEvent.STATUS_INVALID_PRESET_NAME_LENGTH:
-                return BluetoothStatusCodes.ERROR_HAP_PRESET_NAME_TOO_LONG;
-            case HapClientStackEvent.STATUS_INVALID_PRESET_INDEX:
-                return BluetoothStatusCodes.ERROR_HAP_INVALID_PRESET_INDEX;
-            case HapClientStackEvent.STATUS_GROUP_OPERATION_NOT_SUPPORTED:
-                return BluetoothStatusCodes.ERROR_REMOTE_OPERATION_NOT_SUPPORTED;
-            case HapClientStackEvent.STATUS_PROCEDURE_ALREADY_IN_PROGRESS:
-                return BluetoothStatusCodes.ERROR_UNKNOWN;
-            default:
-                return BluetoothStatusCodes.ERROR_UNKNOWN;
-        }
-    }
-
-    private void notifySelectActivePresetFailed(BluetoothDevice device, int statusCode) {
-        synchronized (mCallbacks) {
-            int n = mCallbacks.beginBroadcast();
-            for (int i = 0; i < n; i++) {
-                try {
-                    mCallbacks
-                            .getBroadcastItem(i)
-                            .onPresetSelectionFailed(
-                                    device, stackEventStatusToProfileStatus(statusCode));
-                } catch (RemoteException e) {
-                    continue;
-                }
-            }
-            mCallbacks.finishBroadcast();
-        }
-    }
-
-    private void notifySelectActivePresetForGroupFailed(int groupId, int statusCode) {
-        synchronized (mCallbacks) {
-            int n = mCallbacks.beginBroadcast();
-            for (int i = 0; i < n; i++) {
-                try {
-                    mCallbacks
-                            .getBroadcastItem(i)
-                            .onPresetSelectionForGroupFailed(
-                                    groupId, stackEventStatusToProfileStatus(statusCode));
-                } catch (RemoteException e) {
-                    continue;
-                }
-            }
-            mCallbacks.finishBroadcast();
-        }
-    }
-
-    private void notifySetPresetNameFailed(BluetoothDevice device, int statusCode) {
-        synchronized (mCallbacks) {
-            int n = mCallbacks.beginBroadcast();
-            for (int i = 0; i < n; i++) {
-                try {
-                    mCallbacks
-                            .getBroadcastItem(i)
-                            .onSetPresetNameFailed(
-                                    device, stackEventStatusToProfileStatus(statusCode));
-                } catch (RemoteException e) {
-                    continue;
-                }
-            }
-            mCallbacks.finishBroadcast();
-        }
-    }
-
-    private void notifySetPresetNameForGroupFailed(int groupId, int statusCode) {
-        synchronized (mCallbacks) {
-            int n = mCallbacks.beginBroadcast();
-            for (int i = 0; i < n; i++) {
-                try {
-                    mCallbacks
-                            .getBroadcastItem(i)
-                            .onSetPresetNameForGroupFailed(
-                                    groupId, stackEventStatusToProfileStatus(statusCode));
-                } catch (RemoteException e) {
-                    continue;
-                }
-            }
-            mCallbacks.finishBroadcast();
-        }
+        int reason = nativeReasonToBluetoothStatusCodes(nativeReason);
+        broadcastToClient(cb -> cb.onPresetInfoChanged(device, current_presets, reason));
     }
 
     private boolean isPresetIndexValid(BluetoothDevice device, int presetIndex) {
-        if (presetIndex == BluetoothHapClient.PRESET_INDEX_UNAVAILABLE) return false;
-
-        List<BluetoothHapPresetInfo> device_presets = mPresetsMap.get(device);
-        if (device_presets != null) {
-            for (BluetoothHapPresetInfo preset : device_presets) {
-                if (preset.getIndex() == presetIndex) {
-                    return true;
-                }
-            }
+        if (presetIndex == BluetoothHapClient.PRESET_INDEX_UNAVAILABLE) {
+            return false;
         }
-        return false;
+
+        return mPresetsMap.getOrDefault(device, emptyList()).stream()
+                .anyMatch(preset -> preset.getIndex() == presetIndex);
     }
 
     private boolean isPresetIndexValid(int groupId, int presetIndex) {
         List<BluetoothDevice> all_group_devices = getGroupDevices(groupId);
-        if (all_group_devices.isEmpty()) return false;
+        if (all_group_devices.isEmpty()) {
+            return false;
+        }
 
         for (BluetoothDevice device : all_group_devices) {
-            if (!isPresetIndexValid(device, presetIndex)) return false;
+            if (!isPresetIndexValid(device, presetIndex)) {
+                return false;
+            }
         }
         return true;
     }
 
     private boolean isGroupIdValid(int groupId) {
-        if (groupId == BluetoothCsipSetCoordinator.GROUP_ID_INVALID) return false;
-
-        CsipSetCoordinatorService csipClient = mFactory.getCsipSetCoordinatorService();
-        if (csipClient != null) {
-            List<Integer> groups = csipClient.getAllGroupIds(BluetoothUuid.CAP);
-            return groups.contains(groupId);
+        if (groupId == BluetoothCsipSetCoordinator.GROUP_ID_INVALID) {
+            return false;
         }
-        return false;
+
+        return mAdapterService
+                .getCsipSetCoordinatorService()
+                .map(csipClient -> csipClient.getAllGroupIds(BluetoothUuid.CAP).contains(groupId))
+                .orElse(false);
     }
 
-    /**
-     * Sets the preset name
-     *
-     * @param device is the device for which we want to get the preset name
-     * @param presetIndex is an index of one of the available presets
-     * @param name is a new name for a preset
-     */
-    public void setPresetName(BluetoothDevice device, int presetIndex, String name) {
+    void setPresetName(BluetoothDevice device, int presetIndex, String name) {
         if (!isPresetIndexValid(device, presetIndex)) {
-            synchronized (mCallbacks) {
-                int n = mCallbacks.beginBroadcast();
-                for (int i = 0; i < n; i++) {
-                    try {
-                        mCallbacks
-                                .getBroadcastItem(i)
-                                .onSetPresetNameFailed(
-                                        device,
-                                        BluetoothStatusCodes.ERROR_HAP_INVALID_PRESET_INDEX);
-                    } catch (RemoteException e) {
-                        continue;
-                    }
-                }
-                mCallbacks.finishBroadcast();
-            }
+            int status = BluetoothStatusCodes.ERROR_HAP_INVALID_PRESET_INDEX;
+            broadcastToClient(cb -> cb.onSetPresetNameFailed(device, status));
             return;
         }
         // WARNING: We should check cache if preset exists and is writable, but then we would still
         //          need a way to trigger this action with an invalid index or on a non-writable
         //          preset for tests purpose.
-        mHapClientNativeInterface.setPresetName(device, presetIndex, name);
+        mNativeInterface.setPresetName(device, presetIndex, name);
     }
 
-    /**
-     * Sets the preset name
-     *
-     * @param groupId is the device group identifier
-     * @param presetIndex is an index of one of the available presets
-     * @param name is a new name for a preset
-     */
-    public void setPresetNameForGroup(int groupId, int presetIndex, String name) {
-        int status = BluetoothStatusCodes.SUCCESS;
-
+    void setPresetNameForGroup(int groupId, int presetIndex, String name) {
         if (!isGroupIdValid(groupId)) {
-            status = BluetoothStatusCodes.ERROR_CSIP_INVALID_GROUP_ID;
-        } else if (!isPresetIndexValid(groupId, presetIndex)) {
-            status = BluetoothStatusCodes.ERROR_HAP_INVALID_PRESET_INDEX;
+            int status = BluetoothStatusCodes.ERROR_CSIP_INVALID_GROUP_ID;
+            broadcastToClient(cb -> cb.onSetPresetNameForGroupFailed(groupId, status));
+            return;
         }
-        if (status != BluetoothStatusCodes.SUCCESS) {
-            synchronized (mCallbacks) {
-                int n = mCallbacks.beginBroadcast();
-                for (int i = 0; i < n; i++) {
-                    try {
-                        mCallbacks
-                                .getBroadcastItem(i)
-                                .onSetPresetNameForGroupFailed(groupId, status);
-                    } catch (RemoteException e) {
-                        continue;
-                    }
-                }
-                mCallbacks.finishBroadcast();
-            }
+        if (!isPresetIndexValid(groupId, presetIndex)) {
+            int status = BluetoothStatusCodes.ERROR_HAP_INVALID_PRESET_INDEX;
+            broadcastToClient(cb -> cb.onSetPresetNameForGroupFailed(groupId, status));
             return;
         }
 
-        mHapClientNativeInterface.groupSetPresetName(groupId, presetIndex, name);
+        mNativeInterface.groupSetPresetName(groupId, presetIndex, name);
     }
 
     @Override
@@ -999,585 +759,144 @@ public class HapClientService extends ProfileService {
     }
 
     void updateDevicePresetsCache(
-            BluetoothDevice device, int infoReason, List<BluetoothHapPresetInfo> presets) {
-        switch (infoReason) {
-            case HapClientStackEvent.PRESET_INFO_REASON_ALL_PRESET_INFO:
-                mPresetsMap.put(device, presets);
-                break;
-            case HapClientStackEvent.PRESET_INFO_REASON_PRESET_INFO_UPDATE:
-            case HapClientStackEvent.PRESET_INFO_REASON_PRESET_AVAILABILITY_CHANGED:
-            case HapClientStackEvent.PRESET_INFO_REASON_PRESET_INFO_REQUEST_RESPONSE:
-                {
-                    List current_presets = mPresetsMap.get(device);
-                    if (current_presets != null) {
-                        for (BluetoothHapPresetInfo new_preset : presets) {
-                            ListIterator<BluetoothHapPresetInfo> iter =
-                                    current_presets.listIterator();
-                            while (iter.hasNext()) {
-                                if (iter.next().getIndex() == new_preset.getIndex()) {
-                                    iter.remove();
-                                    break;
-                                }
-                            }
-                        }
-                        current_presets.addAll(presets);
-                        mPresetsMap.put(device, current_presets);
-                    } else {
-                        mPresetsMap.put(device, presets);
-                    }
-                }
-                break;
+            BluetoothDevice device, int reason, List<BluetoothHapPresetInfo> presets) {
+        switch (reason) {
+            case PRESET_INFO_REASON_ALL_PRESET_INFO -> mPresetsMap.put(device, presets);
+            case PRESET_INFO_REASON_PRESET_INFO_UPDATE,
+                    PRESET_INFO_REASON_PRESET_AVAILABILITY_CHANGED,
+                    PRESET_INFO_REASON_PRESET_INFO_REQUEST_RESPONSE -> {
 
-            case HapClientStackEvent.PRESET_INFO_REASON_PRESET_DELETED:
-                {
-                    List current_presets = mPresetsMap.get(device);
-                    if (current_presets != null) {
-                        for (BluetoothHapPresetInfo new_preset : presets) {
-                            ListIterator<BluetoothHapPresetInfo> iter =
-                                    current_presets.listIterator();
-                            while (iter.hasNext()) {
-                                if (iter.next().getIndex() == new_preset.getIndex()) {
-                                    iter.remove();
-                                    break;
-                                }
-                            }
-                        }
-                        mPresetsMap.put(device, current_presets);
-                    }
-                }
-                break;
+                // Remove updated presets from the list and add the new one while keeping order
+                List<BluetoothHapPresetInfo> unchangedPresets = getFilteredPresets(device, presets);
+                List<BluetoothHapPresetInfo> finalPresets =
+                        Stream.concat(unchangedPresets.stream(), presets.stream())
+                                .sorted(Comparator.comparingInt(BluetoothHapPresetInfo::getIndex))
+                                .toList();
 
-            default:
-                break;
+                mPresetsMap.put(device, finalPresets);
+            }
+            case PRESET_INFO_REASON_PRESET_DELETED -> {
+                List<BluetoothHapPresetInfo> remainingPresets = getFilteredPresets(device, presets);
+                mPresetsMap.put(device, remainingPresets);
+            }
+            default -> {}
         }
+    }
+
+    private List<BluetoothHapPresetInfo> getFilteredPresets(
+            BluetoothDevice device, List<BluetoothHapPresetInfo> presetsToFilter) {
+        // Create a Set of indices from the new presets for efficient lookup.
+        // This is much faster (O(1) lookup) than iterating through a list every time.
+        final Set<Integer> presetsIndexToFilter =
+                presetsToFilter.stream()
+                        .map(BluetoothHapPresetInfo::getIndex)
+                        .collect(Collectors.toSet());
+
+        return mPresetsMap.getOrDefault(device, emptyList()).stream()
+                .filter(p -> !presetsIndexToFilter.contains(p.getIndex()))
+                .toList();
     }
 
     private List<BluetoothDevice> getGroupDevices(int groupId) {
-        List<BluetoothDevice> devices = new ArrayList<>();
-
-        CsipSetCoordinatorService csipClient = mFactory.getCsipSetCoordinatorService();
-        if (csipClient != null) {
-            if (groupId != BluetoothLeAudio.GROUP_ID_INVALID) {
-                devices = csipClient.getGroupDevicesOrdered(groupId);
-            }
+        if (groupId == BluetoothLeAudio.GROUP_ID_INVALID) {
+            return emptyList();
         }
-        return devices;
+
+        return mAdapterService
+                .getCsipSetCoordinatorService()
+                .map(csipClient -> csipClient.getGroupDevicesOrdered(groupId))
+                .orElse(emptyList());
     }
 
-    /**
-     * Handle messages from native (JNI) to Java
-     *
-     * @param stackEvent the event that need to be handled
-     */
-    public void messageFromNative(HapClientStackEvent stackEvent) {
-        // Decide which event should be sent to the state machine
-        if (stackEvent.type == HapClientStackEvent.EVENT_TYPE_CONNECTION_STATE_CHANGED) {
-            resendToStateMachine(stackEvent);
-            return;
-        }
-
-        Intent intent = null;
-        BluetoothDevice device = stackEvent.device;
-
-        switch (stackEvent.type) {
-            case (HapClientStackEvent.EVENT_TYPE_DEVICE_AVAILABLE):
-                {
-                    int features = stackEvent.valueInt1;
-
-                    if (device != null) {
-                        mDeviceFeaturesMap.put(device, features);
-
-                        intent = new Intent(BluetoothHapClient.ACTION_HAP_DEVICE_AVAILABLE);
-                        intent.putExtra(BluetoothDevice.EXTRA_DEVICE, device);
-                        intent.putExtra(BluetoothHapClient.EXTRA_HAP_FEATURES, features);
-                    }
-                }
-                break;
-
-            case (HapClientStackEvent.EVENT_TYPE_DEVICE_FEATURES):
-                {
-                    int features = stackEvent.valueInt1;
-
-                    if (device != null) {
-                        mDeviceFeaturesMap.put(device, features);
-                        notifyFeaturesAvailable(device, features);
-                    }
-                }
-                return;
-
-            case (HapClientStackEvent.EVENT_TYPE_ON_ACTIVE_PRESET_SELECTED):
-                {
-                    int currentPresetIndex = stackEvent.valueInt1;
-                    int groupId = stackEvent.valueInt2;
-
-                    if (device != null) {
-                        mDeviceCurrentPresetMap.put(device, currentPresetIndex);
-                        // FIXME: Add app request queueing to support other reasons
-                        int reasonCode = BluetoothStatusCodes.REASON_LOCAL_STACK_REQUEST;
-                        notifyActivePresetChanged(device, currentPresetIndex, reasonCode);
-
-                    } else if (groupId != BluetoothCsipSetCoordinator.GROUP_ID_INVALID) {
-                        List<BluetoothDevice> all_group_devices = getGroupDevices(groupId);
-                        for (BluetoothDevice dev : all_group_devices) {
-                            mDeviceCurrentPresetMap.put(dev, currentPresetIndex);
-                        }
-                        // FIXME: Add app request queueing to support other reasons
-                        int reasonCode = BluetoothStatusCodes.REASON_LOCAL_STACK_REQUEST;
-                        notifyActivePresetChangedForGroup(groupId, currentPresetIndex, reasonCode);
-                    }
-                }
-                return;
-
-            case (HapClientStackEvent.EVENT_TYPE_ON_ACTIVE_PRESET_SELECT_ERROR):
-                {
-                    int groupId = stackEvent.valueInt2;
-                    int statusCode = stackEvent.valueInt1;
-
-                    if (device != null) {
-                        notifySelectActivePresetFailed(device, statusCode);
-                    } else if (groupId != BluetoothCsipSetCoordinator.GROUP_ID_INVALID) {
-                        notifySelectActivePresetForGroupFailed(groupId, statusCode);
-                    }
-                }
-                break;
-
-            case (HapClientStackEvent.EVENT_TYPE_ON_PRESET_INFO):
-                {
-                    int infoReason = stackEvent.valueInt2;
-                    int groupId = stackEvent.valueInt3;
-                    ArrayList presets = stackEvent.valueList;
-
-                    if (device != null) {
-                        updateDevicePresetsCache(device, infoReason, presets);
-                        notifyPresetInfoChanged(device, infoReason);
-
-                    } else if (groupId != BluetoothCsipSetCoordinator.GROUP_ID_INVALID) {
-                        List<BluetoothDevice> all_group_devices = getGroupDevices(groupId);
-                        for (BluetoothDevice dev : all_group_devices) {
-                            updateDevicePresetsCache(dev, infoReason, presets);
-                        }
-                        notifyPresetInfoForGroupChanged(groupId, infoReason);
-                    }
-                }
-                return;
-
-            case (HapClientStackEvent.EVENT_TYPE_ON_PRESET_NAME_SET_ERROR):
-                {
-                    int statusCode = stackEvent.valueInt1;
-                    int groupId = stackEvent.valueInt3;
-
-                    if (device != null) {
-                        notifySetPresetNameFailed(device, statusCode);
-                    } else if (groupId != BluetoothCsipSetCoordinator.GROUP_ID_INVALID) {
-                        notifySetPresetNameForGroupFailed(groupId, statusCode);
-                    }
-                }
-                break;
-
-            case (HapClientStackEvent.EVENT_TYPE_ON_PRESET_INFO_ERROR):
-                {
-                    // Used only to report back on hidden API calls used for testing.
-                    Log.d(TAG, stackEvent.toString());
-                }
-                break;
-
-            default:
-                return;
-        }
-
-        if (intent != null) {
-            sendBroadcast(intent, BLUETOOTH_PRIVILEGED);
-        }
-    }
-
-    private void resendToStateMachine(HapClientStackEvent stackEvent) {
+    void onConnectionStateChanged(BluetoothDevice device, int state) {
+        var log = "onConnectionStateChanged(" + device + ", " + getConnectionStateName(state) + ")";
         synchronized (mStateMachines) {
-            BluetoothDevice device = stackEvent.device;
-            HapClientStateMachine sm = mStateMachines.get(device);
+            HapClientStateMachine sm =
+                    switch (state) {
+                        case STATE_CONNECTED, STATE_CONNECTING -> getOrCreateStateMachine(device);
+                        default -> mStateMachines.get(device);
+                    };
 
             if (sm == null) {
-                if (stackEvent.type == HapClientStackEvent.EVENT_TYPE_CONNECTION_STATE_CHANGED) {
-                    switch (stackEvent.valueInt1) {
-                        case HapClientStackEvent.CONNECTION_STATE_CONNECTED:
-                        case HapClientStackEvent.CONNECTION_STATE_CONNECTING:
-                            sm = getOrCreateStateMachine(device);
-                            break;
-                        default:
-                            break;
-                    }
-                }
-            }
-            if (sm == null) {
-                Log.e(TAG, "Cannot process stack event: no state machine: " + stackEvent);
+                Log.e(TAG, log + ": No state machine");
                 return;
             }
-            sm.sendMessage(HapClientStateMachine.STACK_EVENT, stackEvent);
+            Log.d(TAG, log);
+            if (Flags.hapOnMainLooper()) {
+                sm.dispatchMessage(HapClientStateMachine.MESSAGE_CONNECTION_STATE_CHANGED, state);
+                return;
+            }
+            sm.sendMessage(HapClientStateMachine.MESSAGE_CONNECTION_STATE_CHANGED, state);
         }
     }
 
-    /** Binder object: must be a static class or memory leak may occur */
-    @VisibleForTesting
-    static class BluetoothHapClientBinder extends IBluetoothHapClient.Stub
-            implements IProfileServiceBinder {
-        private HapClientService mService;
+    void onDeviceAvailable(BluetoothDevice device, int features) {
+        mDeviceFeaturesMap.put(device, features);
 
-        BluetoothHapClientBinder(HapClientService svc) {
-            mService = svc;
+        Intent intent =
+                new Intent(BluetoothHapClient.ACTION_HAP_DEVICE_AVAILABLE)
+                        .putExtra(BluetoothDevice.EXTRA_DEVICE, device)
+                        .putExtra(BluetoothHapClient.EXTRA_HAP_FEATURES, features);
+        getBaseContext()
+                .sendBroadcastWithMultiplePermissions(
+                        intent, new String[] {BLUETOOTH_CONNECT, BLUETOOTH_PRIVILEGED});
+    }
+
+    void onFeaturesUpdate(BluetoothDevice device, int features) {
+        mDeviceFeaturesMap.put(device, features);
+        Log.d(TAG, "onFeaturesUpdate(" + device + ", " + String.format("0x%04X", features));
+    }
+
+    void onPresetSelected(BluetoothDevice device, int presetIndex) {
+        int reason = BluetoothStatusCodes.REASON_LOCAL_STACK_REQUEST;
+
+        mDeviceCurrentPresetMap.put(device, presetIndex);
+        broadcastToClient(cb -> cb.onPresetSelected(device, presetIndex, reason));
+    }
+
+    void onPresetSelectedForGroup(int groupId, int presetIndex) {
+        for (BluetoothDevice device : getGroupDevices(groupId)) {
+            onPresetSelected(device, presetIndex);
         }
+    }
 
-        @Override
-        public void cleanup() {
-            mService = null;
+    void onPresetSelectionFailed(BluetoothDevice device, int status) {
+        broadcastToClient(cb -> cb.onPresetSelectionFailed(device, status));
+    }
+
+    void onPresetSelectionForGroupFailed(int groupId, int status) {
+        broadcastToClient(cb -> cb.onPresetSelectionForGroupFailed(groupId, status));
+    }
+
+    void onPresetInfo(
+            BluetoothDevice device, int nativeReason, List<BluetoothHapPresetInfo> presets) {
+        updateDevicePresetsCache(device, nativeReason, presets);
+        notifyPresetInfoChanged(device, nativeReason);
+    }
+
+    void onPresetInfoForGroup(int groupId, int nativeReason, List<BluetoothHapPresetInfo> presets) {
+        for (BluetoothDevice device : getGroupDevices(groupId)) {
+            onPresetInfo(device, nativeReason, presets);
         }
+    }
 
-        @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
-        private HapClientService getService(AttributionSource source) {
-            // Cache mService because it can change while getService is called
-            HapClientService service = mService;
+    void onSetPresetNameFailed(BluetoothDevice device, int status) {
+        broadcastToClient(cb -> cb.onSetPresetNameFailed(device, status));
+    }
 
-            if (Utils.isInstrumentationTestMode()) {
-                return service;
-            }
+    void onSetPresetNameForGroupFailed(int groupId, int status) {
+        broadcastToClient(cb -> cb.onSetPresetNameForGroupFailed(groupId, status));
+    }
 
-            if (!Utils.checkServiceAvailable(service, TAG)
-                    || !Utils.checkCallerIsSystemOrActiveOrManagedUser(service, TAG)
-                    || !Utils.checkConnectPermissionForDataDelivery(service, source, TAG)) {
-                return null;
-            }
-            return service;
+    void registerCallback(IBluetoothHapClientCallback callback) {
+        synchronized (mCallbacks) {
+            mCallbacks.register(callback);
         }
+    }
 
-        @Override
-        public List<BluetoothDevice> getConnectedDevices(AttributionSource source) {
-            Objects.requireNonNull(source, "source cannot be null");
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                return Collections.emptyList();
-            }
-
-            enforceBluetoothPrivilegedPermission(service);
-            return service.getConnectedDevices();
-        }
-
-        @Override
-        public List<BluetoothDevice> getDevicesMatchingConnectionStates(
-                int[] states, AttributionSource source) {
-            Objects.requireNonNull(source, "source cannot be null");
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                return Collections.emptyList();
-            }
-
-            enforceBluetoothPrivilegedPermission(service);
-            return service.getDevicesMatchingConnectionStates(states);
-        }
-
-        @Override
-        public int getConnectionState(BluetoothDevice device, AttributionSource source) {
-            Objects.requireNonNull(device, "device cannot be null");
-            Objects.requireNonNull(source, "source cannot be null");
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                return BluetoothProfile.STATE_DISCONNECTED;
-            }
-
-            enforceBluetoothPrivilegedPermission(service);
-            return service.getConnectionState(device);
-        }
-
-        @Override
-        public boolean setConnectionPolicy(
-                BluetoothDevice device, int connectionPolicy, AttributionSource source) {
-            Objects.requireNonNull(device, "device cannot be null");
-            Objects.requireNonNull(source, "source cannot be null");
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            enforceBluetoothPrivilegedPermission(service);
-            return service.setConnectionPolicy(device, connectionPolicy);
-        }
-
-        @Override
-        public int getConnectionPolicy(BluetoothDevice device, AttributionSource source) {
-            Objects.requireNonNull(device, "device cannot be null");
-            Objects.requireNonNull(source, "source cannot be null");
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                return BluetoothProfile.CONNECTION_POLICY_UNKNOWN;
-            }
-
-            enforceBluetoothPrivilegedPermission(service);
-            return service.getConnectionPolicy(device);
-        }
-
-        @Override
-        public int getActivePresetIndex(BluetoothDevice device, AttributionSource source) {
-            Objects.requireNonNull(device, "device cannot be null");
-            Objects.requireNonNull(source, "source cannot be null");
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                return BluetoothHapClient.PRESET_INDEX_UNAVAILABLE;
-            }
-
-            enforceBluetoothPrivilegedPermission(service);
-            return service.getActivePresetIndex(device);
-        }
-
-        @Override
-        public BluetoothHapPresetInfo getActivePresetInfo(
-                BluetoothDevice device, AttributionSource source) {
-            Objects.requireNonNull(device, "device cannot be null");
-            Objects.requireNonNull(source, "source cannot be null");
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                return null;
-            }
-
-            enforceBluetoothPrivilegedPermission(service);
-            return service.getActivePresetInfo(device);
-        }
-
-        @Override
-        public int getHapGroup(BluetoothDevice device, AttributionSource source) {
-            Objects.requireNonNull(device, "device cannot be null");
-            Objects.requireNonNull(source, "source cannot be null");
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                return BluetoothCsipSetCoordinator.GROUP_ID_INVALID;
-            }
-
-            enforceBluetoothPrivilegedPermission(service);
-            return service.getHapGroup(device);
-        }
-
-        @Override
-        public void selectPreset(
-                BluetoothDevice device, int presetIndex, AttributionSource source) {
-            if (source == null) {
-                Log.w(TAG, "source cannot be null");
-                return;
-            }
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                Log.w(TAG, "service is null");
-                return;
-            }
-            enforceBluetoothPrivilegedPermission(service);
-            service.selectPreset(device, presetIndex);
-        }
-
-        @Override
-        public void selectPresetForGroup(int groupId, int presetIndex, AttributionSource source) {
-            if (source == null) {
-                Log.w(TAG, "source cannot be null");
-                return;
-            }
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                Log.w(TAG, "service is null");
-                return;
-            }
-            enforceBluetoothPrivilegedPermission(service);
-            service.selectPresetForGroup(groupId, presetIndex);
-        }
-
-        @Override
-        public void switchToNextPreset(BluetoothDevice device, AttributionSource source) {
-            if (source == null) {
-                Log.w(TAG, "source cannot be null");
-                return;
-            }
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                Log.w(TAG, "service is null");
-                return;
-            }
-            enforceBluetoothPrivilegedPermission(service);
-            service.switchToNextPreset(device);
-        }
-
-        @Override
-        public void switchToNextPresetForGroup(int groupId, AttributionSource source) {
-            if (source == null) {
-                Log.w(TAG, "source cannot be null");
-                return;
-            }
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                Log.w(TAG, "service is null");
-                return;
-            }
-            enforceBluetoothPrivilegedPermission(service);
-            service.switchToNextPresetForGroup(groupId);
-        }
-
-        @Override
-        public void switchToPreviousPreset(BluetoothDevice device, AttributionSource source) {
-            if (source == null) {
-                Log.w(TAG, "source cannot be null");
-                return;
-            }
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                Log.w(TAG, "service is null");
-                return;
-            }
-            enforceBluetoothPrivilegedPermission(service);
-            service.switchToPreviousPreset(device);
-        }
-
-        @Override
-        public void switchToPreviousPresetForGroup(int groupId, AttributionSource source) {
-            if (source == null) {
-                Log.w(TAG, "source cannot be null");
-                return;
-            }
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                Log.w(TAG, "service is null");
-                return;
-            }
-            enforceBluetoothPrivilegedPermission(service);
-            service.switchToPreviousPresetForGroup(groupId);
-        }
-
-        @Override
-        public BluetoothHapPresetInfo getPresetInfo(
-                BluetoothDevice device, int presetIndex, AttributionSource source) {
-            Objects.requireNonNull(device, "device cannot be null");
-            Objects.requireNonNull(source, "source cannot be null");
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                return null;
-            }
-
-            enforceBluetoothPrivilegedPermission(service);
-            return service.getPresetInfo(device, presetIndex);
-        }
-
-        @Override
-        public List<BluetoothHapPresetInfo> getAllPresetInfo(
-                BluetoothDevice device, AttributionSource source) {
-            Objects.requireNonNull(device, "device cannot be null");
-            Objects.requireNonNull(source, "source cannot be null");
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                return Collections.emptyList();
-            }
-
-            enforceBluetoothPrivilegedPermission(service);
-            return service.getAllPresetInfo(device);
-        }
-
-        @Override
-        public int getFeatures(BluetoothDevice device, AttributionSource source) {
-            Objects.requireNonNull(device, "device cannot be null");
-            Objects.requireNonNull(source, "source cannot be null");
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                return 0x00;
-            }
-
-            enforceBluetoothPrivilegedPermission(service);
-            return service.getFeatures(device);
-        }
-
-        @Override
-        public void setPresetName(
-                BluetoothDevice device, int presetIndex, String name, AttributionSource source) {
-            if (device == null) {
-                Log.w(TAG, "device cannot be null");
-                return;
-            }
-            if (name == null) {
-                Log.w(TAG, "name cannot be null");
-                return;
-            }
-            if (source == null) {
-                Log.w(TAG, "source cannot be null");
-                return;
-            }
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                Log.w(TAG, "service is null");
-                return;
-            }
-            enforceBluetoothPrivilegedPermission(service);
-            service.setPresetName(device, presetIndex, name);
-        }
-
-        @Override
-        public void setPresetNameForGroup(
-                int groupId, int presetIndex, String name, AttributionSource source) {
-            if (name == null) {
-                Log.w(TAG, "name cannot be null");
-                return;
-            }
-            if (source == null) {
-                Log.w(TAG, "source cannot be null");
-                return;
-            }
-            HapClientService service = getService(source);
-            if (service == null) {
-                Log.w(TAG, "service is null");
-                return;
-            }
-            enforceBluetoothPrivilegedPermission(service);
-            service.setPresetNameForGroup(groupId, presetIndex, name);
-        }
-
-        @Override
-        public void registerCallback(
-                IBluetoothHapClientCallback callback, AttributionSource source) {
-            Objects.requireNonNull(callback, "callback cannot be null");
-            Objects.requireNonNull(source, "source cannot be null");
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                return;
-            }
-
-            enforceBluetoothPrivilegedPermission(service);
-            synchronized (service.mCallbacks) {
-                service.mCallbacks.register(callback);
-            }
-        }
-
-        @Override
-        public void unregisterCallback(
-                IBluetoothHapClientCallback callback, AttributionSource source) {
-            Objects.requireNonNull(callback, "callback cannot be null");
-            Objects.requireNonNull(source, "source cannot be null");
-
-            HapClientService service = getService(source);
-            if (service == null) {
-                return;
-            }
-
-            enforceBluetoothPrivilegedPermission(service);
-            synchronized (service.mCallbacks) {
-                service.mCallbacks.unregister(callback);
-            }
+    void unregisterCallback(IBluetoothHapClientCallback callback) {
+        synchronized (mCallbacks) {
+            mCallbacks.unregister(callback);
         }
     }
 }

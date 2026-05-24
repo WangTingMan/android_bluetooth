@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,54 +19,152 @@
 #include "main/shim/stack.h"
 
 #include <bluetooth/log.h>
+#include <com_android_bluetooth_flags.h>
 #include <fcntl.h>
 #if __has_include(<unistd.h>)
 #include <unistd.h>
 #endif
 
+#include <chrono>
+#include <future>
+#include <queue>
 #include <string>
 
-#include "common/init_flags.h"
 #include "common/strings.h"
-#include "hal/hci_hal.h"
-#include "hci/acl_manager.h"
+#include "hal/hci_hal_impl.h"
+#include "hal/link_clocker.h"
+#include "hal/ranging_hal_impl.h"
+#include "hal/snoop_logger.h"
+#include "hal/socket_hal_impl.h"
+#include "hci/acl_manager/acl_manager_classic_impl.h"
+#include "hci/acl_manager/acl_manager_le_impl.h"
 #include "hci/acl_manager/acl_scheduler.h"
-#include "hci/controller.h"
-#include "hci/controller_interface.h"
-#include "hci/distance_measurement_manager.h"
+#include "hci/controller_impl.h"
+#include "hci/distance_measurement_manager_impl.h"
 #include "hci/hci_layer.h"
-#include "hci/le_advertising_manager.h"
-#include "hci/le_scanning_manager.h"
-#if TARGET_FLOSS
+#include "hci/le_advertising_manager_impl.h"
+#include "hci/le_scanning_manager_impl.h"
 #include "hci/msft.h"
-#endif
-#include "hci/remote_name_request.h"
+#include "hci/remote_name_request_impl.h"
+#include "lpp/lpp_offload_manager.h"
 #include "main/shim/acl.h"
-#include "main/shim/acl_legacy_interface.h"
+#include "main/shim/acl_interface.h"
 #include "main/shim/distance_measurement_manager.h"
 #include "main/shim/entry.h"
 #include "main/shim/hci_layer.h"
 #include "main/shim/le_advertising_manager.h"
 #include "main/shim/le_scanning_manager.h"
-#include "metrics/counter_metrics.h"
-#include "os/log.h"
-#include "shim/dumpsys.h"
+#include "os/system_properties.h"
+#include "os/wakelock_manager.h"
 #include "storage/storage_module.h"
+
 #if TARGET_FLOSS
 #include "sysprops/sysprops_module.h"
 #endif
 
+using ::bluetooth::os::Handler;
+using ::bluetooth::os::Thread;
+using ::bluetooth::os::WakelockManager;
+
 namespace bluetooth {
 namespace shim {
 
-using ::bluetooth::common::InitFlags;
-using ::bluetooth::common::StringFormat;
-
 struct Stack::impl {
-  legacy::Acl* acl_ = nullptr;
+  impl(os::Handler* handler)
+      : storage_(handler),
+        snoop_logger_(handler),
+#ifdef TARGET_FLOSS
+        sysprops_module_(),
+#endif
+        link_clocker_(),
+        hci_hal_(handler, link_clocker_, &snoop_logger_),
+        ranging_hal_(),
+        hci_layer_(handler, &hci_hal_, &storage_),
+        controller_(handler, &hci_layer_),
+        acl_scheduler_(handler),
+        remote_name_request_(handler, hci_layer_, acl_scheduler_),
+        round_robin_scheduler_(handler, controller_, hci_layer_.GetAclQueueEnd()),
+        acl_manager_classic_(handler, hci_layer_, acl_scheduler_, remote_name_request_,
+                             round_robin_scheduler_),
+        acl_manager_(handler, hci_layer_, controller_, storage_, round_robin_scheduler_,
+                     acl_manager_classic_),
+        le_scanning_manager_(handler, &hci_layer_, &controller_, acl_manager_.GetLeAddressManager(),
+                             &storage_),
+        msft_extension_manager_(handler, &hci_hal_, &hci_layer_),
+        le_advertising_manager_(handler, &hci_layer_, &controller_,
+                                acl_manager_.GetLeAddressManager(), &acl_manager_),
+        distance_measurement_manager_(handler, &hci_layer_, &controller_, &acl_manager_,
+                                      &ranging_hal_) {
+    socket_hal_ = std::make_unique<hal::SocketHalImpl>();
+    lpp_offload_manager_ = std::make_unique<lpp::LppOffloadManager>(handler, socket_hal_.get());
+  }
+
+  // TODO: Remove this constructor once the flag (same_handler_for_all_modules) is fully rolled out.
+  impl(os::Thread* thread)
+      : storage_(new os::Handler(thread)),
+        snoop_logger_(new os::Handler(thread)),
+#ifdef TARGET_FLOSS
+        sysprops_module_(),
+#endif
+        link_clocker_(),
+        hci_hal_(new os::Handler(thread), link_clocker_, &snoop_logger_),
+        ranging_hal_(),
+        hci_layer_(new os::Handler(thread), &hci_hal_, &storage_),
+        controller_(new os::Handler(thread), &hci_layer_),
+        acl_scheduler_(new os::Handler(thread)),
+        remote_name_request_(new os::Handler(thread), hci_layer_, acl_scheduler_),
+        round_robin_scheduler_(new os::Handler(thread), controller_, hci_layer_.GetAclQueueEnd()),
+        acl_manager_classic_(new os::Handler(thread), hci_layer_, acl_scheduler_,
+                             remote_name_request_, round_robin_scheduler_),
+        acl_manager_(new os::Handler(thread), hci_layer_, controller_, storage_,
+                     round_robin_scheduler_, acl_manager_classic_),
+        le_scanning_manager_(new os::Handler(thread), &hci_layer_, &controller_,
+                             acl_manager_.GetLeAddressManager(), &storage_),
+        msft_extension_manager_(new os::Handler(thread), &hci_hal_, &hci_layer_),
+        le_advertising_manager_(new os::Handler(thread), &hci_layer_, &controller_,
+                                acl_manager_.GetLeAddressManager(), &acl_manager_),
+        distance_measurement_manager_(new os::Handler(thread), &hci_layer_, &controller_,
+                                      &acl_manager_, &ranging_hal_) {
+    socket_hal_ = std::make_unique<hal::SocketHalImpl>();
+    lpp_offload_manager_ =
+            std::make_unique<lpp::LppOffloadManager>(new os::Handler(thread), socket_hal_.get());
+  }
+
+  ~impl() {
+    if (lpp_offload_manager_) {
+      lpp_offload_manager_.reset();
+    }
+
+    if (socket_hal_) {
+      socket_hal_.reset();
+    }
+  }
+
+  Acl* acl_ = nullptr;
+  storage::StorageModule storage_;
+  hal::SnoopLogger snoop_logger_;
+#if TARGET_FLOSS
+  sysprops::SyspropsModule sysprops_module_;
+#endif
+  std::unique_ptr<hal::SocketHal> socket_hal_ = nullptr;
+  std::unique_ptr<lpp::LppOffloadManager> lpp_offload_manager_ = nullptr;
+  hal::LinkClocker link_clocker_;
+  hal::HciHalImpl hci_hal_;
+  hal::RangingHalImpl ranging_hal_;
+  hci::HciLayer hci_layer_;
+  hci::ControllerImpl controller_;
+  hci::acl_manager::AclScheduler acl_scheduler_;
+  hci::RemoteNameRequestModuleImpl remote_name_request_;
+  hci::acl_manager::RoundRobinScheduler round_robin_scheduler_;
+  hci::acl_manager::AclManagerClassicImpl acl_manager_classic_;
+  hci::acl_manager::AclManagerLeImpl acl_manager_;
+  hci::LeScanningManagerImpl le_scanning_manager_;
+  hci::MsftExtensionManager msft_extension_manager_;
+  hci::LeAdvertisingManagerImpl le_advertising_manager_;
+  hci::DistanceMeasurementManagerImpl distance_measurement_manager_;
 };
 
-Stack::Stack() { pimpl_ = std::make_shared<Stack::impl>(); }
+Stack::Stack() {}
 
 Stack* Stack::GetInstance() {
   static Stack instance;
@@ -74,79 +172,58 @@ Stack* Stack::GetInstance() {
 }
 
 void Stack::StartEverything() {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  log::assert_that(!is_running_, "Gd stack already running");
-  log::info("Starting Gd stack");
-  ModuleList modules;
+  {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    log::assert_that(!is_running_, "Gd stack already running");
+    log::info("Starting Gd stack");
 
-  modules.add<metrics::CounterMetrics>();
-  modules.add<hal::HciHal>();
-  modules.add<hci::HciLayer>();
-  modules.add<storage::StorageModule>();
-  modules.add<shim::Dumpsys>();
-#if TARGET_FLOSS
-  modules.add<sysprops::SyspropsModule>();
-#endif
+    stack_thread_ = new os::Thread("gd_stack_thread", os::Thread::Priority::REAL_TIME);
+    stack_handler_ = new os::Handler(stack_thread_);
 
-  modules.add<hci::Controller>();
-  modules.add<hci::acl_manager::AclScheduler>();
-  modules.add<hci::AclManager>();
-  modules.add<hci::RemoteNameRequestModule>();
-  modules.add<hci::LeAdvertisingManager>();
-#if TARGET_FLOSS
-  modules.add<hci::MsftExtensionManager>();
-#endif
-  modules.add<hci::LeScanningManager>();
-  modules.add<hci::DistanceMeasurementManager>();
-  Start(&modules);
-  is_running_ = true;
-  // Make sure the leaf modules are started
-  log::assert_that(
-      stack_manager_.GetInstance<storage::StorageModule>() != nullptr,
-      "assert failed: stack_manager_.GetInstance<storage::StorageModule>() != "
-      "nullptr");
-  log::assert_that(
-      stack_manager_.GetInstance<shim::Dumpsys>() != nullptr,
-      "assert failed: stack_manager_.GetInstance<shim::Dumpsys>() != nullptr");
-  if (stack_manager_.IsStarted<hci::Controller>()) {
-    pimpl_->acl_ = new legacy::Acl(stack_handler_, legacy::GetAclInterface(),
-                                   GetController()->GetLeFilterAcceptListSize(),
-                                   GetController()->GetLeResolvingListSize());
-  } else {
-    log::error("Unable to create shim ACL layer as Controller has not started");
+    management_thread_ = new Thread("management_thread", Thread::Priority::NORMAL);
+    management_handler_ = new Handler(management_thread_);
+
+    WakelockManager::Get().Acquire();
   }
 
-  bluetooth::shim::hci_on_reset_complete();
-  bluetooth::shim::init_advertising_manager();
-  bluetooth::shim::init_scanning_manager();
-  bluetooth::shim::init_distance_measurement_manager();
-}
+  std::promise<void> promise;
+  auto future = promise.get_future();
+  management_handler_->Post(
+          common::BindOnce(&Stack::handle_start_up, common::Unretained(this), std::move(promise)));
+  auto init_status = future.wait_for(
+          std::chrono::milliseconds(get_gd_stack_timeout_ms(/* is_start = */ true)));
 
-void Stack::StartModuleStack(const ModuleList* modules,
-                             const os::Thread* thread) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  log::assert_that(!is_running_, "Gd stack already running");
-  stack_thread_ = const_cast<os::Thread*>(thread);
-  log::info("Starting Gd stack");
+  log::info("init_status == {}", int(init_status));
 
-  stack_manager_.StartUp(const_cast<ModuleList*>(modules), stack_thread_);
-  stack_handler_ = new os::Handler(stack_thread_);
+  if (init_status != std::future_status::ready) {
+    /* Crash stuck thread and print it's stack trace, so that we know why startup is taking too
+     * long */
+    management_thread_->Abort();
 
-  num_modules_ = modules->NumModules();
-  is_running_ = true;
-}
+    /* Crashed thread should take whole stack with it, but main thread is being executed
+     * simultaneously. This sleep ensures that main thread doesn't execute any logic below, and
+     * nicely dies with rest of stack.  */
+    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
-void Stack::Start(ModuleList* modules) {
-  log::assert_that(!is_running_, "Gd stack already running");
-  log::info("Starting Gd stack");
+    /* We should already be dead because of the Abort above, this is just in case the sleep above
+     * was somehow too short */
+    log::assert_that(init_status == std::future_status::ready, "Can't start stack");
+  }
 
-  stack_thread_ =
-      new os::Thread("gd_stack_thread", os::Thread::Priority::REAL_TIME);
-  stack_manager_.StartUp(modules, stack_thread_);
+  {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    WakelockManager::Get().Release();
 
-  stack_handler_ = new os::Handler(stack_thread_);
+    is_running_ = true;
+    log::info("Successfully toggled Gd stack");
 
-  log::info("Successfully toggled Gd stack");
+    pimpl_->acl_ = new Acl(stack_handler_, GetAclInterface());
+
+    bluetooth::shim::hci_on_reset_complete();
+    bluetooth::shim::init_advertising_manager();
+    bluetooth::shim::init_scanning_manager();
+    bluetooth::shim::init_distance_measurement_manager();
+  }
 }
 
 void Stack::Stop() {
@@ -154,18 +231,38 @@ void Stack::Stop() {
   bluetooth::shim::hci_on_shutting_down();
 
   // Make sure gd acl flag is enabled and we started it up
-  if (pimpl_->acl_ != nullptr) {
-    pimpl_->acl_->FinalShutdown();
-    delete pimpl_->acl_;
-    pimpl_->acl_ = nullptr;
-  }
+  pimpl_->acl_->FinalShutdown();
+  delete pimpl_->acl_;
+  pimpl_->acl_ = nullptr;
 
   log::assert_that(is_running_, "Gd stack not running");
   is_running_ = false;
+  log::info("GD stack is not running");
 
   stack_handler_->Clear();
+  if (com_android_bluetooth_flags_same_handler_for_all_modules()) {
+    stack_handler_->WaitUntilStopped(bluetooth::kHandlerStopTimeout);
+  }
 
-  stack_manager_.ShutDown();
+  WakelockManager::Get().Acquire();
+
+  std::promise<void> promise;
+  auto future = promise.get_future();
+  management_handler_->Post(
+          common::BindOnce(&Stack::handle_shut_down, common::Unretained(this), std::move(promise)));
+
+  auto stop_status = future.wait_for(
+          std::chrono::milliseconds(get_gd_stack_timeout_ms(/* is_start = */ false)));
+
+  WakelockManager::Get().Release();
+  WakelockManager::Get().CleanUp();
+
+  log::assert_that(stop_status == std::future_status::ready, "Can't stop stack");
+
+  management_handler_->Clear();
+  management_handler_->WaitUntilStopped(std::chrono::milliseconds(2000));
+  delete management_handler_;
+  delete management_thread_;
 
   delete stack_handler_;
   stack_handler_ = nullptr;
@@ -182,24 +279,83 @@ bool Stack::IsRunning() {
   return is_running_;
 }
 
-StackManager* Stack::GetStackManager() {
+Acl* Stack::GetAcl() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   log::assert_that(is_running_, "assert failed: is_running_");
-  return &stack_manager_;
-}
-
-const StackManager* Stack::GetStackManager() const {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  log::assert_that(is_running_, "assert failed: is_running_");
-  return &stack_manager_;
-}
-
-legacy::Acl* Stack::GetAcl() {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  log::assert_that(is_running_, "assert failed: is_running_");
-  log::assert_that(pimpl_->acl_ != nullptr,
-                   "Acl shim layer has not been created");
+  log::assert_that(pimpl_->acl_ != nullptr, "Acl shim layer has not been created");
   return pimpl_->acl_;
+}
+
+storage::StorageModule* Stack::GetStorage() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  log::assert_that(is_running_, "assert failed: is_running_");
+  return &pimpl_->storage_;
+}
+
+hal::SnoopLogger* Stack::GetSnoopLogger() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  log::assert_that(is_running_, "assert failed: is_running_");
+  return &pimpl_->snoop_logger_;
+}
+
+lpp::LppOffloadInterface* Stack::GetLppOffloadInterface() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  log::assert_that(is_running_, "assert failed: is_running_");
+  return pimpl_->lpp_offload_manager_.get();
+}
+
+hci::HciInterface* Stack::GetHciLayer() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  log::assert_that(is_running_, "assert failed: is_running_");
+  return &pimpl_->hci_layer_;
+}
+
+hci::Controller* Stack::GetController() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  log::assert_that(is_running_, "assert failed: is_running_");
+  return &pimpl_->controller_;
+}
+
+hci::RemoteNameRequestModule* Stack::GetRemoteNameRequest() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  log::assert_that(is_running_, "assert failed: is_running_");
+  return &pimpl_->remote_name_request_;
+}
+
+hci::AclManagerLe* Stack::GetAclManagerLe() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  log::assert_that(is_running_, "assert failed: is_running_");
+  return &pimpl_->acl_manager_;
+}
+
+hci::acl_manager::AclManagerClassic* Stack::GetAclManagerClassic() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  log::assert_that(is_running_, "assert failed: is_running_");
+  return &pimpl_->acl_manager_classic_;
+}
+
+hci::MsftExtensionManager* Stack::GetMsftExtensionManager() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  log::assert_that(is_running_, "assert failed: is_running_");
+  return &pimpl_->msft_extension_manager_;
+}
+
+hci::LeScanningManager* Stack::GetLeScanningManager() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  log::assert_that(is_running_, "assert failed: is_running_");
+  return &pimpl_->le_scanning_manager_;
+}
+
+hci::LeAdvertisingManager* Stack::GetLeAdvertisingManager() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  log::assert_that(is_running_, "assert failed: is_running_");
+  return &pimpl_->le_advertising_manager_;
+}
+
+hci::DistanceMeasurementManager* Stack::GetDistanceMeasurementManager() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  log::assert_that(is_running_, "assert failed: is_running_");
+  return &pimpl_->distance_measurement_manager_;
 }
 
 os::Handler* Stack::GetHandler() {
@@ -208,17 +364,54 @@ os::Handler* Stack::GetHandler() {
   return stack_handler_;
 }
 
-bool Stack::IsDumpsysModuleStarted() const {
+void Stack::Dump(int fd, std::promise<void> promise) const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
-  return GetStackManager()->IsStarted<Dumpsys>();
+  if (is_running_ && fd >= 0) {
+    stack_handler_->Call(
+            [](int fd, std::promise<void> promise) {
+              bluetooth::shim::GetController()->Dump(fd);
+              bluetooth::shim::GetAclManagerLe()->Dump(fd);
+              bluetooth::shim::GetAdvertising()->Dump(fd);
+              bluetooth::os::WakelockManager::Get().Dump(fd);
+              bluetooth::shim::GetSnoopLogger()->DumpSnoozLogToFile();
+              promise.set_value();
+            },
+            fd, std::move(promise));
+  } else {
+    promise.set_value();
+  }
 }
 
-bool Stack::LockForDumpsys(std::function<void()> dumpsys_callback) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  if (is_running_) {
-    dumpsys_callback();
+#ifdef _MSC_VER
+void Stack::HandleOutgoingClassicAclPacket( uint16_t handle, std::unique_ptr<packet::RawBuilder> packet )
+{
+  pimpl_->round_robin_scheduler_.ScheduleOutgoingAclPacket( handle, std::move( packet ) );
+}
+#endif
+
+void Stack::handle_start_up(std::promise<void> promise) {
+  if (!com_android_bluetooth_flags_same_handler_for_all_modules()) {
+    // Create a new handler for each module to remain consistent with the old implementation.
+    pimpl_ = std::make_unique<Stack::impl>(stack_thread_);
+  } else {
+    pimpl_ = std::make_unique<Stack::impl>(stack_handler_);
   }
-  return is_running_;
+
+  promise.set_value();
+}
+
+void Stack::handle_shut_down(std::promise<void> promise) {
+  pimpl_.reset();
+  promise.set_value();
+}
+
+std::chrono::milliseconds Stack::get_gd_stack_timeout_ms(bool is_start) {
+  auto gd_timeout = os::GetSystemPropertyUint32(
+          is_start ? "bluetooth.gd.start_timeout" : "bluetooth.gd.stop_timeout",
+          /* default_value = */ is_start ? 3000 : 5000);
+  return std::chrono::milliseconds(gd_timeout *
+                                   os::GetSystemPropertyUint32("ro.hw_timeout_multiplier",
+                                                               /* default_value = */ 1));
 }
 
 }  // namespace shim

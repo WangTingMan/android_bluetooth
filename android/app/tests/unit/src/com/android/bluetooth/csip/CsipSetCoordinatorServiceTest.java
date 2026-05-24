@@ -17,544 +17,382 @@
 
 package com.android.bluetooth.csip;
 
-import static org.mockito.Mockito.*;
+import static android.bluetooth.BluetoothCsipSetCoordinator.ACTION_CSIS_DEVICE_AVAILABLE;
+import static android.bluetooth.BluetoothDevice.BOND_BONDED;
+import static android.bluetooth.BluetoothDevice.BOND_BONDING;
+import static android.bluetooth.BluetoothDevice.BOND_NONE;
+import static android.bluetooth.BluetoothProfile.CONNECTION_POLICY_ALLOWED;
+import static android.bluetooth.BluetoothProfile.CONNECTION_POLICY_FORBIDDEN;
+import static android.bluetooth.BluetoothProfile.CONNECTION_POLICY_UNKNOWN;
+import static android.bluetooth.BluetoothProfile.EXTRA_PREVIOUS_STATE;
+import static android.bluetooth.BluetoothProfile.EXTRA_STATE;
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTED;
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTING;
+import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTED;
 
-import android.bluetooth.*;
+import static androidx.test.espresso.intent.matcher.IntentMatchers.hasAction;
+import static androidx.test.espresso.intent.matcher.IntentMatchers.hasExtra;
+
+import static com.android.bluetooth.TestUtils.getTestDevice;
+import static com.android.bluetooth.TestUtils.mockGetRemoteDevice;
+
+import static com.google.common.truth.Truth.assertThat;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+
+import android.bluetooth.BluetoothCsipSetCoordinator;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothProfile;
+import android.bluetooth.BluetoothStatusCodes;
 import android.bluetooth.BluetoothUuid;
-import android.content.BroadcastReceiver;
-import android.content.Context;
+import android.bluetooth.IBluetoothCsipSetCoordinator;
+import android.bluetooth.IBluetoothCsipSetCoordinatorLockCallback;
 import android.content.Intent;
-import android.content.IntentFilter;
-import android.os.Looper;
 import android.os.ParcelUuid;
 import android.os.RemoteException;
+import android.platform.test.flag.junit.SetFlagsRule;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.MediumTest;
-import androidx.test.platform.app.InstrumentationRegistry;
-import androidx.test.runner.AndroidJUnit4;
 
-import com.android.bluetooth.TestUtils;
+import com.android.bluetooth.TestLooper;
 import com.android.bluetooth.Utils;
 import com.android.bluetooth.btservice.AdapterService;
-import com.android.bluetooth.btservice.ServiceFactory;
-import com.android.bluetooth.btservice.storage.DatabaseManager;
 import com.android.bluetooth.le_audio.LeAudioService;
+import com.android.tests.bluetooth.MockitoRule;
 
+import org.hamcrest.Matcher;
+import org.hamcrest.core.AllOf;
 import org.junit.After;
-import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
-import org.mockito.Spy;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
+import org.mockito.hamcrest.MockitoHamcrest;
 
-import java.util.HashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeoutException;
 
+/** Test cases for {@link CsipSetCoordinatorService}. */
 @MediumTest
 @RunWith(AndroidJUnit4.class)
 public class CsipSetCoordinatorServiceTest {
-    private final String mFlagDexmarker = System.getProperty("dexmaker.share_classloader", "false");
-
-    private Context mTargetContext;
-    private BluetoothAdapter mAdapter;
-    private BluetoothDevice mTestDevice;
-    private BluetoothDevice mTestDevice2;
-    private BluetoothDevice mTestDevice3;
-    private CsipSetCoordinatorService mService;
-    private HashMap<BluetoothDevice, LinkedBlockingQueue<Intent>> mIntentQueue;
-    private BroadcastReceiver mCsipSetCoordinatorIntentReceiver;
-    private static final int TIMEOUT_MS = 1000;
-
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
+    @Rule public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
 
     @Mock private AdapterService mAdapterService;
     @Mock private LeAudioService mLeAudioService;
-    @Spy private ServiceFactory mServiceFactory = new ServiceFactory();
-    @Mock private DatabaseManager mDatabaseManager;
-    @Mock private CsipSetCoordinatorNativeInterface mCsipSetCoordinatorNativeInterface;
+    @Mock private CsipSetCoordinatorNativeInterface mNativeInterface;
     @Mock private IBluetoothCsipSetCoordinatorLockCallback mCsipSetCoordinatorLockCallback;
+
+    private final BluetoothDevice mDevice1 = getTestDevice(0);
+    private final BluetoothDevice mDevice2 = getTestDevice(1);
+    private final BluetoothDevice mDevice3 = getTestDevice(2);
+
+    private CsipSetCoordinatorService mService;
+    private InOrder mInOrder;
+    private TestLooper mLooper;
+    private CsipSetCoordinatorNativeInterface mNativeCallback;
 
     @Before
     public void setUp() throws Exception {
-        if (!mFlagDexmarker.equals("true")) {
-            System.setProperty("dexmaker.share_classloader", "true");
-        }
-
-        mTargetContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        if (Looper.myLooper() == null) {
-            Looper.prepare();
-        }
-        Assert.assertNotNull(Looper.myLooper());
-
-        TestUtils.setAdapterService(mAdapterService);
-        doReturn(mDatabaseManager).when(mAdapterService).getDatabase();
-
-        mAdapter = BluetoothAdapter.getDefaultAdapter();
-
-        CsipSetCoordinatorNativeInterface.setInstance(mCsipSetCoordinatorNativeInterface);
-        startService();
-        mService.mServiceFactory = mServiceFactory;
-        when(mServiceFactory.getLeAudioService()).thenReturn(mLeAudioService);
-
-        // Override the timeout value to speed up the test
-        CsipSetCoordinatorStateMachine.sConnectTimeoutMs = TIMEOUT_MS; // 1s
-
-        IntentFilter filter = new IntentFilter();
-        filter.setPriority(IntentFilter.SYSTEM_HIGH_PRIORITY);
-        filter.addAction(BluetoothCsipSetCoordinator.ACTION_CSIS_CONNECTION_STATE_CHANGED);
-        filter.addAction(BluetoothCsipSetCoordinator.ACTION_CSIS_DEVICE_AVAILABLE);
-        filter.addAction(BluetoothCsipSetCoordinator.ACTION_CSIS_SET_MEMBER_AVAILABLE);
-
-        mCsipSetCoordinatorIntentReceiver = new CsipSetCoordinatorIntentReceiver();
-        mTargetContext.registerReceiver(mCsipSetCoordinatorIntentReceiver, filter);
-
-        mTestDevice = TestUtils.getTestDevice(mAdapter, 0);
-        when(mCsipSetCoordinatorNativeInterface.getDevice(getByteAddress(mTestDevice)))
-                .thenReturn(mTestDevice);
-        mTestDevice2 = TestUtils.getTestDevice(mAdapter, 1);
-        when(mCsipSetCoordinatorNativeInterface.getDevice(getByteAddress(mTestDevice2)))
-                .thenReturn(mTestDevice2);
-        mTestDevice3 = TestUtils.getTestDevice(mAdapter, 2);
-        when(mCsipSetCoordinatorNativeInterface.getDevice(getByteAddress(mTestDevice3)))
-                .thenReturn(mTestDevice3);
-
-        doReturn(BluetoothDevice.BOND_BONDED)
-                .when(mAdapterService)
-                .getBondState(any(BluetoothDevice.class));
+        doReturn(BluetoothDevice.BOND_BONDED).when(mAdapterService).getBondState(any());
         doReturn(new ParcelUuid[] {BluetoothUuid.COORDINATED_SET})
                 .when(mAdapterService)
-                .getRemoteUuids(any(BluetoothDevice.class));
+                .getRemoteUuids(any());
 
-        mIntentQueue = new HashMap<>();
-        mIntentQueue.put(mTestDevice, new LinkedBlockingQueue<>());
-        mIntentQueue.put(mTestDevice2, new LinkedBlockingQueue<>());
-        mIntentQueue.put(mTestDevice3, new LinkedBlockingQueue<>());
+        doReturn(CONNECTION_POLICY_ALLOWED)
+                .when(mAdapterService)
+                .getProfileConnectionPolicy(any(), anyInt());
+        doReturn(true).when(mNativeInterface).connect(any());
+        doReturn(true).when(mNativeInterface).disconnect(any());
+        doReturn(new ParcelUuid[] {BluetoothUuid.COORDINATED_SET})
+                .when(mAdapterService)
+                .getRemoteUuids(any());
+
+        doReturn(Optional.of(mLeAudioService)).when(mAdapterService).getLeAudioService();
+
+        mInOrder = inOrder(mAdapterService);
+        mLooper = new TestLooper();
+
+        mService =
+                new CsipSetCoordinatorService(
+                        mAdapterService, mLooper.getLooper(), mNativeInterface);
+        mService.setAvailable(true);
+        mNativeCallback = new CsipSetCoordinatorNativeInterface(mAdapterService, mService);
+
+        mockGetRemoteDevice(mAdapterService, mDevice1, mDevice2, mDevice3);
     }
 
     @After
     public void tearDown() throws Exception {
-        if (!mFlagDexmarker.equals("true")) {
-            System.setProperty("dexmaker.share_classloader", mFlagDexmarker);
+        mService.cleanup();
+    }
+
+    @Test
+    public void getConnectionPolicy() {
+        for (int policy :
+                List.of(
+                        CONNECTION_POLICY_UNKNOWN,
+                        CONNECTION_POLICY_FORBIDDEN,
+                        CONNECTION_POLICY_ALLOWED)) {
+            doReturn(policy).when(mAdapterService).getProfileConnectionPolicy(any(), anyInt());
+            assertThat(mService.getConnectionPolicy(mDevice1)).isEqualTo(policy);
         }
-
-        if (Looper.myLooper() == null) {
-            return;
-        }
-
-        if (mService == null) {
-            return;
-        }
-
-        stopService();
-        CsipSetCoordinatorNativeInterface.setInstance(null);
-        mTargetContext.unregisterReceiver(mCsipSetCoordinatorIntentReceiver);
-        TestUtils.clearAdapterService(mAdapterService);
-        mIntentQueue.clear();
     }
 
-    private void startService() throws TimeoutException {
-        mService = new CsipSetCoordinatorService(mTargetContext);
-        mService.start();
-        mService.setAvailable(true);
-    }
-
-    private void stopService() throws TimeoutException {
-        mService.stop();
-        mService = CsipSetCoordinatorService.getCsipSetCoordinatorService();
-        Assert.assertNull(mService);
-    }
-
-    /** Test getting CsipSetCoordinator Service */
     @Test
-    public void testGetService() {
-        Assert.assertEquals(mService, CsipSetCoordinatorService.getCsipSetCoordinatorService());
-    }
-
-    /** Test stop CsipSetCoordinator Service */
-    @Test
-    public void testStopService() {
-        Assert.assertEquals(mService, CsipSetCoordinatorService.getCsipSetCoordinatorService());
-
-        InstrumentationRegistry.getInstrumentation().runOnMainSync(mService::stop);
-        InstrumentationRegistry.getInstrumentation().runOnMainSync(mService::start);
-    }
-
-    /** Test get/set policy for BluetoothDevice */
-    @Test
-    public void testGetSetPolicy() {
-        when(mDatabaseManager.getProfileConnectionPolicy(
-                        mTestDevice, BluetoothProfile.CSIP_SET_COORDINATOR))
-                .thenReturn(BluetoothProfile.CONNECTION_POLICY_UNKNOWN);
-        Assert.assertEquals(
-                "Initial device policy",
-                BluetoothProfile.CONNECTION_POLICY_UNKNOWN,
-                mService.getConnectionPolicy(mTestDevice));
-
-        when(mDatabaseManager.getProfileConnectionPolicy(
-                        mTestDevice, BluetoothProfile.CSIP_SET_COORDINATOR))
-                .thenReturn(BluetoothProfile.CONNECTION_POLICY_FORBIDDEN);
-        Assert.assertEquals(
-                "Setting device policy to POLICY_FORBIDDEN",
-                BluetoothProfile.CONNECTION_POLICY_FORBIDDEN,
-                mService.getConnectionPolicy(mTestDevice));
-
-        when(mDatabaseManager.getProfileConnectionPolicy(
-                        mTestDevice, BluetoothProfile.CSIP_SET_COORDINATOR))
-                .thenReturn(BluetoothProfile.CONNECTION_POLICY_ALLOWED);
-        Assert.assertEquals(
-                "Setting device policy to POLICY_ALLOWED",
-                BluetoothProfile.CONNECTION_POLICY_ALLOWED,
-                mService.getConnectionPolicy(mTestDevice));
-    }
-
-    /** Test if getProfileConnectionPolicy works after the service is stopped. */
-    @Test
-    public void testGetPolicyAfterStopped() {
-        mService.stop();
-        when(mDatabaseManager.getProfileConnectionPolicy(
-                        mTestDevice, BluetoothProfile.CSIP_SET_COORDINATOR))
-                .thenReturn(BluetoothProfile.CONNECTION_POLICY_UNKNOWN);
-        Assert.assertEquals(
-                "Initial device policy",
-                BluetoothProfile.CONNECTION_POLICY_UNKNOWN,
-                mService.getConnectionPolicy(mTestDevice));
-    }
-
-    /** Test okToConnect method using various test cases */
-    @Test
-    public void testOkToConnect() {
+    public void canConnect_whenNotBonded_returnFalse() {
         int badPolicyValue = 1024;
         int badBondState = 42;
-        testOkToConnectCase(
-                mTestDevice,
-                BluetoothDevice.BOND_NONE,
-                BluetoothProfile.CONNECTION_POLICY_UNKNOWN,
-                false);
-        testOkToConnectCase(
-                mTestDevice,
-                BluetoothDevice.BOND_NONE,
-                BluetoothProfile.CONNECTION_POLICY_FORBIDDEN,
-                false);
-        testOkToConnectCase(
-                mTestDevice,
-                BluetoothDevice.BOND_NONE,
-                BluetoothProfile.CONNECTION_POLICY_ALLOWED,
-                false);
-        testOkToConnectCase(mTestDevice, BluetoothDevice.BOND_NONE, badPolicyValue, false);
-        testOkToConnectCase(
-                mTestDevice,
-                BluetoothDevice.BOND_BONDING,
-                BluetoothProfile.CONNECTION_POLICY_UNKNOWN,
-                false);
-        testOkToConnectCase(
-                mTestDevice,
-                BluetoothDevice.BOND_BONDING,
-                BluetoothProfile.CONNECTION_POLICY_FORBIDDEN,
-                false);
-        testOkToConnectCase(
-                mTestDevice,
-                BluetoothDevice.BOND_BONDING,
-                BluetoothProfile.CONNECTION_POLICY_ALLOWED,
-                false);
-        testOkToConnectCase(mTestDevice, BluetoothDevice.BOND_BONDING, badPolicyValue, false);
-        testOkToConnectCase(
-                mTestDevice,
-                BluetoothDevice.BOND_BONDED,
-                BluetoothProfile.CONNECTION_POLICY_UNKNOWN,
-                true);
-        testOkToConnectCase(
-                mTestDevice,
-                BluetoothDevice.BOND_BONDED,
-                BluetoothProfile.CONNECTION_POLICY_FORBIDDEN,
-                false);
-        testOkToConnectCase(
-                mTestDevice,
-                BluetoothDevice.BOND_BONDED,
-                BluetoothProfile.CONNECTION_POLICY_ALLOWED,
-                true);
-        testOkToConnectCase(mTestDevice, BluetoothDevice.BOND_BONDED, badPolicyValue, false);
-        testOkToConnectCase(
-                mTestDevice, badBondState, BluetoothProfile.CONNECTION_POLICY_UNKNOWN, false);
-        testOkToConnectCase(
-                mTestDevice, badBondState, BluetoothProfile.CONNECTION_POLICY_FORBIDDEN, false);
-        testOkToConnectCase(
-                mTestDevice, badBondState, BluetoothProfile.CONNECTION_POLICY_ALLOWED, false);
-        testOkToConnectCase(mTestDevice, badBondState, badPolicyValue, false);
+        for (int bondState : List.of(BOND_NONE, BOND_BONDING, badBondState)) {
+            for (int policy :
+                    List.of(
+                            CONNECTION_POLICY_UNKNOWN,
+                            CONNECTION_POLICY_FORBIDDEN,
+                            CONNECTION_POLICY_ALLOWED,
+                            badPolicyValue)) {
+                doReturn(bondState).when(mAdapterService).getBondState(any());
+                doReturn(policy).when(mAdapterService).getProfileConnectionPolicy(any(), anyInt());
+                assertThat(mService.okToConnect(mDevice1)).isFalse();
+            }
+        }
+    }
+
+    @Test
+    public void canConnect_whenBonded() {
+        int badPolicyValue = 1024;
+        doReturn(BOND_BONDED).when(mAdapterService).getBondState(any());
+
+        for (int policy : List.of(CONNECTION_POLICY_FORBIDDEN, badPolicyValue)) {
+            doReturn(policy).when(mAdapterService).getProfileConnectionPolicy(any(), anyInt());
+            assertThat(mService.okToConnect(mDevice1)).isFalse();
+        }
+        for (int policy : List.of(CONNECTION_POLICY_UNKNOWN, CONNECTION_POLICY_ALLOWED)) {
+            doReturn(policy).when(mAdapterService).getProfileConnectionPolicy(any(), anyInt());
+            assertThat(mService.okToConnect(mDevice1)).isTrue();
+        }
+    }
+
+    @Test
+    public void removeFoundSetMember_noIntentAfterBondedAndConnectedWithOtherDevice() {
+        int group_id = 0x01;
+        int group_size = 0x02;
+        long uuidLsb = BluetoothUuid.CAP.getUuid().getLeastSignificantBits();
+        long uuidMsb = BluetoothUuid.CAP.getUuid().getMostSignificantBits();
+        UUID uuid = new UUID(uuidMsb, uuidLsb);
+
+        mNativeCallback.onDeviceAvailable(
+                getByteAddress(mDevice1), group_id, group_size, 0x02, uuidLsb, uuidMsb);
+        mService.bondStateChanged(mDevice1, BluetoothDevice.BOND_BONDED);
+        // First intent - ACTION_CSIS_DEVICE_AVAILABLE with device1
+        verifyOrderedIntentSent(
+                hasAction(ACTION_CSIS_DEVICE_AVAILABLE),
+                hasExtra(BluetoothDevice.EXTRA_DEVICE, mDevice1),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_ID, group_id),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_SIZE, group_size),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_TYPE_UUID, uuid));
+        mNativeCallback.onConnectionStateChanged(getByteAddress(mDevice1), STATE_CONNECTED);
+        mService.connectionStateChanged(mDevice1, STATE_CONNECTING, STATE_CONNECTED);
+        mService.bondStateChanged(mDevice2, BluetoothDevice.BOND_BONDING);
+
+        mNativeCallback.onSetMemberAvailable(getByteAddress(mDevice2), group_id);
+        // Second intent - ACTION_CSIS_SET_MEMBER_AVAILABLE with device2
+        verifyOrderedIntentSent(
+                hasAction(BluetoothCsipSetCoordinator.ACTION_CSIS_SET_MEMBER_AVAILABLE),
+                hasExtra(BluetoothDevice.EXTRA_DEVICE, mDevice2),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_ID, group_id));
+
+        // Remove bond for first device and the set member
+        mService.bondStateChanged(mDevice1, BluetoothDevice.BOND_NONE);
+        mService.bondStateChanged(mDevice2, BluetoothDevice.BOND_NONE);
+        mNativeCallback.onConnectionStateChanged(getByteAddress(mDevice1), STATE_DISCONNECTED);
+        mService.connectionStateChanged(mDevice1, STATE_CONNECTED, STATE_DISCONNECTED);
+
+        // Bonded with another device
+        mService.bondStateChanged(mDevice3, BluetoothDevice.BOND_BONDED);
+        mNativeCallback.onDeviceAvailable(
+                getByteAddress(mDevice3), group_id, group_size, 0x02, uuidLsb, uuidMsb);
+        // Third intent - ACTION_CSIS_DEVICE_AVAILABLE with device3
+        verifyOrderedIntentSent(
+                hasAction(ACTION_CSIS_DEVICE_AVAILABLE),
+                hasExtra(BluetoothDevice.EXTRA_DEVICE, mDevice3),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_ID, group_id),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_SIZE, group_size),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_TYPE_UUID, uuid));
+
+        mNativeCallback.onConnectionStateChanged(getByteAddress(mDevice3), STATE_CONNECTED);
+        mService.connectionStateChanged(mDevice3, STATE_CONNECTING, STATE_CONNECTED);
+        // No extra intent is sent after device3 connected, still 3 broadcasts
+        verify(mAdapterService, times(3)).sendOrderedBroadcast(any(), any());
     }
 
     /** Test that call to groupLockSet method calls corresponding native interface method */
     @Test
-    public void testGroupLockSetNative() {
+    public void testGroupLockSetNative() throws RemoteException {
         int group_id = 0x01;
         int group_size = 0x01;
         long uuidLsb = 0x01;
         long uuidMsb = 0x01;
 
-        doCallRealMethod()
-                .when(mCsipSetCoordinatorNativeInterface)
-                .onDeviceAvailable(
-                        any(byte[].class), anyInt(), anyInt(), anyInt(), anyLong(), anyLong());
-        mCsipSetCoordinatorNativeInterface.onDeviceAvailable(
-                getByteAddress(mTestDevice), group_id, group_size, 1, uuidLsb, uuidMsb);
-        Assert.assertFalse(mService.isGroupLocked(group_id));
+        mNativeCallback.onDeviceAvailable(
+                getByteAddress(mDevice1), group_id, group_size, 1, uuidLsb, uuidMsb);
+        assertThat(mService.isGroupLocked(group_id)).isFalse();
 
         UUID lock_uuid = mService.lockGroup(group_id, mCsipSetCoordinatorLockCallback);
-        Assert.assertNotNull(lock_uuid);
-        verify(mCsipSetCoordinatorNativeInterface, times(1)).groupLockSet(eq(group_id), eq(true));
-        Assert.assertTrue(mService.isGroupLocked(group_id));
+        assertThat(lock_uuid).isNotNull();
+        verify(mNativeInterface).groupLockSet(eq(group_id), eq(true));
+        assertThat(mService.isGroupLocked(group_id)).isTrue();
 
-        doCallRealMethod()
-                .when(mCsipSetCoordinatorNativeInterface)
-                .onGroupLockChanged(anyInt(), anyBoolean(), anyInt());
-        mCsipSetCoordinatorNativeInterface.onGroupLockChanged(
+        mNativeCallback.onGroupLockChanged(
                 group_id, true, IBluetoothCsipSetCoordinator.CSIS_GROUP_LOCK_SUCCESS);
 
-        try {
-            verify(mCsipSetCoordinatorLockCallback, times(1))
-                    .onGroupLockSet(group_id, BluetoothStatusCodes.SUCCESS, true);
-        } catch (RemoteException e) {
-            throw e.rethrowFromSystemServer();
-        }
+        verify(mCsipSetCoordinatorLockCallback)
+                .onGroupLockSet(group_id, BluetoothStatusCodes.SUCCESS, true);
 
         mService.unlockGroup(lock_uuid);
-        verify(mCsipSetCoordinatorNativeInterface, times(1)).groupLockSet(eq(group_id), eq(false));
+        verify(mNativeInterface).groupLockSet(eq(group_id), eq(false));
 
-        mCsipSetCoordinatorNativeInterface.onGroupLockChanged(
+        mNativeCallback.onGroupLockChanged(
                 group_id, false, IBluetoothCsipSetCoordinator.CSIS_GROUP_LOCK_SUCCESS);
-        Assert.assertFalse(mService.isGroupLocked(group_id));
+        assertThat(mService.isGroupLocked(group_id)).isFalse();
 
-        try {
-            verify(mCsipSetCoordinatorLockCallback, times(1))
-                    .onGroupLockSet(group_id, BluetoothStatusCodes.SUCCESS, false);
-        } catch (RemoteException e) {
-            throw e.rethrowFromSystemServer();
-        }
+        verify(mCsipSetCoordinatorLockCallback)
+                .onGroupLockSet(group_id, BluetoothStatusCodes.SUCCESS, false);
     }
 
     /** Test that call to groupLockSet method calls corresponding native interface method */
     @Test
-    public void testGroupExclusiveLockSet() {
+    public void testGroupExclusiveLockSet() throws RemoteException {
         int group_id = 0x01;
         int group_size = 0x01;
         long uuidLsb = 0x01;
         long uuidMsb = 0x01;
 
-        doCallRealMethod()
-                .when(mCsipSetCoordinatorNativeInterface)
-                .onDeviceAvailable(
-                        any(byte[].class), anyInt(), anyInt(), anyInt(), anyLong(), anyLong());
-        mCsipSetCoordinatorNativeInterface.onDeviceAvailable(
-                getByteAddress(mTestDevice), group_id, group_size, 1, uuidLsb, uuidMsb);
-        Assert.assertFalse(mService.isGroupLocked(group_id));
+        mNativeCallback.onDeviceAvailable(
+                getByteAddress(mDevice1), group_id, group_size, 1, uuidLsb, uuidMsb);
+        assertThat(mService.isGroupLocked(group_id)).isFalse();
 
         UUID lock_uuid = mService.lockGroup(group_id, mCsipSetCoordinatorLockCallback);
-        verify(mCsipSetCoordinatorNativeInterface, times(1)).groupLockSet(eq(group_id), eq(true));
-        Assert.assertNotNull(lock_uuid);
-        Assert.assertTrue(mService.isGroupLocked(group_id));
+        verify(mNativeInterface).groupLockSet(eq(group_id), eq(true));
+        assertThat(lock_uuid).isNotNull();
+        assertThat(mService.isGroupLocked(group_id)).isTrue();
 
         lock_uuid = mService.lockGroup(group_id, mCsipSetCoordinatorLockCallback);
-        verify(mCsipSetCoordinatorNativeInterface, times(1)).groupLockSet(eq(group_id), eq(true));
+        verify(mNativeInterface).groupLockSet(eq(group_id), eq(true));
 
-        doCallRealMethod()
-                .when(mCsipSetCoordinatorNativeInterface)
-                .onGroupLockChanged(anyInt(), anyBoolean(), anyInt());
-
-        try {
-            verify(mCsipSetCoordinatorLockCallback, times(1))
-                    .onGroupLockSet(
-                            group_id, BluetoothStatusCodes.ERROR_CSIP_GROUP_LOCKED_BY_OTHER, true);
-        } catch (RemoteException e) {
-            throw e.rethrowFromSystemServer();
-        }
-        Assert.assertNull(lock_uuid);
+        verify(mCsipSetCoordinatorLockCallback)
+                .onGroupLockSet(
+                        group_id, BluetoothStatusCodes.ERROR_CSIP_GROUP_LOCKED_BY_OTHER, true);
+        assertThat(lock_uuid).isNull();
     }
 
-    /** Test that an outgoing connection to device that does not have MICS UUID is rejected */
     @Test
-    public void testOutgoingConnectMissingUuid() {
-        // Update the device policy so okToConnect() returns true
-        when(mDatabaseManager.getProfileConnectionPolicy(
-                        mTestDevice, BluetoothProfile.CSIP_SET_COORDINATOR))
-                .thenReturn(BluetoothProfile.CONNECTION_POLICY_ALLOWED);
-        doReturn(true).when(mCsipSetCoordinatorNativeInterface).connect(any(BluetoothDevice.class));
-        doReturn(true).when(mCsipSetCoordinatorNativeInterface).connect(any(BluetoothDevice.class));
-
-        // Return No UUID
+    public void connectToDevice_whenUuidIsMissing_returnFalse() {
         doReturn(new ParcelUuid[] {})
                 .when(mAdapterService)
                 .getRemoteUuids(any(BluetoothDevice.class));
 
-        // Send a connect request
-        Assert.assertFalse("Connect expected to fail", mService.connect(mTestDevice));
+        assertThat(mService.connect(mDevice1)).isFalse();
     }
 
-    /** Test that an outgoing connection to device that have MICS UUID is successful */
     @Test
-    public void testOutgoingConnectExistingUuid() {
-        // Update the device policy so okToConnect() returns true
-        when(mDatabaseManager.getProfileConnectionPolicy(
-                        mTestDevice, BluetoothProfile.CSIP_SET_COORDINATOR))
-                .thenReturn(BluetoothProfile.CONNECTION_POLICY_ALLOWED);
-        doReturn(true).when(mCsipSetCoordinatorNativeInterface).connect(any(BluetoothDevice.class));
-        doReturn(true)
-                .when(mCsipSetCoordinatorNativeInterface)
-                .disconnect(any(BluetoothDevice.class));
-
-        doReturn(new ParcelUuid[] {BluetoothUuid.COORDINATED_SET})
+    public void connectToDevice_whenPolicyForbid_returnFalse() {
+        doReturn(CONNECTION_POLICY_FORBIDDEN)
                 .when(mAdapterService)
-                .getRemoteUuids(any(BluetoothDevice.class));
+                .getProfileConnectionPolicy(any(), anyInt());
 
-        // Send a connect request
-        Assert.assertTrue("Connect expected to succeed", mService.connect(mTestDevice));
-
-        TestUtils.waitForIntent(TIMEOUT_MS, mIntentQueue.get(mTestDevice));
+        assertThat(mService.connect(mDevice1)).isFalse();
     }
 
-    /** Test that an outgoing connection to device with POLICY_FORBIDDEN is rejected */
     @Test
-    public void testOutgoingConnectPolicyForbidden() {
-        doReturn(true).when(mCsipSetCoordinatorNativeInterface).connect(any(BluetoothDevice.class));
-        doReturn(true)
-                .when(mCsipSetCoordinatorNativeInterface)
-                .disconnect(any(BluetoothDevice.class));
+    public void outgoingConnect_whenTimeOut_isDisconnected() {
+        assertThat(mService.connect(mDevice1)).isTrue();
+        mLooper.dispatchAll();
 
-        // Set the device policy to POLICY_FORBIDDEN so connect() should fail
-        when(mDatabaseManager.getProfileConnectionPolicy(
-                        mTestDevice, BluetoothProfile.CSIP_SET_COORDINATOR))
-                .thenReturn(BluetoothProfile.CONNECTION_POLICY_FORBIDDEN);
+        verifyConnectionStateIntent(STATE_CONNECTING, STATE_DISCONNECTED);
 
-        // Send a connect request
-        Assert.assertFalse("Connect expected to fail", mService.connect(mTestDevice));
+        mLooper.moveTimeForward(CsipSetCoordinatorStateMachine.sConnectTimeoutMs);
+        mLooper.dispatchAll();
+
+        verifyConnectionStateIntent(STATE_DISCONNECTED, STATE_CONNECTING);
     }
 
-    /** Test that an outgoing connection times out */
     @Test
-    public void testOutgoingConnectTimeout() {
-        // Update the device policy so okToConnect() returns true
-        when(mAdapterService.getDatabase()).thenReturn(mDatabaseManager);
-        when(mDatabaseManager.getProfileConnectionPolicy(
-                        mTestDevice, BluetoothProfile.CSIP_SET_COORDINATOR))
-                .thenReturn(BluetoothProfile.CONNECTION_POLICY_ALLOWED);
-        doReturn(true).when(mCsipSetCoordinatorNativeInterface).connect(any(BluetoothDevice.class));
-        doReturn(true)
-                .when(mCsipSetCoordinatorNativeInterface)
-                .disconnect(any(BluetoothDevice.class));
-
-        // Send a connect request
-        Assert.assertTrue("Connect failed", mService.connect(mTestDevice));
-
-        // Verify the connection state broadcast, and that we are in Connecting state
-        verifyConnectionStateIntent(
-                TIMEOUT_MS,
-                mTestDevice,
-                BluetoothProfile.STATE_CONNECTING,
-                BluetoothProfile.STATE_DISCONNECTED);
-        Assert.assertEquals(
-                BluetoothProfile.STATE_CONNECTING, mService.getConnectionState(mTestDevice));
-
-        // Verify the connection state broadcast, and that we are in Disconnected state
-        verifyConnectionStateIntent(
-                CsipSetCoordinatorStateMachine.sConnectTimeoutMs * 2,
-                mTestDevice,
-                BluetoothProfile.STATE_DISCONNECTED,
-                BluetoothProfile.STATE_CONNECTING);
-        Assert.assertEquals(
-                BluetoothProfile.STATE_DISCONNECTED, mService.getConnectionState(mTestDevice));
-    }
-
-    /** Test that native callback generates proper intent. */
-    @Test
-    public void testStackEventDeviceAvailable() {
+    public void deviceAvailable_withDifferentRank_areOrdered() {
         int group_id = 0x01;
         int group_size = 0x03;
         long uuidLsb = 0x01;
         long uuidMsb = 0x01;
         UUID uuid = new UUID(uuidMsb, uuidLsb);
 
-        doCallRealMethod()
-                .when(mCsipSetCoordinatorNativeInterface)
-                .onDeviceAvailable(
-                        any(byte[].class), anyInt(), anyInt(), anyInt(), anyLong(), anyLong());
-        mCsipSetCoordinatorNativeInterface.onDeviceAvailable(
-                getByteAddress(mTestDevice), group_id, group_size, 0x02, uuidLsb, uuidMsb);
+        mNativeCallback.onDeviceAvailable(
+                getByteAddress(mDevice1), group_id, group_size, 0x02, uuidLsb, uuidMsb);
 
-        Intent intent = TestUtils.waitForIntent(TIMEOUT_MS, mIntentQueue.get(mTestDevice));
-        Assert.assertNotNull(intent);
-        Assert.assertEquals(
-                BluetoothCsipSetCoordinator.ACTION_CSIS_DEVICE_AVAILABLE, intent.getAction());
-        Assert.assertEquals(mTestDevice, intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE));
-        Assert.assertEquals(
-                group_id, intent.getIntExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_ID, -1));
-        Assert.assertEquals(
-                group_size,
-                intent.getIntExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_SIZE, -1));
-        Assert.assertEquals(
-                uuid,
-                intent.getSerializableExtra(
-                        BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_TYPE_UUID));
+        verifyOrderedIntentSent(
+                hasAction(ACTION_CSIS_DEVICE_AVAILABLE),
+                hasExtra(BluetoothDevice.EXTRA_DEVICE, mDevice1),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_ID, group_id),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_SIZE, group_size),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_TYPE_UUID, uuid));
 
         // Another device with the highest rank
-        mCsipSetCoordinatorNativeInterface.onDeviceAvailable(
-                getByteAddress(mTestDevice2), group_id, group_size, 0x01, uuidLsb, uuidMsb);
+        mNativeCallback.onDeviceAvailable(
+                getByteAddress(mDevice2), group_id, group_size, 0x01, uuidLsb, uuidMsb);
+        verifyOrderedIntentSent(
+                hasAction(ACTION_CSIS_DEVICE_AVAILABLE),
+                hasExtra(BluetoothDevice.EXTRA_DEVICE, mDevice2),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_ID, group_id),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_SIZE, group_size),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_TYPE_UUID, uuid));
 
         // Yet another device with the lowest rank
-        mCsipSetCoordinatorNativeInterface.onDeviceAvailable(
-                getByteAddress(mTestDevice3), group_id, group_size, 0x03, uuidLsb, uuidMsb);
+        mNativeCallback.onDeviceAvailable(
+                getByteAddress(mDevice3), group_id, group_size, 0x03, uuidLsb, uuidMsb);
+        verifyOrderedIntentSent(
+                hasAction(ACTION_CSIS_DEVICE_AVAILABLE),
+                hasExtra(BluetoothDevice.EXTRA_DEVICE, mDevice3),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_ID, group_id),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_SIZE, group_size),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_TYPE_UUID, uuid));
 
-        // Verify if the list of devices is sorted, with the lowest rank value devices first
-        List<BluetoothDevice> devices = mService.getGroupDevicesOrdered(group_id);
-        Assert.assertEquals(0, devices.indexOf(mTestDevice2));
-        Assert.assertEquals(1, devices.indexOf(mTestDevice));
-        Assert.assertEquals(2, devices.indexOf(mTestDevice3));
+        assertThat(mService.getGroupDevicesOrdered(group_id))
+                .containsExactly(mDevice2, mDevice1, mDevice3)
+                .inOrder();
     }
 
     /** Test that native callback generates proper intent after group connected. */
     @Test
-    public void testStackEventSetMemberAvailableAfterGroupConnected() {
+    public void nativeCallback_afterGroupConnected_generateIntent() {
         int group_id = 0x01;
         int group_size = 0x02;
         long uuidLsb = BluetoothUuid.CAP.getUuid().getLeastSignificantBits();
         long uuidMsb = BluetoothUuid.CAP.getUuid().getMostSignificantBits();
 
-        // Make sure to use real methods when needed below
-        doCallRealMethod()
-                .when(mCsipSetCoordinatorNativeInterface)
-                .onDeviceAvailable(
-                        any(byte[].class), anyInt(), anyInt(), anyInt(), anyLong(), anyLong());
-        doCallRealMethod()
-                .when(mCsipSetCoordinatorNativeInterface)
-                .onConnectionStateChanged(any(byte[].class), anyInt());
-        doCallRealMethod()
-                .when(mCsipSetCoordinatorNativeInterface)
-                .onSetMemberAvailable(any(byte[].class), anyInt());
+        mNativeCallback.onDeviceAvailable(
+                getByteAddress(mDevice1), group_id, group_size, 0x02, uuidLsb, uuidMsb);
 
-        mCsipSetCoordinatorNativeInterface.onDeviceAvailable(
-                getByteAddress(mTestDevice), group_id, group_size, 0x02, uuidLsb, uuidMsb);
-
-        mCsipSetCoordinatorNativeInterface.onConnectionStateChanged(
-                getByteAddress(mTestDevice), BluetoothProfile.STATE_CONNECTED);
+        mNativeCallback.onConnectionStateChanged(getByteAddress(mDevice1), STATE_CONNECTED);
 
         // Comes from state machine
-        mService.connectionStateChanged(
-                mTestDevice, BluetoothProfile.STATE_CONNECTING, BluetoothProfile.STATE_CONNECTED);
+        mService.connectionStateChanged(mDevice1, STATE_CONNECTING, STATE_CONNECTED);
 
-        mCsipSetCoordinatorNativeInterface.onSetMemberAvailable(
-                getByteAddress(mTestDevice2), group_id);
+        mNativeCallback.onSetMemberAvailable(getByteAddress(mDevice2), group_id);
 
-        Intent intent = TestUtils.waitForIntent(TIMEOUT_MS, mIntentQueue.get(mTestDevice2));
-        Assert.assertNotNull(intent);
-        Assert.assertEquals(
-                BluetoothCsipSetCoordinator.ACTION_CSIS_SET_MEMBER_AVAILABLE, intent.getAction());
-        Assert.assertEquals(mTestDevice2, intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE));
-        Assert.assertEquals(
-                group_id, intent.getIntExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_ID, -1));
+        verifyOrderedIntentSent(
+                hasAction(BluetoothCsipSetCoordinator.ACTION_CSIS_SET_MEMBER_AVAILABLE),
+                hasExtra(BluetoothDevice.EXTRA_DEVICE, mDevice2),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_ID, group_id));
     }
 
     /** Test that native callback generates proper intent before group connected. */
@@ -565,42 +403,24 @@ public class CsipSetCoordinatorServiceTest {
         long uuidLsb = BluetoothUuid.CAP.getUuid().getLeastSignificantBits();
         long uuidMsb = BluetoothUuid.CAP.getUuid().getMostSignificantBits();
 
-        // Make sure to use real methods when needed below
-        doCallRealMethod()
-                .when(mCsipSetCoordinatorNativeInterface)
-                .onDeviceAvailable(
-                        any(byte[].class), anyInt(), anyInt(), anyInt(), anyLong(), anyLong());
-        doCallRealMethod()
-                .when(mCsipSetCoordinatorNativeInterface)
-                .onSetMemberAvailable(any(byte[].class), anyInt());
-        doCallRealMethod()
-                .when(mCsipSetCoordinatorNativeInterface)
-                .onConnectionStateChanged(any(byte[].class), anyInt());
+        mNativeCallback.onDeviceAvailable(
+                getByteAddress(mDevice1), group_id, group_size, 0x02, uuidLsb, uuidMsb);
+        verifyOrderedIntentSent(hasAction(ACTION_CSIS_DEVICE_AVAILABLE));
 
-        mCsipSetCoordinatorNativeInterface.onDeviceAvailable(
-                getByteAddress(mTestDevice), group_id, group_size, 0x02, uuidLsb, uuidMsb);
+        mNativeCallback.onConnectionStateChanged(getByteAddress(mDevice1), STATE_CONNECTED);
+        // verifyConnectionStateIntent(STATE_CONNECTED, STATE_DISCONNECTED);
 
-        mCsipSetCoordinatorNativeInterface.onConnectionStateChanged(
-                getByteAddress(mTestDevice), BluetoothProfile.STATE_CONNECTED);
+        mNativeCallback.onSetMemberAvailable(getByteAddress(mDevice2), group_id);
 
-        mCsipSetCoordinatorNativeInterface.onSetMemberAvailable(
-                getByteAddress(mTestDevice2), group_id);
-
-        Intent intent = TestUtils.waitForNoIntent(TIMEOUT_MS, mIntentQueue.get(mTestDevice2));
-        Assert.assertNull(intent);
+        mInOrder.verify(mAdapterService, never()).sendOrderedBroadcast(any(), any());
 
         // Comes from state machine
-        mService.connectionStateChanged(
-                mTestDevice, BluetoothProfile.STATE_CONNECTING, BluetoothProfile.STATE_CONNECTED);
+        mService.connectionStateChanged(mDevice1, STATE_CONNECTING, STATE_CONNECTED);
 
-        intent = TestUtils.waitForIntent(TIMEOUT_MS, mIntentQueue.get(mTestDevice2));
-        Assert.assertNotNull(intent);
-
-        Assert.assertEquals(
-                BluetoothCsipSetCoordinator.ACTION_CSIS_SET_MEMBER_AVAILABLE, intent.getAction());
-        Assert.assertEquals(mTestDevice2, intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE));
-        Assert.assertEquals(
-                group_id, intent.getIntExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_ID, -1));
+        verifyOrderedIntentSent(
+                hasAction(BluetoothCsipSetCoordinator.ACTION_CSIS_SET_MEMBER_AVAILABLE),
+                hasExtra(BluetoothDevice.EXTRA_DEVICE, mDevice2),
+                hasExtra(BluetoothCsipSetCoordinator.EXTRA_CSIS_GROUP_ID, group_id));
     }
 
     /**
@@ -614,125 +434,75 @@ public class CsipSetCoordinatorServiceTest {
         long uuidLsb = BluetoothUuid.CAP.getUuid().getLeastSignificantBits();
         long uuidMsb = BluetoothUuid.CAP.getUuid().getMostSignificantBits();
 
-        doCallRealMethod()
-                .when(mCsipSetCoordinatorNativeInterface)
-                .onDeviceAvailable(
-                        any(byte[].class), anyInt(), anyInt(), anyInt(), anyLong(), anyLong());
-        when(mLeAudioService.getConnectionPolicy(any()))
-                .thenReturn(BluetoothProfile.CONNECTION_POLICY_FORBIDDEN);
+        doReturn(CONNECTION_POLICY_FORBIDDEN).when(mLeAudioService).getConnectionPolicy(any());
 
         // Make first set device available and connected
-        mCsipSetCoordinatorNativeInterface.onDeviceAvailable(
-                getByteAddress(mTestDevice), group_id, group_size, 0x02, uuidLsb, uuidMsb);
-        mService.connectionStateChanged(
-                mTestDevice, BluetoothProfile.STATE_CONNECTING, BluetoothProfile.STATE_CONNECTED);
+        mNativeCallback.onDeviceAvailable(
+                getByteAddress(mDevice1), group_id, group_size, 0x02, uuidLsb, uuidMsb);
+        mService.connectionStateChanged(mDevice1, STATE_CONNECTING, STATE_CONNECTED);
 
         // Another device with the highest rank
-        mCsipSetCoordinatorNativeInterface.onDeviceAvailable(
-                getByteAddress(mTestDevice2), group_id, group_size, 0x01, uuidLsb, uuidMsb);
+        mNativeCallback.onDeviceAvailable(
+                getByteAddress(mDevice2), group_id, group_size, 0x01, uuidLsb, uuidMsb);
 
         // When LEA is FORBIDDEN, verify we don't disable CSIP until all set devices are available
-        verify(mDatabaseManager, never())
+        verify(mAdapterService, never())
                 .setProfileConnectionPolicy(
-                        mTestDevice,
+                        mDevice1,
                         BluetoothProfile.CSIP_SET_COORDINATOR,
-                        BluetoothProfile.CONNECTION_POLICY_FORBIDDEN);
-        verify(mDatabaseManager, never())
+                        CONNECTION_POLICY_FORBIDDEN);
+        verify(mAdapterService, never())
                 .setProfileConnectionPolicy(
-                        mTestDevice2,
+                        mDevice2,
                         BluetoothProfile.CSIP_SET_COORDINATOR,
-                        BluetoothProfile.CONNECTION_POLICY_FORBIDDEN);
+                        CONNECTION_POLICY_FORBIDDEN);
 
         // Mark the second device as connected
-        mService.connectionStateChanged(
-                mTestDevice2, BluetoothProfile.STATE_CONNECTING, BluetoothProfile.STATE_CONNECTED);
+        mService.connectionStateChanged(mDevice2, STATE_CONNECTING, STATE_CONNECTED);
 
         // When LEA is FORBIDDEN, verify we disable CSIP once all set devices are available
-        verify(mDatabaseManager, times(1))
+        verify(mAdapterService)
                 .setProfileConnectionPolicy(
-                        mTestDevice,
+                        mDevice1,
                         BluetoothProfile.CSIP_SET_COORDINATOR,
-                        BluetoothProfile.CONNECTION_POLICY_FORBIDDEN);
-        verify(mDatabaseManager, times(1))
+                        CONNECTION_POLICY_FORBIDDEN);
+        verify(mAdapterService)
                 .setProfileConnectionPolicy(
-                        mTestDevice2,
+                        mDevice2,
                         BluetoothProfile.CSIP_SET_COORDINATOR,
-                        BluetoothProfile.CONNECTION_POLICY_FORBIDDEN);
+                        CONNECTION_POLICY_FORBIDDEN);
     }
 
     @Test
     public void testDump_doesNotCrash() {
-        // Update the device policy so okToConnect() returns true
-        when(mDatabaseManager.getProfileConnectionPolicy(
-                        mTestDevice, BluetoothProfile.CSIP_SET_COORDINATOR))
-                .thenReturn(BluetoothProfile.CONNECTION_POLICY_ALLOWED);
-        doReturn(true).when(mCsipSetCoordinatorNativeInterface).connect(any(BluetoothDevice.class));
-        doReturn(true)
-                .when(mCsipSetCoordinatorNativeInterface)
-                .disconnect(any(BluetoothDevice.class));
-        doReturn(new ParcelUuid[] {BluetoothUuid.COORDINATED_SET})
-                .when(mAdapterService)
-                .getRemoteUuids(any(BluetoothDevice.class));
         // add state machines for testing dump()
-        mService.connect(mTestDevice);
-
-        TestUtils.waitForIntent(TIMEOUT_MS, mIntentQueue.get(mTestDevice));
-
+        mService.connect(mDevice1);
         mService.dump(new StringBuilder());
     }
 
-    /** Helper function to test ConnectionStateIntent() method */
-    private void verifyConnectionStateIntent(
-            int timeoutMs, BluetoothDevice device, int newState, int prevState) {
-        Intent intent = TestUtils.waitForIntent(timeoutMs, mIntentQueue.get(device));
-        Assert.assertNotNull(intent);
-        Assert.assertEquals(
-                BluetoothCsipSetCoordinator.ACTION_CSIS_CONNECTION_STATE_CHANGED,
-                intent.getAction());
-        Assert.assertEquals(device, intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE));
-        Assert.assertEquals(newState, intent.getIntExtra(BluetoothProfile.EXTRA_STATE, -1));
-        Assert.assertEquals(
-                prevState, intent.getIntExtra(BluetoothProfile.EXTRA_PREVIOUS_STATE, -1));
-    }
-
-    /** Helper function to test okToConnect() method */
-    private void testOkToConnectCase(
-            BluetoothDevice device, int bondState, int policy, boolean expected) {
-        doReturn(bondState).when(mAdapterService).getBondState(device);
-        when(mDatabaseManager.getProfileConnectionPolicy(
-                        device, BluetoothProfile.CSIP_SET_COORDINATOR))
-                .thenReturn(policy);
-        Assert.assertEquals(expected, mService.okToConnect(device));
+    private void verifyConnectionStateIntent(int newState, int prevState) {
+        verifyIntentSent(
+                hasAction(BluetoothCsipSetCoordinator.ACTION_CSIS_CONNECTION_STATE_CHANGED),
+                hasExtra(BluetoothDevice.EXTRA_DEVICE, mDevice1),
+                hasExtra(EXTRA_STATE, newState),
+                hasExtra(EXTRA_PREVIOUS_STATE, prevState));
+        assertThat(mService.getConnectionState(mDevice1)).isEqualTo(newState);
     }
 
     /** Helper function to get byte array for a device address */
-    private byte[] getByteAddress(BluetoothDevice device) {
-        if (device == null) {
-            return Utils.getBytesFromAddress("00:00:00:00:00:00");
-        }
+    private static byte[] getByteAddress(BluetoothDevice device) {
         return Utils.getBytesFromAddress(device.getAddress());
     }
 
-    private class CsipSetCoordinatorIntentReceiver extends BroadcastReceiver {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            try {
-                /* Ignore intent when service is inactive */
-                if (mService == null) {
-                    return;
-                }
+    @SafeVarargs
+    private void verifyIntentSent(Matcher<Intent>... matchers) {
+        mInOrder.verify(mAdapterService)
+                .sendBroadcast(MockitoHamcrest.argThat(AllOf.allOf(matchers)), any());
+    }
 
-                BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-                // Use first device's queue in case of no device in the intent
-                if (device == null) {
-                    device = mTestDevice;
-                }
-                LinkedBlockingQueue<Intent> queue = mIntentQueue.get(device);
-                Assert.assertNotNull(queue);
-                queue.put(intent);
-            } catch (InterruptedException e) {
-                Assert.fail("Cannot add Intent to the queue: " + e.getMessage());
-            }
-        }
+    @SafeVarargs
+    private void verifyOrderedIntentSent(Matcher<Intent>... matchers) {
+        mInOrder.verify(mAdapterService)
+                .sendOrderedBroadcast(MockitoHamcrest.argThat(AllOf.allOf(matchers)), any());
     }
 }

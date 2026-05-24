@@ -1,12 +1,9 @@
 //! Mocked implementation of GattCallbacks for use in test
 
-use crate::gatt::{
-    callbacks::{GattWriteType, TransactionDecision},
-    ffi::AttributeBackingType,
-    ids::{AttHandle, ConnectionId, TransactionId},
-    server::IndicationError,
-    GattCallbacks,
-};
+use crate::gatt::callbacks::{GattCallbacks, GattWriteType, TransactionDecision};
+use crate::gatt::ffi::AttributeBackingType;
+use crate::gatt::ids::{AttHandle, ConnectionId, TransactionId};
+use crate::gatt::server::IndicationError;
 use tokio::sync::mpsc::{self, unbounded_channel, UnboundedReceiver};
 
 /// Routes calls to GattCallbacks into a channel of MockCallbackEvents
@@ -22,6 +19,7 @@ impl MockCallbacks {
 
 /// Events representing calls to GattCallbacks
 #[derive(Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum MockCallbackEvents {
     /// GattCallbacks#on_server_read_characteristic invoked
     OnServerRead(ConnectionId, TransactionId, AttHandle, AttributeBackingType, u32),
@@ -35,8 +33,10 @@ pub enum MockCallbackEvents {
         Vec<u8>,
     ),
     /// GattCallbacks#on_indication_sent_confirmation invoked
+    #[allow(dead_code)]
     OnIndicationSentConfirmation(ConnectionId, Result<(), IndicationError>),
     /// GattCallbacks#on_execute invoked
+    #[allow(dead_code)]
     OnExecute(ConnectionId, TransactionId, TransactionDecision),
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,44 +16,51 @@
 
 package com.android.bluetooth.le_audio;
 
+import static com.android.bluetooth.TestUtils.getTestDevice;
+
 import static com.google.common.truth.Truth.assertThat;
 
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.bluetooth.BluetoothLeAudio;
 import android.bluetooth.BluetoothLeAudioCodecConfig;
 
-import androidx.test.runner.AndroidJUnit4;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
-import org.junit.After;
+import com.android.bluetooth.btservice.AdapterService;
+import com.android.tests.bluetooth.MockitoRule;
+
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
+/** Test cases for {@link LeAudioNativeInterface}. */
 @RunWith(AndroidJUnit4.class)
 public class LeAudioNativeInterfaceTest {
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
 
+    @Mock private AdapterService mAdapterService;
     @Mock private LeAudioService mMockService;
 
     private LeAudioNativeInterface mNativeInterface;
 
     @Before
     public void setUp() throws Exception {
+        doAnswer(
+                        invocation -> {
+                            String address = invocation.getArgument(0);
+                            return getTestDevice(address);
+                        })
+                .when(mAdapterService)
+                .getRemoteDevice(anyString());
         when(mMockService.isAvailable()).thenReturn(true);
-        LeAudioService.setLeAudioService(mMockService);
-        mNativeInterface = LeAudioNativeInterface.getInstance();
-    }
-
-    @After
-    public void tearDown() {
-        LeAudioService.setLeAudioService(null);
+        mNativeInterface = new LeAudioNativeInterface(mAdapterService, mMockService);
     }
 
     @Test

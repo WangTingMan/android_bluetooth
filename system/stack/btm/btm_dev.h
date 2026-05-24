@@ -16,11 +16,12 @@
 
 #pragma once
 
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/ble_address_with_type.h>
+
 #include <vector>
 
 #include "stack/btm/security_device_record.h"
-#include "types/ble_address_with_type.h"
-#include "types/raw_address.h"
 
 /** Free resources associated with the device associated with |bd_addr| address.
  *
@@ -55,6 +56,18 @@ void BTM_SecClearSecurityFlags(const RawAddress& bd_addr);
  *
  ******************************************************************************/
 const char* BTM_SecReadDevName(const RawAddress& bd_addr);
+
+/*******************************************************************************
+ *
+ * Function         BTM_SecReadDevName
+ *
+ * Description      Looks for the device name in the security database for the
+ *                  specified BD address.
+ *
+ * Returns          Pointer to the name or NULL
+ *
+ ******************************************************************************/
+DEV_CLASS BTM_SecReadDevClass(const RawAddress& bd_addr);
 
 /*******************************************************************************
  *
@@ -192,3 +205,18 @@ std::vector<tBTM_SEC_DEV_REC*> btm_get_sec_dev_rec();
 
 bool BTM_Sec_AddressKnown(const RawAddress& address);
 const tBLE_BD_ADDR BTM_Sec_GetAddressWithType(const RawAddress& bd_addr);
+
+/*******************************************************************************
+ *
+ * Function         DumpsysRecord
+ *
+ * Description      Provides dumpsys access to device records.
+ *
+ * Returns          void
+ *
+ ******************************************************************************/
+void DumpsysRecord(int fd);
+
+namespace bluetooth::legacy::testing {
+void wipe_secrets_and_remove(tBTM_SEC_DEV_REC* p_dev_rec);
+}  // namespace bluetooth::legacy::testing

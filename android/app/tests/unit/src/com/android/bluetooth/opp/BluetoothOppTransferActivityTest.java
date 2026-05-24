@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,9 +26,9 @@ import static com.android.bluetooth.opp.BluetoothOppTransferActivity.DIALOG_SEND
 
 import static com.google.common.truth.Truth.assertThat;
 
-import static org.mockito.Mockito.any;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.eq;
 
 import android.content.Context;
 import android.content.Intent;
@@ -36,11 +36,11 @@ import android.database.Cursor;
 import android.net.Uri;
 
 import androidx.test.core.app.ActivityScenario;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
-import androidx.test.runner.AndroidJUnit4;
 
 import com.android.bluetooth.BluetoothMethodProxy;
-import com.android.bluetooth.TestUtils;
+import com.android.tests.bluetooth.MockitoRule;
 
 import org.junit.After;
 import org.junit.Before;
@@ -50,29 +50,24 @@ import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.Spy;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/** Test cases for {@link BluetoothOppTransferActivity}. */
 @RunWith(AndroidJUnit4.class)
 public class BluetoothOppTransferActivityTest {
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
 
-    @Mock Cursor mCursor;
     @Spy BluetoothMethodProxy mBluetoothMethodProxy;
 
-    List<CursorMockData> mCursorMockDataList;
+    @Mock Cursor mCursor;
 
-    Intent mIntent;
-    Context mTargetContext;
+    private final Context mContext = InstrumentationRegistry.getInstrumentation().getContext();
 
-    // Activity tests can sometimes flaky because of external factors like system dialog, etc.
-    // making the expected Espresso's root not focused or the activity doesn't show up.
-    // Add retry rule to resolve this problem.
-    @Rule public TestUtils.RetryTestRule mRetryTestRule = new TestUtils.RetryTestRule();
+    private List<CursorMockData> mCursorMockDataList;
+    private Intent mIntent;
 
     @Before
     public void setUp() throws Exception {
@@ -80,10 +75,9 @@ public class BluetoothOppTransferActivityTest {
         BluetoothMethodProxy.setInstanceForTesting(mBluetoothMethodProxy);
 
         Uri dataUrl = Uri.parse("content://com.android.bluetooth.opp.test/random");
-        mTargetContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
 
         mIntent = new Intent();
-        mIntent.setClass(mTargetContext, BluetoothOppTransferActivity.class);
+        mIntent.setClass(mContext, BluetoothOppTransferActivity.class);
         mIntent.setData(dataUrl);
 
         doReturn(mCursor)
@@ -114,18 +108,13 @@ public class BluetoothOppTransferActivityTest {
                                         BluetoothShare.USER_CONFIRMATION,
                                         11,
                                         BluetoothShare.USER_CONFIRMATION_HANDOVER_CONFIRMED)));
-        BluetoothOppTestUtils.enableActivity(
-                BluetoothOppTransferActivity.class, true, mTargetContext);
-        TestUtils.setUpUiTest();
+        BluetoothOppTestUtils.enableActivity(BluetoothOppTransferActivity.class, true, mContext);
     }
 
     @After
     public void tearDown() throws Exception {
-        TestUtils.tearDownUiTest();
-
         BluetoothMethodProxy.setInstanceForTesting(null);
-        BluetoothOppTestUtils.enableActivity(
-                BluetoothOppTransferActivity.class, false, mTargetContext);
+        BluetoothOppTestUtils.enableActivity(BluetoothOppTransferActivity.class, false, mContext);
     }
 
     @Test

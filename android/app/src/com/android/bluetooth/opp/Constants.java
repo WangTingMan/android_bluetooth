@@ -32,8 +32,6 @@
 
 package com.android.bluetooth.opp;
 
-import android.bluetooth.BluetoothProfile;
-import android.bluetooth.BluetoothProtoEnums;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
@@ -41,22 +39,17 @@ import android.net.Uri;
 import android.util.Log;
 
 import com.android.bluetooth.BluetoothMethodProxy;
-import com.android.bluetooth.BluetoothStatsLog;
-import com.android.bluetooth.content_profiles.ContentProfileErrorReportUtils;
 import com.android.obex.HeaderSet;
 
-import java.io.IOException;
 import java.util.regex.Pattern;
 
 /** Bluetooth OPP internal constant definitions */
 // Next tag value for ContentProfileErrorReportUtils.report(): 1
 public class Constants {
     /** Tag used for debugging/logging */
-    public static final String TAG = "BluetoothOpp";
+    public static final String BT_PREFIX_OPP = "BluetoothOpp";
 
-    /** the permission required for others to send us handover broadcasts */
-    static final String PERMISSION_ALLOWLIST_BLUETOOTH_DEVICE =
-            "com.android.permission.ALLOWLIST_BLUETOOTH_DEVICE";
+    static final String TAG = BT_PREFIX_OPP + Constants.class.getSimpleName();
 
     /**
      * The intent that gets sent when the service must wake up for a retry Note: Only retry Outbound
@@ -73,12 +66,6 @@ public class Constants {
     /** the intent that gets sent when clicking a inbound transfer notification */
     static final String ACTION_OPEN_INBOUND_TRANSFER = "android.btopp.intent.action.OPEN_INBOUND";
 
-    /** the intent that acceptlists a remote bluetooth device for auto-receive confirmation (NFC) */
-    static final String ACTION_ACCEPTLIST_DEVICE = "android.btopp.intent.action.ACCEPTLIST_DEVICE";
-
-    /** the intent that can be sent by handover requesters to stop a BTOPP transfer */
-    static final String ACTION_STOP_HANDOVER = "android.btopp.intent.action.STOP_HANDOVER_TRANSFER";
-
     /**
      * the intent extra to show the direction of a transfer. Value should be one of {@link
      * BluetoothShare#DIRECTION_INBOUND} or {@link BluetoothShare#DIRECTION_OUTBOUND}
@@ -88,66 +75,6 @@ public class Constants {
     /** the intent that gets sent when clicking an incomplete/failed transfer */
     static final String ACTION_LIST = "android.btopp.intent.action.LIST";
 
-    /** the intent that is used for initiating a handover transfer */
-    static final String ACTION_HANDOVER_SEND = "android.nfc.handover.intent.action.HANDOVER_SEND";
-
-    /** the intent that is used for initiating a multi-uri handover transfer */
-    static final String ACTION_HANDOVER_SEND_MULTIPLE =
-            "android.nfc.handover.intent.action.HANDOVER_SEND_MULTIPLE";
-
-    /** the intent that is used for indicating an incoming transfer */
-    static final String ACTION_HANDOVER_STARTED =
-            "android.nfc.handover.intent.action.HANDOVER_STARTED";
-
-    /** intent action used to indicate the progress of a handover transfer */
-    static final String ACTION_BT_OPP_TRANSFER_PROGRESS =
-            "android.nfc.handover.intent.action.TRANSFER_PROGRESS";
-
-    /** intent action used to indicate the completion of a handover transfer */
-    static final String ACTION_BT_OPP_TRANSFER_DONE =
-            "android.nfc.handover.intent.action.TRANSFER_DONE";
-
-    /** intent extra used to indicate the success of a handover transfer */
-    static final String EXTRA_BT_OPP_TRANSFER_STATUS =
-            "android.nfc.handover.intent.extra.TRANSFER_STATUS";
-
-    /** intent extra used to indicate the address associated with the transfer */
-    static final String EXTRA_BT_OPP_ADDRESS = "android.nfc.handover.intent.extra.ADDRESS";
-
-    static final String EXTRA_BT_OPP_OBJECT_COUNT =
-            "android.nfc.handover.intent.extra.OBJECT_COUNT";
-
-    static final int COUNT_HEADER_UNAVAILABLE = -1;
-    static final int HANDOVER_TRANSFER_STATUS_SUCCESS = 0;
-
-    static final int HANDOVER_TRANSFER_STATUS_FAILURE = 1;
-
-    /** intent extra used to indicate the direction of a handover transfer */
-    static final String EXTRA_BT_OPP_TRANSFER_DIRECTION =
-            "android.nfc.handover.intent.extra.TRANSFER_DIRECTION";
-
-    static final int DIRECTION_BLUETOOTH_INCOMING = 0;
-
-    static final int DIRECTION_BLUETOOTH_OUTGOING = 1;
-
-    /** intent extra used to provide a unique ID for the transfer */
-    static final String EXTRA_BT_OPP_TRANSFER_ID = "android.nfc.handover.intent.extra.TRANSFER_ID";
-
-    /** intent extra used to provide progress of the transfer */
-    static final String EXTRA_BT_OPP_TRANSFER_PROGRESS =
-            "android.nfc.handover.intent.extra.TRANSFER_PROGRESS";
-
-    /** intent extra used to provide the Uri where the data was stored by the handover transfer */
-    static final String EXTRA_BT_OPP_TRANSFER_URI =
-            "android.nfc.handover.intent.extra.TRANSFER_URI";
-
-    /** intent extra used to provide the mime-type of the data in the handover transfer */
-    static final String EXTRA_BT_OPP_TRANSFER_MIMETYPE =
-            "android.nfc.handover.intent.extra.TRANSFER_MIME_TYPE";
-
-    /** permission needed to be able to receive handover status requests */
-    static final String HANDOVER_STATUS_PERMISSION = "android.permission.NFC_HANDOVER_STATUS";
-
     /** the intent that gets sent when deleting the incoming file confirmation notification */
     static final String ACTION_HIDE = "android.btopp.intent.action.HIDE";
 
@@ -156,14 +83,6 @@ public class Constants {
 
     /** the intent that gets sent when declining the incoming file confirmation notification */
     static final String ACTION_DECLINE = "android.btopp.intent.action.DECLINE";
-
-    /**
-     * The intent that gets sent when deleting the notifications of outbound and inbound completed
-     * transfer.
-     */
-    // TODO(b/323096132): Remove this variable when the flag
-    //                    opp_fix_multiple_notifications_issues is ramped up.
-    static final String ACTION_COMPLETE_HIDE = "android.btopp.intent.action.HIDE_COMPLETE";
 
     /** The intent that gets sent when deleting the notifications of completed inbound transfer. */
     static final String ACTION_HIDE_COMPLETED_INBOUND_TRANSFER =
@@ -184,6 +103,17 @@ public class Constants {
     static final int MEDIA_SCANNED_SCANNED_OK = 1;
 
     static final int MEDIA_SCANNED_SCANNED_FAILED = 2;
+
+    /** The bytes size unit used in the file size categorization */
+    static final long KB_TO_BYTES = 1024;
+
+    static final long MB_TO_BYTES = KB_TO_BYTES * 1024;
+    static final long GB_TO_BYTES = MB_TO_BYTES * 1024;
+
+    /** The time unit used in the duration categorization */
+    static final int SEC_TO_MS = 1000;
+
+    static final int MIN_TO_MS = 60 * SEC_TO_MS;
 
     /**
      * The MIME type(s) of we could accept from other device. This is in essence a "acceptlist" of
@@ -215,9 +145,6 @@ public class Constants {
     /** Where we store received files */
     static final String DEFAULT_STORE_SUBDIR = "/bluetooth";
 
-    /** Notify NFC of the transfer progress periodically, or it will timeout after 20sec. */
-    static final int NFC_ALIVE_CHECK_MS = 10000;
-
     /**
      * To log debug/verbose in OPP, use the command "setprop log.tag.BluetoothOpp DEBUG" or "setprop
      * log.tag.BluetoothOpp VERBOSE" and then "adb root" + "adb shell "stop; start""
@@ -238,7 +165,10 @@ public class Constants {
 
     static final String FILENAME_SEQUENCE_SEPARATOR = "-";
 
+    private Constants() {}
+
     static void updateShareStatus(Context context, int id, int status) {
+        BluetoothOppUtility.checkAndReportShareCompleted(context, id, status);
         Uri contentUri = Uri.parse(BluetoothShare.CONTENT_URI + "/" + id);
         ContentValues updateValues = new ContentValues();
         updateValues.put(BluetoothShare.STATUS, status);
@@ -253,7 +183,7 @@ public class Constants {
         if (BluetoothShare.isStatusCompleted(status)) {
             Intent intent = new Intent(BluetoothShare.TRANSFER_COMPLETED_ACTION);
             intent.setClassName(context, BluetoothOppReceiver.class.getName());
-            intent.setDataAndNormalize(contentUri);
+            intent.setData(contentUri.normalizeScheme());
             context.sendBroadcast(intent);
         }
     }
@@ -275,26 +205,17 @@ public class Constants {
 
     static void logHeader(HeaderSet hs) {
         Log.v(TAG, "Dumping HeaderSet " + hs.toString());
-        try {
-            Log.v(TAG, "COUNT : " + hs.getHeader(HeaderSet.COUNT));
-            Log.v(TAG, "NAME : " + hs.getHeader(HeaderSet.NAME));
-            Log.v(TAG, "TYPE : " + hs.getHeader(HeaderSet.TYPE));
-            Log.v(TAG, "LENGTH : " + hs.getHeader(HeaderSet.LENGTH));
-            Log.v(TAG, "TIME_ISO_8601 : " + hs.getHeader(HeaderSet.TIME_ISO_8601));
-            Log.v(TAG, "TIME_4_BYTE : " + hs.getHeader(HeaderSet.TIME_4_BYTE));
-            Log.v(TAG, "DESCRIPTION : " + hs.getHeader(HeaderSet.DESCRIPTION));
-            Log.v(TAG, "TARGET : " + hs.getHeader(HeaderSet.TARGET));
-            Log.v(TAG, "HTTP : " + hs.getHeader(HeaderSet.HTTP));
-            Log.v(TAG, "WHO : " + hs.getHeader(HeaderSet.WHO));
-            Log.v(TAG, "OBJECT_CLASS : " + hs.getHeader(HeaderSet.OBJECT_CLASS));
-            Log.v(TAG, "APPLICATION_PARAMETER : " + hs.getHeader(HeaderSet.APPLICATION_PARAMETER));
-        } catch (IOException e) {
-            ContentProfileErrorReportUtils.report(
-                    BluetoothProfile.OPP,
-                    BluetoothProtoEnums.BLUETOOTH_OPP_CONSTANTS,
-                    BluetoothStatsLog.BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__EXCEPTION,
-                    0);
-            Log.e(TAG, "dump HeaderSet error " + e);
-        }
+        Log.v(TAG, "COUNT : " + hs.getHeader(HeaderSet.COUNT));
+        Log.v(TAG, "NAME : " + hs.getHeader(HeaderSet.NAME));
+        Log.v(TAG, "TYPE : " + hs.getHeader(HeaderSet.TYPE));
+        Log.v(TAG, "LENGTH : " + hs.getHeader(HeaderSet.LENGTH));
+        Log.v(TAG, "TIME_ISO_8601 : " + hs.getHeader(HeaderSet.TIME_ISO_8601));
+        Log.v(TAG, "TIME_4_BYTE : " + hs.getHeader(HeaderSet.TIME_4_BYTE));
+        Log.v(TAG, "DESCRIPTION : " + hs.getHeader(HeaderSet.DESCRIPTION));
+        Log.v(TAG, "TARGET : " + hs.getHeader(HeaderSet.TARGET));
+        Log.v(TAG, "HTTP : " + hs.getHeader(HeaderSet.HTTP));
+        Log.v(TAG, "WHO : " + hs.getHeader(HeaderSet.WHO));
+        Log.v(TAG, "OBJECT_CLASS : " + hs.getHeader(HeaderSet.OBJECT_CLASS));
+        Log.v(TAG, "APPLICATION_PARAMETER : " + hs.getHeader(HeaderSet.APPLICATION_PARAMETER));
     }
 }

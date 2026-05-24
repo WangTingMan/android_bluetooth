@@ -17,8 +17,7 @@
  *
  ******************************************************************************/
 
-#ifndef BT_TARGET_H
-#define BT_TARGET_H
+#pragma once
 
 #ifndef FALSE
 #define FALSE false
@@ -28,7 +27,7 @@
 #define TRUE true
 #endif
 
-//------------------Added from bdroid_buildcfg.h---------------------
+// ------------------Added from bdroid_buildcfg.h---------------------
 #ifndef L2CAP_EXTFEA_SUPPORTED_MASK
 #define L2CAP_EXTFEA_SUPPORTED_MASK                                            \
   (L2CAP_EXTFEA_ENH_RETRANS | L2CAP_EXTFEA_STREAM_MODE | L2CAP_EXTFEA_NO_CRC | \
@@ -37,11 +36,6 @@
 
 #ifndef BTUI_OPS_FORMATS
 #define BTUI_OPS_FORMATS (BTA_OP_VCARD21_MASK | BTA_OP_ANY_MASK)
-#endif
-
-#ifndef BTA_RFC_MTU_SIZE
-#define BTA_RFC_MTU_SIZE \
-  (L2CAP_MTU_SIZE - L2CAP_MIN_OFFSET - RFCOMM_DATA_OVERHEAD)
 #endif
 
 #ifndef BTA_PAN_INCLUDED
@@ -92,7 +86,7 @@
 #define BTA_FTC_IDLE_TO_SNIFF_DELAY_MS 5000
 #endif
 
-//------------------End added from bdroid_buildcfg.h---------------------
+// ------------------End added from bdroid_buildcfg.h---------------------
 
 /******************************************************************************
  *
@@ -102,6 +96,10 @@
 
 #ifndef BT_DEFAULT_BUFFER_SIZE
 #define BT_DEFAULT_BUFFER_SIZE (4096 + 16)
+#endif
+
+#ifndef BT_ERTM_BUFFER_SIZE
+#define BT_ERTM_BUFFER_SIZE (8080 + 26)
 #endif
 
 #ifndef BT_SMALL_BUFFER_SIZE
@@ -116,16 +114,6 @@
 /* Sends SDP data packets. */
 #ifndef SDP_DATA_BUF_SIZE
 #define SDP_DATA_BUF_SIZE BT_DEFAULT_BUFFER_SIZE
-#endif
-
-/* Sends RFCOMM command packets. */
-#ifndef RFCOMM_CMD_BUF_SIZE
-#define RFCOMM_CMD_BUF_SIZE BT_SMALL_BUFFER_SIZE
-#endif
-
-/* Sends RFCOMM data packets. */
-#ifndef RFCOMM_DATA_BUF_SIZE
-#define RFCOMM_DATA_BUF_SIZE BT_DEFAULT_BUFFER_SIZE
 #endif
 
 /* Sends L2CAP packets to the peer and HCI messages to the controller. */
@@ -323,12 +311,14 @@
 #endif
 
 #ifndef L2CAP_LAST_FIXED_CHNL
-#define L2CAP_LAST_FIXED_CHNL \
-  (L2CAP_FIRST_FIXED_CHNL + L2CAP_NUM_FIXED_CHNLS - 1)
+#define L2CAP_LAST_FIXED_CHNL (L2CAP_FIRST_FIXED_CHNL + L2CAP_NUM_FIXED_CHNLS - 1)
 #endif
 
 /* Used for conformance testing ONLY:  When TRUE lets scriptwrapper overwrite
- * info response */
+ * info response.
+ * For testcases L2CAP/FOC/BV-{04,05}-C set property bluetooth.pts.l2cap.foc.bv.test to 4 and
+ * 5 respectively
+ */
 #ifndef L2CAP_CONFORMANCE_TESTING
 #define L2CAP_CONFORMANCE_TESTING FALSE
 #endif
@@ -365,11 +355,6 @@
 #ifndef GATT_MAX_APPS
 #define GATT_MAX_APPS 32 /* note: 2 apps used internally GATT and GAP */
 #endif
-
-/* connection manager doesn't generate it's own IDs. Instead, all GATT clients
- * use their gatt_if to identify against conection manager. When stack tries to
- * create l2cap connection, it will use this fixed ID. */
-#define CONN_MGR_ID_L2CAP (GATT_MAX_APPS + 10)
 
 /* This value is used for static allocation of resources. The actual maximum at
  * runtime is controlled by a system property. */
@@ -481,78 +466,12 @@
 
 /* The maximum number of simultaneous client and server connections. */
 #ifndef SDP_MAX_CONNECTIONS
-#define SDP_MAX_CONNECTIONS 4
+#define SDP_MAX_CONNECTIONS 16
 #endif
 
 /* The MTU size for the L2CAP configuration. */
 #ifndef SDP_MTU_SIZE
 #define SDP_MTU_SIZE 1024
-#endif
-
-/******************************************************************************
- *
- * RFCOMM
- *
- *****************************************************************************/
-
-/* The maximum number of ports supported. */
-#ifndef MAX_RFC_PORTS
-#define MAX_RFC_PORTS 30
-#endif
-
-/* The maximum simultaneous links to different devices. */
-#ifndef MAX_BD_CONNECTIONS
-#define MAX_BD_CONNECTIONS 16
-#endif
-
-/* The port receive queue low watermark level, in bytes. */
-#ifndef PORT_RX_LOW_WM
-#define PORT_RX_LOW_WM (BTA_RFC_MTU_SIZE * PORT_RX_BUF_LOW_WM)
-#endif
-
-/* The port receive queue high watermark level, in bytes. */
-#ifndef PORT_RX_HIGH_WM
-#define PORT_RX_HIGH_WM (BTA_RFC_MTU_SIZE * PORT_RX_BUF_HIGH_WM)
-#endif
-
-/* The port receive queue critical watermark level, in bytes. */
-#ifndef PORT_RX_CRITICAL_WM
-#define PORT_RX_CRITICAL_WM (BTA_RFC_MTU_SIZE * PORT_RX_BUF_CRITICAL_WM)
-#endif
-
-/* The port receive queue low watermark level, in number of buffers. */
-#ifndef PORT_RX_BUF_LOW_WM
-#define PORT_RX_BUF_LOW_WM 4
-#endif
-
-/* The port receive queue high watermark level, in number of buffers. */
-#ifndef PORT_RX_BUF_HIGH_WM
-#define PORT_RX_BUF_HIGH_WM 10
-#endif
-
-/* The port receive queue critical watermark level, in number of buffers. */
-#ifndef PORT_RX_BUF_CRITICAL_WM
-#define PORT_RX_BUF_CRITICAL_WM 15
-#endif
-
-/* The port transmit queue high watermark level, in bytes. */
-#ifndef PORT_TX_HIGH_WM
-#define PORT_TX_HIGH_WM (BTA_RFC_MTU_SIZE * PORT_TX_BUF_HIGH_WM)
-#endif
-
-/* The port transmit queue critical watermark level, in bytes. */
-#ifndef PORT_TX_CRITICAL_WM
-#define PORT_TX_CRITICAL_WM (BTA_RFC_MTU_SIZE * PORT_TX_BUF_CRITICAL_WM)
-#endif
-
-/* The port transmit queue high watermark level, in number of buffers. */
-#ifndef PORT_TX_BUF_HIGH_WM
-#define PORT_TX_BUF_HIGH_WM 10
-#endif
-
-/* The port transmit queue high watermark level, in number of buffers. */
-#ifndef PORT_TX_BUF_CRITICAL_WM
-#define PORT_TX_BUF_CRITICAL_WM 15
 #endif
 
 /******************************************************************************
@@ -707,7 +626,7 @@
 
 /*************************************************************************
  * Definitions for Both HID-Host & Device
-*/
+ */
 #ifndef HID_MAX_SVC_NAME_LEN
 #define HID_MAX_SVC_NAME_LEN 32
 #endif
@@ -722,13 +641,13 @@
 
 /*************************************************************************
  * Definitions for HID-Host
-*/
+ */
 #ifndef HID_HOST_INCLUDED
 #define HID_HOST_INCLUDED TRUE
 #endif
 
 #ifndef HID_HOST_MAX_DEVICES
-#define HID_HOST_MAX_DEVICES 7
+#define HID_HOST_MAX_DEVICES 10
 #endif
 
 #ifndef HID_HOST_MTU
@@ -768,11 +687,3 @@
 #ifndef BTA_EIR_SERVER_NUM_CUSTOM_UUID
 #define BTA_EIR_SERVER_NUM_CUSTOM_UUID 8
 #endif
-
-/******************************************************************************
- *
- * Tracing:  Include trace header file here.
- *
- *****************************************************************************/
-
-#endif /* BT_TARGET_H */

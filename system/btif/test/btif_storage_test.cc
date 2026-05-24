@@ -15,20 +15,21 @@
  *  limitations under the License.
  *
  ******************************************************************************/
-
 #include "btif/include/btif_storage.h"
 
+#include <com_android_bluetooth_flags.h>
 #include <gtest/gtest.h>
 
+#include "bluetooth/types/uuid.h"
 #include "btif/include/btif_util.h"
-#include "types/bluetooth/uuid.h"
+#include "test/common/mock_functions.h"
 
 using bluetooth::Uuid;
 
 TEST(BtifStorageTest, test_uuid_split_multiple) {
   const char* s1 =
-      "e39c6285-867f-4b1d-9db0-35fbd9aebf22 "
-      "e39c6285-867f-4b1d-9db0-35fbd9aebf23";
+          "e39c6285-867f-4b1d-9db0-35fbd9aebf22 "
+          "e39c6285-867f-4b1d-9db0-35fbd9aebf23";
   const uint8_t u1[] = {0xe3, 0x9c, 0x62, 0x85, 0x86, 0x7f, 0x4b, 0x1d,
                         0x9d, 0xb0, 0x35, 0xfb, 0xd9, 0xae, 0xbf, 0x22};
   const uint8_t u2[] = {0xe3, 0x9c, 0x62, 0x85, 0x86, 0x7f, 0x4b, 0x1d,
@@ -37,16 +38,30 @@ TEST(BtifStorageTest, test_uuid_split_multiple) {
   Uuid uuids[2];
   size_t num_uuids = btif_split_uuids_string(s1, uuids, 2);
   EXPECT_EQ(num_uuids, 2u);
-  EXPECT_TRUE(memcmp(uuids[0].To128BitBE().data(), u1, sizeof(u1)) == 0);
-  EXPECT_TRUE(memcmp(uuids[1].To128BitBE().data(), u2, sizeof(u2)) == 0);
+  EXPECT_EQ(0, memcmp(uuids[0].To128BitBE().data(), u1, sizeof(u1)));
+  EXPECT_EQ(0, memcmp(uuids[1].To128BitBE().data(), u2, sizeof(u2)));
 }
 
 TEST(BtifStorageTest, test_uuid_split_partial) {
   const char* s1 =
-      "e39c6285-867f-4b1d-9db0-35fbd9aebf22 "
-      "e39c6285-867f-4b1d-9db0-35fbd9aebf23";
+          "e39c6285-867f-4b1d-9db0-35fbd9aebf22 "
+          "e39c6285-867f-4b1d-9db0-35fbd9aebf23";
 
   Uuid uuids[2];
   size_t num_uuids = btif_split_uuids_string(s1, uuids, 1);
   EXPECT_EQ(num_uuids, 1u);
+}
+
+RawAddress kRawAddress({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
+
+TEST(BtifStorageTest, test_btif_storage_reset_irk) {
+  if (com_android_bluetooth_flags_btsec_cycle_irks()) {
+    btif_storage_add_bonded_device(&kRawAddress, SAMPLE_LTK, 0, 0);
+
+    ASSERT_EQ(0, get_func_call_count("BTA_DmBleResetId"));
+
+    btif_storage_remove_bonded_device(&kRawAddress);
+
+    ASSERT_EQ(1, get_func_call_count("BTA_DmBleResetId"));
+  }
 }

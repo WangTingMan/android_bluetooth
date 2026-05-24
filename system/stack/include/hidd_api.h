@@ -19,12 +19,13 @@
 #ifndef HIDD_API_H
 #define HIDD_API_H
 
+#include <bluetooth/types/address.h>
+
 #include <cstdint>
 
 #include "stack/include/bt_hdr.h"
 #include "stack/include/hiddefs.h"
 #include "stack/include/sdp_api.h"
-#include "types/raw_address.h"
 
 /*****************************************************************************
  *  Type Definitions
@@ -51,8 +52,8 @@ enum {
   HID_DHOST_EVT_SUSPEND,
   HID_DHOST_EVT_EXIT_SUSPEND,
 };
-typedef void(tHID_DEV_HOST_CALLBACK)(const RawAddress& bd_addr, uint8_t event,
-                                     uint32_t data, BT_HDR* p_buf);
+typedef void(tHID_DEV_HOST_CALLBACK)(const RawAddress& bd_addr, uint8_t event, uint32_t data,
+                                     BT_HDR* p_buf);
 
 /*****************************************************************************
  *  External Function Declarations
@@ -103,9 +104,8 @@ tHID_STATUS HID_DevDeregister(void);
  * Returns          tHID_STATUS
  *
  ******************************************************************************/
-tHID_STATUS HID_DevAddRecord(uint32_t handle, char* p_name, char* p_description,
-                             char* p_provider, uint16_t subclass,
-                             uint16_t desc_len, uint8_t* p_desc_data);
+tHID_STATUS HID_DevAddRecord(uint32_t handle, char* p_name, char* p_description, char* p_provider,
+                             uint16_t subclass, uint16_t desc_len, uint8_t* p_desc_data);
 
 /*******************************************************************************
  *
@@ -116,8 +116,8 @@ tHID_STATUS HID_DevAddRecord(uint32_t handle, char* p_name, char* p_description,
  * Returns          tHID_STATUS
  *
  ******************************************************************************/
-tHID_STATUS HID_DevSendReport(uint8_t channel, uint8_t type, uint8_t id,
-                              uint16_t len, uint8_t* p_data);
+tHID_STATUS HID_DevSendReport(uint8_t channel, uint8_t type, uint8_t id, uint16_t len,
+                              uint8_t* p_data);
 
 /*******************************************************************************
  *
@@ -217,9 +217,8 @@ tHID_STATUS HID_DevGetDevice(RawAddress* addr);
  *
  ******************************************************************************/
 tHID_STATUS HID_DevSetIncomingQos(uint8_t service_type, uint32_t token_rate,
-                                  uint32_t token_bucket_size,
-                                  uint32_t peak_bandwidth, uint32_t latency,
-                                  uint32_t delay_variation);
+                                  uint32_t token_bucket_size, uint32_t peak_bandwidth,
+                                  uint32_t latency, uint32_t delay_variation);
 
 /*******************************************************************************
  *
@@ -231,9 +230,8 @@ tHID_STATUS HID_DevSetIncomingQos(uint8_t service_type, uint32_t token_rate,
  *
  ******************************************************************************/
 tHID_STATUS HID_DevSetOutgoingQos(uint8_t service_type, uint32_t token_rate,
-                                  uint32_t token_bucket_size,
-                                  uint32_t peak_bandwidth, uint32_t latency,
-                                  uint32_t delay_variation);
+                                  uint32_t token_bucket_size, uint32_t peak_bandwidth,
+                                  uint32_t latency, uint32_t delay_variation);
 
 #ifdef __cplusplus
 }

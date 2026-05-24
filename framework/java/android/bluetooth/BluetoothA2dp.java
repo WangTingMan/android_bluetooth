@@ -16,10 +16,18 @@
 
 package android.bluetooth;
 
+import static android.Manifest.permission.BLUETOOTH_CONNECT;
+import static android.Manifest.permission.BLUETOOTH_PRIVILEGED;
+import static android.bluetooth.BluetoothProfile.CONNECTION_POLICY_ALLOWED;
+import static android.bluetooth.BluetoothProfile.CONNECTION_POLICY_FORBIDDEN;
+import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTED;
+import static android.bluetooth.BluetoothUtils.isValidDevice;
+
 import android.annotation.FlaggedApi;
 import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.annotation.RequiresNoPermission;
 import android.annotation.RequiresPermission;
 import android.annotation.SdkConstant;
 import android.annotation.SdkConstant.SdkConstantType;
@@ -31,7 +39,6 @@ import android.bluetooth.annotations.RequiresLegacyBluetoothPermission;
 import android.compat.annotation.UnsupportedAppUsage;
 import android.content.AttributionSource;
 import android.content.Context;
-import android.os.Build;
 import android.os.IBinder;
 import android.os.ParcelUuid;
 import android.os.RemoteException;
@@ -55,9 +62,9 @@ import java.util.List;
  * with its appropriate permission.
  */
 public final class BluetoothA2dp implements BluetoothProfile {
-    private static final String TAG = "BluetoothA2dp";
-    private static final boolean DBG = true;
-    private static final boolean VDBG = false;
+    private static final String TAG = BluetoothA2dp.class.getSimpleName();
+
+    private static final boolean VDBG = Log.isLoggable("bluetooth", Log.VERBOSE);
 
     /**
      * Intent used to broadcast the change in connection state of the A2DP profile.
@@ -68,6 +75,8 @@ public final class BluetoothA2dp implements BluetoothProfile {
      *   <li>{@link #EXTRA_STATE} - The current state of the profile.
      *   <li>{@link #EXTRA_PREVIOUS_STATE}- The previous state of the profile.
      *   <li>{@link BluetoothDevice#EXTRA_DEVICE} - The remote device.
+     *   <li>{@link #EXTRA_DISCONNECTED_REASON} - The reason for the profile disconnection in case
+     *       the new state is {@link #STATE_DISCONNECTED}.
      * </ul>
      *
      * <p>{@link #EXTRA_STATE} or {@link #EXTRA_PREVIOUS_STATE} can be any of {@link
@@ -76,7 +85,7 @@ public final class BluetoothA2dp implements BluetoothProfile {
      */
     @RequiresLegacyBluetoothPermission
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
     public static final String ACTION_CONNECTION_STATE_CHANGED =
             "android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED";
@@ -97,14 +106,14 @@ public final class BluetoothA2dp implements BluetoothProfile {
      */
     @RequiresLegacyBluetoothPermission
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
     public static final String ACTION_PLAYING_STATE_CHANGED =
             "android.bluetooth.a2dp.profile.action.PLAYING_STATE_CHANGED";
 
     /** @hide */
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
     public static final String ACTION_AVRCP_CONNECTION_STATE_CHANGED =
             "android.bluetooth.a2dp.profile.action.AVRCP_CONNECTION_STATE_CHANGED";
@@ -124,7 +133,7 @@ public final class BluetoothA2dp implements BluetoothProfile {
     @SystemApi
     @RequiresLegacyBluetoothPermission
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
     @SuppressLint("ActionValue")
     public static final String ACTION_ACTIVE_DEVICE_CHANGED =
@@ -146,7 +155,7 @@ public final class BluetoothA2dp implements BluetoothProfile {
     @SystemApi
     @RequiresLegacyBluetoothPermission
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
     @SuppressLint("ActionValue")
     public static final String ACTION_CODEC_CONFIG_CHANGED =
@@ -262,6 +271,25 @@ public final class BluetoothA2dp implements BluetoothProfile {
      */
     @SystemApi public static final int DYNAMIC_BUFFER_SUPPORT_A2DP_SOFTWARE_ENCODING = 2;
 
+    /**
+     * Used as an int extra field in {@link BluetoothA2dp#ACTION_CONNECTION_STATE_CHANGED} intents
+     * for connection failure reason. The value is one of
+     *
+     * <ul>
+     *   <li>{@link BluetoothStatusCodes#SUCCESS},
+     *   <li>{@link BluetoothStatusCodes#ERROR_UNKNOWN},
+     *   <li>{@link BluetoothStatusCodes#ERROR_INSUFFICIENT_RESOURCES},
+     *   <li>{@link BluetoothStatusCodes#ERROR_SDP_DISCOVERY_FAILED},
+     *   <li>{@link BluetoothStatusCodes#ERROR_STREAM_CONNECTION_FAILED},
+     *   <li>{@link BluetoothStatusCodes#ERROR_ROLE_SWITCH_FAILED},
+     *   <li>{@link BluetoothStatusCodes#ERROR_AVDTP_DISCOVERY_FAILED}.
+     * </ul>
+     */
+    @FlaggedApi(Flags.FLAG_A2DP_DISCONNECT_REASON_API)
+    @SuppressLint("ActionValue")
+    public static final String EXTRA_DISCONNECTED_REASON =
+            "android.bluetooth.a2dp.extra.DISCONNECTED_REASON";
+
     private final BluetoothAdapter mAdapter;
     private final AttributionSource mAttributionSource;
 
@@ -284,12 +312,14 @@ public final class BluetoothA2dp implements BluetoothProfile {
 
     /** @hide */
     @Override
+    @RequiresNoPermission
     public void onServiceConnected(IBinder service) {
         mService = IBluetoothA2dp.Stub.asInterface(service);
     }
 
     /** @hide */
     @Override
+    @RequiresNoPermission
     public void onServiceDisconnected() {
         mService = null;
     }
@@ -300,6 +330,7 @@ public final class BluetoothA2dp implements BluetoothProfile {
 
     /** @hide */
     @Override
+    @RequiresNoPermission
     public BluetoothAdapter getAdapter() {
         return mAdapter;
     }
@@ -325,14 +356,14 @@ public final class BluetoothA2dp implements BluetoothProfile {
      */
     @RequiresLegacyBluetoothAdminPermission
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     @UnsupportedAppUsage
     public boolean connect(BluetoothDevice device) {
-        if (DBG) log("connect(" + device + ")");
+        log("connect(" + device + ")");
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled() && isValidDevice(device)) {
             try {
                 return service.connect(device, mAttributionSource);
@@ -363,14 +394,14 @@ public final class BluetoothA2dp implements BluetoothProfile {
      */
     @RequiresLegacyBluetoothAdminPermission
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     @UnsupportedAppUsage
     public boolean disconnect(BluetoothDevice device) {
-        if (DBG) log("disconnect(" + device + ")");
+        log("disconnect(" + device + ")");
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled() && isValidDevice(device)) {
             try {
                 return service.disconnect(device, mAttributionSource);
@@ -384,13 +415,13 @@ public final class BluetoothA2dp implements BluetoothProfile {
     /** {@inheritDoc} */
     @Override
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     public List<BluetoothDevice> getConnectedDevices() {
         if (VDBG) log("getConnectedDevices()");
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled()) {
             try {
                 return Attributable.setAttributionSource(
@@ -405,13 +436,13 @@ public final class BluetoothA2dp implements BluetoothProfile {
     /** {@inheritDoc} */
     @Override
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     public List<BluetoothDevice> getDevicesMatchingConnectionStates(int[] states) {
         if (VDBG) log("getDevicesMatchingStates()");
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled()) {
             try {
                 return Attributable.setAttributionSource(
@@ -427,13 +458,12 @@ public final class BluetoothA2dp implements BluetoothProfile {
     /** {@inheritDoc} */
     @Override
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     public @BtProfileState int getConnectionState(BluetoothDevice device) {
-        if (VDBG) log("getState(" + device + ")");
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled() && isValidDevice(device)) {
             try {
                 return service.getConnectionState(device, mAttributionSource);
@@ -441,7 +471,7 @@ public final class BluetoothA2dp implements BluetoothProfile {
                 Log.e(TAG, e.toString() + "\n" + Log.getStackTraceString(new Throwable()));
             }
         }
-        return BluetoothProfile.STATE_DISCONNECTED;
+        return STATE_DISCONNECTED;
     }
 
     /**
@@ -462,14 +492,14 @@ public final class BluetoothA2dp implements BluetoothProfile {
      */
     @RequiresLegacyBluetoothAdminPermission
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     @UnsupportedAppUsage(trackingBug = 171933273)
     public boolean setActiveDevice(@Nullable BluetoothDevice device) {
-        if (DBG) log("setActiveDevice(" + device + ")");
+        log("setActiveDevice(" + device + ")");
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled() && ((device == null) || isValidDevice(device))) {
             try {
                 return service.setActiveDevice(device, mAttributionSource);
@@ -490,13 +520,13 @@ public final class BluetoothA2dp implements BluetoothProfile {
     @Nullable
     @RequiresLegacyBluetoothPermission
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     public BluetoothDevice getActiveDevice() {
         if (VDBG) log("getActiveDevice()");
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled()) {
             try {
                 return Attributable.setAttributionSource(
@@ -506,27 +536,6 @@ public final class BluetoothA2dp implements BluetoothProfile {
             }
         }
         return null;
-    }
-
-    /**
-     * Set priority of the profile
-     *
-     * <p>The device should already be paired. Priority can be one of {@link #PRIORITY_ON} or {@link
-     * #PRIORITY_OFF}
-     *
-     * @param device Paired bluetooth device
-     * @return true if priority is set, false on error
-     * @hide
-     */
-    @RequiresBluetoothConnectPermission
-    @RequiresPermission(
-            allOf = {
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-                android.Manifest.permission.BLUETOOTH_PRIVILEGED,
-            })
-    public boolean setPriority(BluetoothDevice device, int priority) {
-        if (DBG) log("setPriority(" + device + ", " + priority + ")");
-        return setConnectionPolicy(device, BluetoothAdapter.priorityToConnectionPolicy(priority));
     }
 
     /**
@@ -545,20 +554,20 @@ public final class BluetoothA2dp implements BluetoothProfile {
     @RequiresBluetoothConnectPermission
     @RequiresPermission(
             allOf = {
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-                android.Manifest.permission.BLUETOOTH_PRIVILEGED,
+                BLUETOOTH_CONNECT,
+                BLUETOOTH_PRIVILEGED,
             })
     public boolean setConnectionPolicy(
             @NonNull BluetoothDevice device, @ConnectionPolicy int connectionPolicy) {
-        if (DBG) log("setConnectionPolicy(" + device + ", " + connectionPolicy + ")");
+        log("setConnectionPolicy(" + device + ", " + connectionPolicy + ")");
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled()
                 && isValidDevice(device)
-                && (connectionPolicy == BluetoothProfile.CONNECTION_POLICY_FORBIDDEN
-                        || connectionPolicy == BluetoothProfile.CONNECTION_POLICY_ALLOWED)) {
+                && (connectionPolicy == CONNECTION_POLICY_FORBIDDEN
+                        || connectionPolicy == CONNECTION_POLICY_ALLOWED)) {
             try {
                 return service.setConnectionPolicy(device, connectionPolicy, mAttributionSource);
             } catch (RemoteException e) {
@@ -566,25 +575,6 @@ public final class BluetoothA2dp implements BluetoothProfile {
             }
         }
         return false;
-    }
-
-    /**
-     * Get the priority of the profile.
-     *
-     * <p>The priority can be any of: {@link #PRIORITY_OFF}, {@link #PRIORITY_ON}, {@link
-     * #PRIORITY_UNDEFINED}
-     *
-     * @param device Bluetooth device
-     * @return priority of the device
-     * @hide
-     */
-    @RequiresLegacyBluetoothPermission
-    @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
-    @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.P, trackingBug = 115609023)
-    public int getPriority(BluetoothDevice device) {
-        if (VDBG) log("getPriority(" + device + ")");
-        return BluetoothAdapter.connectionPolicyToPriority(getConnectionPolicy(device));
     }
 
     /**
@@ -599,17 +589,13 @@ public final class BluetoothA2dp implements BluetoothProfile {
      */
     @SystemApi
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(
-            allOf = {
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-                android.Manifest.permission.BLUETOOTH_PRIVILEGED,
-            })
+    @RequiresPermission(allOf = {BLUETOOTH_CONNECT, BLUETOOTH_PRIVILEGED})
     public @ConnectionPolicy int getConnectionPolicy(@NonNull BluetoothDevice device) {
         if (VDBG) log("getConnectionPolicy(" + device + ")");
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled() && isValidDevice(device)) {
             try {
                 return service.getConnectionPolicy(device, mAttributionSource);
@@ -617,7 +603,7 @@ public final class BluetoothA2dp implements BluetoothProfile {
                 Log.e(TAG, e.toString() + "\n" + Log.getStackTraceString(new Throwable()));
             }
         }
-        return BluetoothProfile.CONNECTION_POLICY_FORBIDDEN;
+        return CONNECTION_POLICY_FORBIDDEN;
     }
 
     /**
@@ -630,15 +616,15 @@ public final class BluetoothA2dp implements BluetoothProfile {
     @RequiresBluetoothConnectPermission
     @RequiresPermission(
             allOf = {
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-                android.Manifest.permission.BLUETOOTH_PRIVILEGED,
+                BLUETOOTH_CONNECT,
+                BLUETOOTH_PRIVILEGED,
             })
     public void setAvrcpAbsoluteVolume(int volume) {
-        if (DBG) Log.d(TAG, "setAvrcpAbsoluteVolume");
+        Log.d(TAG, "setAvrcpAbsoluteVolume");
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled()) {
             try {
                 service.setAvrcpAbsoluteVolume(volume, mAttributionSource);
@@ -655,13 +641,13 @@ public final class BluetoothA2dp implements BluetoothProfile {
      */
     @RequiresLegacyBluetoothPermission
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     public boolean isA2dpPlaying(BluetoothDevice device) {
-        if (DBG) log("isA2dpPlaying(" + device + ")");
+        log("isA2dpPlaying(" + device + ")");
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled() && isValidDevice(device)) {
             try {
                 return service.isA2dpPlaying(device, mAttributionSource);
@@ -679,7 +665,7 @@ public final class BluetoothA2dp implements BluetoothProfile {
      * @hide
      */
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     public boolean shouldSendVolumeKeys(BluetoothDevice device) {
         if (isEnabled() && isValidDevice(device)) {
             ParcelUuid[] uuids = device.getUuids();
@@ -704,17 +690,16 @@ public final class BluetoothA2dp implements BluetoothProfile {
      */
     @NonNull
     @RequiresLegacyBluetoothPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_PRIVILEGED)
-    @FlaggedApi(Flags.FLAG_A2DP_OFFLOAD_CODEC_EXTENSIBILITY)
+    @RequiresPermission(BLUETOOTH_PRIVILEGED)
     public Collection<BluetoothCodecType> getSupportedCodecTypes() {
         Log.d(TAG, "getSupportedSourceCodecTypes()");
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled()) {
             try {
-                return service.getSupportedCodecTypes(mAttributionSource);
+                return service.getSupportedCodecTypes();
             } catch (RemoteException e) {
                 Log.e(TAG, e.toString() + "\n" + Log.getStackTraceString(new Throwable()));
             }
@@ -725,26 +710,29 @@ public final class BluetoothA2dp implements BluetoothProfile {
     /**
      * Gets the current codec status (configuration and capability).
      *
+     * <p>This method requires the calling app to have the {@link
+     * android.Manifest.permission#BLUETOOTH_CONNECT} permission. Additionally, an app must either
+     * have the {@link android.Manifest.permission#BLUETOOTH_PRIVILEGED} or be associated with the
+     * Companion Device manager (see {@link android.companion.CompanionDeviceManager#associate(
+     * AssociationRequest, android.companion.CompanionDeviceManager.Callback, Handler)})
+     *
      * @param device the remote Bluetooth device.
      * @return the current codec status
      * @hide
      */
     @SystemApi
-    @Nullable
     @RequiresLegacyBluetoothPermission
     @RequiresBluetoothConnectPermission
     @RequiresPermission(
-            allOf = {
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-                android.Manifest.permission.BLUETOOTH_PRIVILEGED,
-            })
-    public BluetoothCodecStatus getCodecStatus(@NonNull BluetoothDevice device) {
-        if (DBG) Log.d(TAG, "getCodecStatus(" + device + ")");
+            allOf = {BLUETOOTH_CONNECT, BLUETOOTH_PRIVILEGED},
+            conditional = true)
+    public @Nullable BluetoothCodecStatus getCodecStatus(@NonNull BluetoothDevice device) {
+        Log.d(TAG, "getCodecStatus(" + device + ")");
         verifyDeviceNotNull(device, "getCodecStatus");
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled() && isValidDevice(device)) {
             try {
                 return service.getCodecStatus(device, mAttributionSource);
@@ -758,8 +746,11 @@ public final class BluetoothA2dp implements BluetoothProfile {
     /**
      * Sets the codec configuration preference.
      *
-     * <p>For apps without the {@link android.Manifest.permission.BLUETOOTH_PRIVILEGED} permission a
-     * {@link android.companion.CompanionDeviceManager} association is required.
+     * <p>This method requires the calling app to have the {@link
+     * android.Manifest.permission#BLUETOOTH_CONNECT} permission. Additionally, an app must either
+     * have the {@link android.Manifest.permission#BLUETOOTH_PRIVILEGED} or be associated with the
+     * Companion Device manager (see {@link android.companion.CompanionDeviceManager#associate(
+     * AssociationRequest, android.companion.CompanionDeviceManager.Callback, Handler)})
      *
      * @param device the remote Bluetooth device.
      * @param codecConfig the codec configuration preference
@@ -769,13 +760,11 @@ public final class BluetoothA2dp implements BluetoothProfile {
     @RequiresLegacyBluetoothPermission
     @RequiresBluetoothConnectPermission
     @RequiresPermission(
-            allOf = {
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-                android.Manifest.permission.BLUETOOTH_PRIVILEGED,
-            })
+            allOf = {BLUETOOTH_CONNECT, BLUETOOTH_PRIVILEGED},
+            conditional = true)
     public void setCodecConfigPreference(
             @NonNull BluetoothDevice device, @NonNull BluetoothCodecConfig codecConfig) {
-        if (DBG) Log.d(TAG, "setCodecConfigPreference(" + device + ")");
+        Log.d(TAG, "setCodecConfigPreference(" + device + ")");
         verifyDeviceNotNull(device, "setCodecConfigPreference");
         if (codecConfig == null) {
             Log.e(TAG, "setCodecConfigPreference: Codec config can't be null");
@@ -784,7 +773,7 @@ public final class BluetoothA2dp implements BluetoothProfile {
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled()) {
             try {
                 service.setCodecConfigPreference(device, codecConfig, mAttributionSource);
@@ -813,11 +802,11 @@ public final class BluetoothA2dp implements BluetoothProfile {
     @RequiresBluetoothConnectPermission
     @RequiresPermission(
             allOf = {
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-                android.Manifest.permission.BLUETOOTH_PRIVILEGED,
+                BLUETOOTH_CONNECT,
+                BLUETOOTH_PRIVILEGED,
             })
     public void enableOptionalCodecs(@NonNull BluetoothDevice device) {
-        if (DBG) Log.d(TAG, "enableOptionalCodecs(" + device + ")");
+        Log.d(TAG, "enableOptionalCodecs(" + device + ")");
         verifyDeviceNotNull(device, "enableOptionalCodecs");
         enableDisableOptionalCodecs(device, true);
     }
@@ -842,11 +831,11 @@ public final class BluetoothA2dp implements BluetoothProfile {
     @RequiresBluetoothConnectPermission
     @RequiresPermission(
             allOf = {
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-                android.Manifest.permission.BLUETOOTH_PRIVILEGED,
+                BLUETOOTH_CONNECT,
+                BLUETOOTH_PRIVILEGED,
             })
     public void disableOptionalCodecs(@NonNull BluetoothDevice device) {
-        if (DBG) Log.d(TAG, "disableOptionalCodecs(" + device + ")");
+        Log.d(TAG, "disableOptionalCodecs(" + device + ")");
         verifyDeviceNotNull(device, "disableOptionalCodecs");
         enableDisableOptionalCodecs(device, false);
     }
@@ -859,14 +848,14 @@ public final class BluetoothA2dp implements BluetoothProfile {
      */
     @RequiresPermission(
             allOf = {
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-                android.Manifest.permission.BLUETOOTH_PRIVILEGED,
+                BLUETOOTH_CONNECT,
+                BLUETOOTH_PRIVILEGED,
             })
     private void enableDisableOptionalCodecs(BluetoothDevice device, boolean enable) {
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled() && isValidDevice(device)) {
             try {
                 if (enable) {
@@ -893,17 +882,17 @@ public final class BluetoothA2dp implements BluetoothProfile {
     @RequiresBluetoothConnectPermission
     @RequiresPermission(
             allOf = {
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-                android.Manifest.permission.BLUETOOTH_PRIVILEGED,
+                BLUETOOTH_CONNECT,
+                BLUETOOTH_PRIVILEGED,
             })
     @OptionalCodecsSupportStatus
     public int isOptionalCodecsSupported(@NonNull BluetoothDevice device) {
-        if (DBG) log("isOptionalCodecsSupported(" + device + ")");
+        log("isOptionalCodecsSupported(" + device + ")");
         verifyDeviceNotNull(device, "isOptionalCodecsSupported");
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled() && isValidDevice(device)) {
             try {
                 return service.isOptionalCodecsSupported(device, mAttributionSource);
@@ -927,17 +916,17 @@ public final class BluetoothA2dp implements BluetoothProfile {
     @RequiresBluetoothConnectPermission
     @RequiresPermission(
             allOf = {
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-                android.Manifest.permission.BLUETOOTH_PRIVILEGED,
+                BLUETOOTH_CONNECT,
+                BLUETOOTH_PRIVILEGED,
             })
     @OptionalCodecsPreferenceStatus
     public int isOptionalCodecsEnabled(@NonNull BluetoothDevice device) {
-        if (DBG) log("isOptionalCodecsEnabled(" + device + ")");
+        log("isOptionalCodecsEnabled(" + device + ")");
         verifyDeviceNotNull(device, "isOptionalCodecsEnabled");
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled() && isValidDevice(device)) {
             try {
                 return service.isOptionalCodecsEnabled(device, mAttributionSource);
@@ -962,12 +951,12 @@ public final class BluetoothA2dp implements BluetoothProfile {
     @RequiresBluetoothConnectPermission
     @RequiresPermission(
             allOf = {
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-                android.Manifest.permission.BLUETOOTH_PRIVILEGED,
+                BLUETOOTH_CONNECT,
+                BLUETOOTH_PRIVILEGED,
             })
     public void setOptionalCodecsEnabled(
             @NonNull BluetoothDevice device, @OptionalCodecsPreferenceStatus int value) {
-        if (DBG) log("setOptionalCodecsEnabled(" + device + ")");
+        log("setOptionalCodecsEnabled(" + device + ")");
         verifyDeviceNotNull(device, "setOptionalCodecsEnabled");
         if (value != BluetoothA2dp.OPTIONAL_CODECS_PREF_UNKNOWN
                 && value != BluetoothA2dp.OPTIONAL_CODECS_PREF_DISABLED
@@ -978,7 +967,7 @@ public final class BluetoothA2dp implements BluetoothProfile {
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled() && isValidDevice(device)) {
             try {
                 service.setOptionalCodecsEnabled(device, value, mAttributionSource);
@@ -1002,15 +991,15 @@ public final class BluetoothA2dp implements BluetoothProfile {
     @RequiresBluetoothConnectPermission
     @RequiresPermission(
             allOf = {
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-                android.Manifest.permission.BLUETOOTH_PRIVILEGED,
+                BLUETOOTH_CONNECT,
+                BLUETOOTH_PRIVILEGED,
             })
     public @Type int getDynamicBufferSupport() {
         if (VDBG) log("getDynamicBufferSupport()");
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled()) {
             try {
                 return service.getDynamicBufferSupport(mAttributionSource);
@@ -1034,15 +1023,15 @@ public final class BluetoothA2dp implements BluetoothProfile {
     @RequiresBluetoothConnectPermission
     @RequiresPermission(
             allOf = {
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-                android.Manifest.permission.BLUETOOTH_PRIVILEGED,
+                BLUETOOTH_CONNECT,
+                BLUETOOTH_PRIVILEGED,
             })
     public @Nullable BufferConstraints getBufferConstraints() {
         if (VDBG) log("getBufferConstraints()");
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled()) {
             try {
                 return service.getBufferConstraints(mAttributionSource);
@@ -1065,8 +1054,8 @@ public final class BluetoothA2dp implements BluetoothProfile {
     @RequiresBluetoothConnectPermission
     @RequiresPermission(
             allOf = {
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-                android.Manifest.permission.BLUETOOTH_PRIVILEGED,
+                BLUETOOTH_CONNECT,
+                BLUETOOTH_PRIVILEGED,
             })
     public boolean setBufferLengthMillis(
             @BluetoothCodecConfig.SourceCodecType int codec, int value) {
@@ -1078,7 +1067,7 @@ public final class BluetoothA2dp implements BluetoothProfile {
         final IBluetoothA2dp service = getService();
         if (service == null) {
             Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
+            log(Log.getStackTraceString(new Throwable()));
         } else if (isEnabled()) {
             try {
                 return service.setBufferLengthMillis(codec, value, mAttributionSource);
@@ -1089,50 +1078,16 @@ public final class BluetoothA2dp implements BluetoothProfile {
         return false;
     }
 
-    /**
-     * Helper for converting a state to a string.
-     *
-     * <p>For debug use only - strings are not internationalized.
-     *
-     * @hide
-     */
-    @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.P, trackingBug = 115609023)
-    public static String stateToString(int state) {
-        switch (state) {
-            case STATE_DISCONNECTED:
-                return "disconnected";
-            case STATE_CONNECTING:
-                return "connecting";
-            case STATE_CONNECTED:
-                return "connected";
-            case STATE_DISCONNECTING:
-                return "disconnecting";
-            case STATE_PLAYING:
-                return "playing";
-            case STATE_NOT_PLAYING:
-                return "not playing";
-            default:
-                return "<unknown state " + state + ">";
-        }
-    }
-
     private boolean isEnabled() {
         if (mAdapter.getState() == BluetoothAdapter.STATE_ON) return true;
         return false;
     }
 
-    private void verifyDeviceNotNull(BluetoothDevice device, String methodName) {
+    private static void verifyDeviceNotNull(BluetoothDevice device, String methodName) {
         if (device == null) {
             Log.e(TAG, methodName + ": device param is null");
             throw new IllegalArgumentException("Device cannot be null");
         }
-    }
-
-    private boolean isValidDevice(BluetoothDevice device) {
-        if (device == null) return false;
-
-        if (BluetoothAdapter.checkBluetoothAddress(device.getAddress())) return true;
-        return false;
     }
 
     private static void log(String msg) {

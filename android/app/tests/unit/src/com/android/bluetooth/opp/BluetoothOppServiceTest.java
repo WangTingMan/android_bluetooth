@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,60 +13,88 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.opp;
 
+import static com.android.bluetooth.TestUtils.getRealDevice;
+import static com.android.bluetooth.TestUtils.mockGetBluetoothManager;
+import static com.android.bluetooth.TestUtils.mockGetSystemService;
 import static com.android.bluetooth.opp.BluetoothOppService.WHERE_INVISIBLE_UNCONFIRMED;
 
 import static com.google.common.truth.Truth.assertThat;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
+import android.app.NotificationManager;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.database.MatrixCursor;
 import android.os.Looper;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.MediumTest;
 import androidx.test.platform.app.InstrumentationRegistry;
-import androidx.test.runner.AndroidJUnit4;
 
 import com.android.bluetooth.BluetoothMethodProxy;
 import com.android.bluetooth.btservice.AdapterService;
+import com.android.tests.bluetooth.MockitoRule;
 
 import org.junit.After;
-import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.Mockito;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
+/** Test cases for {@link BluetoothOppService}. */
 @MediumTest
 @RunWith(AndroidJUnit4.class)
 public class BluetoothOppServiceTest {
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
 
+    @Mock private AdapterService mAdapterService;
     @Mock private BluetoothMethodProxy mBluetoothMethodProxy;
 
-    private final Context mTargetContext =
-            InstrumentationRegistry.getInstrumentation().getTargetContext();
+    private static final String TEST_PREF = "BluetoothOppServiceTest";
+
+    private final Context mContext = InstrumentationRegistry.getInstrumentation().getContext();
 
     private BluetoothOppService mService;
-    private boolean mIsBluetoothOppServiceStarted;
+    private SharedPreferences mPrefs;
 
     @Before
     public void setUp() throws Exception {
+        mContext.deleteSharedPreferences(TEST_PREF);
+        mPrefs = mContext.getSharedPreferences(TEST_PREF, Context.MODE_PRIVATE);
+        mPrefs.edit().clear().apply();
+
+        mockGetSystemService(mAdapterService, NotificationManager.class);
+        doReturn(mContext.getPackageName()).when(mAdapterService).getPackageName();
+        doReturn(mContext.getPackageManager()).when(mAdapterService).getPackageManager();
+        doReturn(mContext.getResources()).when(mAdapterService).getResources();
+        doReturn(mContext.getContentResolver()).when(mAdapterService).getContentResolver();
+        doReturn(mPrefs).when(mAdapterService).getSharedPreferences(anyString(), anyInt());
+
+        doAnswer(
+                        invocation -> {
+                            String address = invocation.getArgument(0);
+                            return getRealDevice(address);
+                        })
+                .when(mAdapterService)
+                .getRemoteDevice(anyString());
+
         BluetoothMethodProxy.setInstanceForTesting(mBluetoothMethodProxy);
 
         // BluetoothOppService can create a UpdateThread, which will call
@@ -80,11 +108,12 @@ public class BluetoothOppServiceTest {
             Looper.prepare();
         }
 
-        AdapterService adapterService = new AdapterService(mTargetContext);
-        mService = new BluetoothOppService(adapterService);
-        mService.start();
+        mockGetBluetoothManager(mAdapterService);
+
+        BluetoothOppPreference oppPreference = BluetoothOppPreference.getInstance(mAdapterService);
+
+        mService = new BluetoothOppService(mAdapterService, oppPreference);
         mService.setAvailable(true);
-        mIsBluetoothOppServiceStarted = true;
 
         // Wait until the initial trimDatabase operation is done.
         verify(mBluetoothMethodProxy, timeout(3_000))
@@ -101,23 +130,20 @@ public class BluetoothOppServiceTest {
 
     @After
     public void tearDown() throws Exception {
+        mPrefs.edit().clear().apply();
+        mContext.deleteSharedPreferences(TEST_PREF);
         // Since the update thread is not run (we mocked it), it will not clean itself on interrupt
         // (normally, the service will wait for the update thread to clean itself after
         // being interrupted). We clean it manually here
-        BluetoothOppService service = mService;
-        if (service != null) {
-            service.mUpdateThread = null;
+        mService.mUpdateThread = null;
+        Thread updateNotificationThread = mService.mNotifier.mUpdateNotificationThread;
+        if (updateNotificationThread != null) {
+            updateNotificationThread.join();
         }
 
         BluetoothMethodProxy.setInstanceForTesting(null);
-        if (mIsBluetoothOppServiceStarted) {
-            service.stop();
-        }
-    }
-
-    @Test
-    public void testInitialize() {
-        Assert.assertNotNull(BluetoothOppService.getBluetoothOppService());
+        BluetoothOppPreference.setInstance(null);
+        mService.cleanup();
     }
 
     @Test
@@ -163,8 +189,8 @@ public class BluetoothOppServiceTest {
         mService.mShares.add(shareInfo2);
 
         // batch1 will be removed
-        BluetoothOppBatch batch1 = new BluetoothOppBatch(mService, shareInfo);
-        BluetoothOppBatch batch2 = new BluetoothOppBatch(mService, shareInfo2);
+        BluetoothOppBatch batch1 = new BluetoothOppBatch(mAdapterService, shareInfo);
+        BluetoothOppBatch batch2 = new BluetoothOppBatch(mAdapterService, shareInfo2);
         batch2.mStatus = Constants.BATCH_STATUS_FINISHED;
         mService.mBatches.clear();
         mService.mBatches.add(batch1);
@@ -188,7 +214,7 @@ public class BluetoothOppServiceTest {
 
     @Test
     public void trimDatabase_trimsOldOrInvisibleRecords() {
-        ContentResolver contentResolver = mTargetContext.getContentResolver();
+        ContentResolver contentResolver = mContext.getContentResolver();
 
         doReturn(1 /* any int is Ok */)
                 .when(mBluetoothMethodProxy)

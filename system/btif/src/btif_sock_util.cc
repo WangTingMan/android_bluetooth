@@ -42,7 +42,6 @@
 #include <unistd.h>
 #endif
 
-#include "os/log.h"
 #include "osi/include/osi.h"
 
 #ifdef _MSC_VER
@@ -51,9 +50,10 @@
 #endif
 #endif
 
-#define asrt(s)                                         \
-  do {                                                  \
-    if (!(s)) log::error("## assert {} failed ##", #s); \
+#define asrt(s)                                 \
+  do {                                          \
+    if (!(s))                                   \
+      log::error("## assert {} failed ##", #s); \
   } while (0)
 
 using namespace bluetooth;
@@ -104,7 +104,9 @@ int sock_send_fd(int sock_fd, const uint8_t* buf, int len, int send_fd) {
   struct cmsghdr* cmsg;
   char msgbuf[CMSG_SPACE(1)];
   asrt(send_fd != -1);
-  if (sock_fd == -1 || send_fd == -1) return -1;
+  if (sock_fd == -1 || send_fd == -1) {
+    return -1;
+  }
   // Add any pending outbound file descriptors to the message
   // See "man cmsg" really
   msg.msg_control = msgbuf;
@@ -130,8 +132,8 @@ int sock_send_fd(int sock_fd, const uint8_t* buf, int len, int send_fd) {
     ssize_t ret;
     OSI_NO_INTR(ret = sendmsg(sock_fd, &msg, MSG_NOSIGNAL));
     if (ret < 0) {
-      log::error("fd:{}, send_fd:{}, sendmsg ret:{}, errno:{}, {}", sock_fd,
-                 send_fd, (int)ret, errno, strerror(errno));
+      log::error("fd:{}, send_fd:{}, sendmsg ret:{}, errno:{}, {}", sock_fd, send_fd, (int)ret,
+                 errno, strerror(errno));
       ret_len = -1;
       break;
     }

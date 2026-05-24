@@ -16,6 +16,9 @@
 
 package com.android.bluetooth.avrcpcontroller;
 
+import static java.util.Objects.requireNonNull;
+
+import android.annotation.SuppressLint;
 import android.util.Log;
 import android.util.Xml;
 
@@ -30,7 +33,6 @@ import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 /**
  * Represents the return value of a BIP GetImageProperties request, giving a detailed description of
@@ -56,12 +58,15 @@ import java.util.Objects;
  * </image-properties>
  */
 public class BipImageProperties {
-    private static final String TAG = "avrcpcontroller.BipImageProperties";
+    private static final String TAG =
+            AvrcpControllerUtils.TAG_PREFIX_AVRCP_CONTROLLER
+                    + BipImageProperties.class.getSimpleName();
+
     private static final String sVersion = "1.0";
 
     /** A Builder for a BipImageProperties object */
     public static class Builder {
-        private BipImageProperties mProperties = new BipImageProperties();
+        private final BipImageProperties mProperties = new BipImageProperties();
 
         /**
          * Set the image handle field for the object you're building
@@ -143,22 +148,16 @@ public class BipImageProperties {
     private boolean mHasThumbnailFormat = false;
 
     /** The various sets of available formats. */
-    private List<BipImageFormat> mNativeFormats;
+    private final List<BipImageFormat> mNativeFormats = new ArrayList<>();
 
-    private List<BipImageFormat> mVariantFormats;
-    private List<BipAttachmentFormat> mAttachments;
+    private final List<BipImageFormat> mVariantFormats = new ArrayList<>();
+    private final List<BipAttachmentFormat> mAttachments = new ArrayList<>();
 
     private BipImageProperties() {
         mVersion = sVersion;
-        mNativeFormats = new ArrayList<BipImageFormat>();
-        mVariantFormats = new ArrayList<BipImageFormat>();
-        mAttachments = new ArrayList<BipAttachmentFormat>();
     }
 
     public BipImageProperties(InputStream inputStream) {
-        mNativeFormats = new ArrayList<BipImageFormat>();
-        mVariantFormats = new ArrayList<BipImageFormat>();
-        mAttachments = new ArrayList<BipAttachmentFormat>();
         parse(inputStream);
     }
 
@@ -168,41 +167,37 @@ public class BipImageProperties {
             xpp.setInput(inputStream, "utf-8");
             int event = xpp.getEventType();
             while (event != XmlPullParser.END_DOCUMENT) {
-                switch (event) {
-                    case XmlPullParser.START_TAG:
-                        String tag = xpp.getName();
-                        if (tag.equals("image-properties")) {
-                            mVersion = xpp.getAttributeValue(null, "version");
-                            mImageHandle = xpp.getAttributeValue(null, "handle");
-                            mFriendlyName = xpp.getAttributeValue(null, "friendly-name");
-                        } else if (tag.equals("native")) {
-                            String encoding = xpp.getAttributeValue(null, "encoding");
-                            String pixel = xpp.getAttributeValue(null, "pixel");
-                            String size = xpp.getAttributeValue(null, "size");
-                            addNativeFormat(BipImageFormat.parseNative(encoding, pixel, size));
-                        } else if (tag.equals("variant")) {
-                            String encoding = xpp.getAttributeValue(null, "encoding");
-                            String pixel = xpp.getAttributeValue(null, "pixel");
-                            String maxSize = xpp.getAttributeValue(null, "maxsize");
-                            String trans = xpp.getAttributeValue(null, "transformation");
-                            addVariantFormat(
-                                    BipImageFormat.parseVariant(encoding, pixel, maxSize, trans));
-                        } else if (tag.equals("attachment")) {
-                            String contentType = xpp.getAttributeValue(null, "content-type");
-                            String name = xpp.getAttributeValue(null, "name");
-                            String charset = xpp.getAttributeValue(null, "charset");
-                            String size = xpp.getAttributeValue(null, "size");
-                            String created = xpp.getAttributeValue(null, "created");
-                            String modified = xpp.getAttributeValue(null, "modified");
-                            addAttachment(
-                                    new BipAttachmentFormat(
-                                            contentType, charset, name, size, created, modified));
-                        } else {
-                            Log.w(TAG, "Unrecognized tag in x-bt/img-properties object: " + tag);
-                        }
-                        break;
-                    case XmlPullParser.END_TAG:
-                        break;
+                if (event == XmlPullParser.START_TAG) {
+                    String tag = xpp.getName();
+                    if (tag.equals("image-properties")) {
+                        mVersion = xpp.getAttributeValue(null, "version");
+                        mImageHandle = xpp.getAttributeValue(null, "handle");
+                        mFriendlyName = xpp.getAttributeValue(null, "friendly-name");
+                    } else if (tag.equals("native")) {
+                        String encoding = xpp.getAttributeValue(null, "encoding");
+                        String pixel = xpp.getAttributeValue(null, "pixel");
+                        String size = xpp.getAttributeValue(null, "size");
+                        addNativeFormat(BipImageFormat.parseNative(encoding, pixel, size));
+                    } else if (tag.equals("variant")) {
+                        String encoding = xpp.getAttributeValue(null, "encoding");
+                        String pixel = xpp.getAttributeValue(null, "pixel");
+                        String maxSize = xpp.getAttributeValue(null, "maxsize");
+                        String trans = xpp.getAttributeValue(null, "transformation");
+                        addVariantFormat(
+                                BipImageFormat.parseVariant(encoding, pixel, maxSize, trans));
+                    } else if (tag.equals("attachment")) {
+                        String contentType = xpp.getAttributeValue(null, "content-type");
+                        String name = xpp.getAttributeValue(null, "name");
+                        String charset = xpp.getAttributeValue(null, "charset");
+                        String size = xpp.getAttributeValue(null, "size");
+                        String created = xpp.getAttributeValue(null, "created");
+                        String modified = xpp.getAttributeValue(null, "modified");
+                        addAttachment(
+                                new BipAttachmentFormat(
+                                        contentType, charset, name, size, created, modified));
+                    } else {
+                        Log.w(TAG, "Unrecognized tag in x-bt/img-properties object: " + tag);
+                    }
                 }
                 event = xpp.next();
             }
@@ -240,7 +235,7 @@ public class BipImageProperties {
     }
 
     private void addNativeFormat(BipImageFormat format) {
-        Objects.requireNonNull(format);
+        requireNonNull(format);
         if (format.getType() != BipImageFormat.FORMAT_NATIVE) {
             throw new IllegalArgumentException(
                     "Format type '"
@@ -257,7 +252,7 @@ public class BipImageProperties {
     }
 
     private void addVariantFormat(BipImageFormat format) {
-        Objects.requireNonNull(format);
+        requireNonNull(format);
         if (format.getType() != BipImageFormat.FORMAT_VARIANT) {
             throw new IllegalArgumentException(
                     "Format type '"
@@ -273,7 +268,7 @@ public class BipImageProperties {
         }
     }
 
-    private boolean isThumbnailFormat(BipImageFormat format) {
+    private static boolean isThumbnailFormat(BipImageFormat format) {
         if (format == null) return false;
 
         BipEncoding encoding = format.getEncoding();
@@ -281,23 +276,23 @@ public class BipImageProperties {
 
         BipPixel pixel = format.getPixel();
         if (pixel == null) return false;
-        switch (pixel.getType()) {
-            case BipPixel.TYPE_FIXED:
-                return pixel.getMaxWidth() == 200 && pixel.getMaxHeight() == 200;
-            case BipPixel.TYPE_RESIZE_MODIFIED_ASPECT_RATIO:
-                return pixel.getMaxWidth() >= 200 && pixel.getMaxHeight() >= 200;
-            case BipPixel.TYPE_RESIZE_FIXED_ASPECT_RATIO:
-                return pixel.getMaxWidth() == pixel.getMaxHeight() && pixel.getMaxWidth() >= 200;
-        }
-        return false;
+        return switch (pixel.getType()) {
+            case BipPixel.TYPE_FIXED -> pixel.getMaxWidth() == 200 && pixel.getMaxHeight() == 200;
+            case BipPixel.TYPE_RESIZE_MODIFIED_ASPECT_RATIO ->
+                    pixel.getMaxWidth() >= 200 && pixel.getMaxHeight() >= 200;
+            case BipPixel.TYPE_RESIZE_FIXED_ASPECT_RATIO ->
+                    pixel.getMaxWidth() == pixel.getMaxHeight() && pixel.getMaxWidth() >= 200;
+            default -> false;
+        };
     }
 
     private void addAttachment(BipAttachmentFormat format) {
-        Objects.requireNonNull(format);
+        requireNonNull(format);
         mAttachments.add(format);
     }
 
     @Override
+    @SuppressLint("ToStringReturnsNull") // Since this is used for encoding to xml
     public String toString() {
         StringWriter writer = new StringWriter();
         XmlSerializer xmlMsgElement = Xml.newSerializer();

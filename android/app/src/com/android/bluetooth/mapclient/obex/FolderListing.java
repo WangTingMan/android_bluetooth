@@ -28,8 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 class FolderListing {
-
-    private static final String TAG = "FolderListing";
+    private static final String TAG = FolderListing.class.getSimpleName();
 
     private final List<String> mFolders = new ArrayList<>();
 
@@ -44,17 +43,14 @@ class FolderListing {
 
             int event = xpp.getEventType();
             while (event != XmlPullParser.END_DOCUMENT) {
-                switch (event) {
-                    case XmlPullParser.START_TAG:
-                        if (xpp.getName().equals("folder")) {
-                            mFolders.add(xpp.getAttributeValue(null, "name"));
-                        }
-                        break;
+                if (event == XmlPullParser.START_TAG) {
+                    if (xpp.getName().equals("folder")) {
+                        mFolders.add(xpp.getAttributeValue(null, "name"));
+                    }
                 }
 
                 event = xpp.next();
             }
-
         } catch (XmlPullParserException e) {
             Log.e(TAG, "XML parser error when parsing XML", e);
         } catch (IOException e) {

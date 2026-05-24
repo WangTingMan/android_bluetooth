@@ -25,14 +25,13 @@
 #ifndef SDP_DEFS_H
 #define SDP_DEFS_H
 
-#include <base/strings/stringprintf.h>
-
+#include <format>
 #include <string>
 
 #include "macros.h"
 
 /* Define the service attribute IDs.
-*/
+ */
 #define ATTR_ID_SERVICE_RECORD_HDL 0x0000
 #define ATTR_ID_SERVICE_CLASS_ID_LIST 0x0001
 #define ATTR_ID_SERVICE_RECORD_STATE 0x0002
@@ -51,7 +50,7 @@
 #define ATTR_ID_PROVIDER_NAME (LANGUAGE_BASE_ID + 0x0002)
 
 /* Device Identification (DI)
-*/
+ */
 #define ATTR_ID_SPECIFICATION_ID 0x0200
 #define ATTR_ID_VENDOR_ID 0x0201
 #define ATTR_ID_PRODUCT_ID 0x0202
@@ -69,7 +68,7 @@
 #define ATTR_ID_FAX_CLASS_1_SUPPORT 0x0302
 #define ATTR_ID_REMOTE_AUDIO_VOLUME_CONTROL 0x0302
 #define ATTR_ID_SUPPORTED_FORMATS_LIST 0x0303
-#define ATTR_ID_SUPPORTED_FEATURES 0x0311         /* HFP, BIP */
+#define ATTR_ID_SUPPORTED_FEATURES 0x0311      /* HFP, BIP */
 #define ATTR_ID_SUPPORTED_REPOSITORIES 0x0314  /* Phone book access Profile */
 #define ATTR_ID_MAS_INSTANCE_ID 0x0315         /* MAP profile */
 #define ATTR_ID_SUPPORTED_MSG_TYPE 0x0316      /* MAP profile */
@@ -122,12 +121,12 @@ inline std::string sdp_attr_id_text(const unsigned& id) {
     CASE_RETURN_TEXT(ATTR_ID_SERVICE_DESCRIPTION);
     CASE_RETURN_TEXT(ATTR_ID_PROVIDER_NAME);
     default:
-      return base::StringPrintf("SDP_ATTR_ID:[%u]", id);
+      return std::format("SDP_ATTR_ID:[{}]", id);
   }
 }
 
 /* Define all the 'Descriptor Type' values.
-*/
+ */
 enum : unsigned {
   NIL_DESC_TYPE = 0,
   UINT_DESC_TYPE = 1,
@@ -152,12 +151,12 @@ inline std::string sdp_attr_type_text(const unsigned& type) {
     CASE_RETURN_TEXT(DATA_ELE_ALT_DESC_TYPE);
     CASE_RETURN_TEXT(URL_DESC_TYPE);
     default:
-      return base::StringPrintf("UNKNOWN[%u]", type);
+      return std::format("UNKNOWN[{}]", type);
   }
 }
 
 /* Define all the "Descriptor Size" values.
-*/
+ */
 enum : unsigned {
   SIZE_ONE_BYTE = 0,
   SIZE_TWO_BYTES = 1,
@@ -180,7 +179,7 @@ inline std::string sdp_attr_size_text(const unsigned& size) {
     CASE_RETURN_TEXT(SIZE_IN_NEXT_WORD);
     CASE_RETURN_TEXT(SIZE_IN_NEXT_LONG);
     default:
-      return base::StringPrintf("UNKNOWN[%u]", size);
+      return std::format("UNKNOWN[{}]", size);
   }
 }
 

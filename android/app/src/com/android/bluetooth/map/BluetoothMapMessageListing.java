@@ -12,6 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.map;
 
 import android.bluetooth.BluetoothProfile;
@@ -35,12 +36,14 @@ import java.util.List;
 
 // Next tag value for ContentProfileErrorReportUtils.report(): 3
 public class BluetoothMapMessageListing {
-    private boolean mHasUnread = false;
-    private static final String TAG = "BluetoothMapMessageListing";
+    private static final String TAG = BluetoothMapMessageListing.class.getSimpleName();
 
+    private final BluetoothMapService mMapService;
+    private boolean mHasUnread = false;
     private List<BluetoothMapMessageListingElement> mList;
 
-    public BluetoothMapMessageListing() {
+    public BluetoothMapMessageListing(BluetoothMapService mapService) {
+        mMapService = mapService;
         mList = new ArrayList<BluetoothMapMessageListingElement>();
     }
 
@@ -100,14 +103,14 @@ public class BluetoothMapMessageListing {
         } else {
             isBenzCarkit =
                     DeviceWorkArounds.addressStartsWith(
-                            BluetoothMapService.getRemoteDevice().getAddress(),
+                            mMapService.getRemoteDevice().getAddress(),
                             DeviceWorkArounds.MERCEDES_BENZ_CARKIT);
         }
         try {
             XmlSerializer xmlMsgElement = Xml.newSerializer();
             xmlMsgElement.setOutput(sw);
             if (isBenzCarkit) {
-                Log.d(TAG, "java_interop: Remote is Mercedes Benz, " + "using Xml Workaround.");
+                Log.d(TAG, "java_interop: Remote is Mercedes Benz, using Xml Workaround.");
                 xmlMsgElement.text("\n");
             } else {
                 xmlMsgElement.startDocument("UTF-8", true);
@@ -147,7 +150,7 @@ public class BluetoothMapMessageListing {
         /* Fix IOT issue to replace '&amp;' by '&', &lt; by < and '&gt; by '>' in MessageListing */
         if (!Utils.isInstrumentationTestMode()
                 && DeviceWorkArounds.addressStartsWith(
-                        BluetoothMapService.getRemoteDevice().getAddress(),
+                        mMapService.getRemoteDevice().getAddress(),
                         DeviceWorkArounds.BREZZA_ZDI_CARKIT)) {
             return sw.toString()
                     .replaceAll("&amp;", "&")

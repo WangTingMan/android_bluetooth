@@ -1,9 +1,12 @@
 package: "com.android.bluetooth.flags"
-container: "com.android.btservices"
+container: "com.android.bt"
 
 flag {
-    name: "vcp_mute_unmute"
+    name: "vcp_handle_group_id_internally"
     namespace: "bluetooth"
-    description: "Allow muting/unmuting the remote device"
-    bug: "318775507"
+    description: "Handle group id internally"
+    bug: "409519938"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
 }

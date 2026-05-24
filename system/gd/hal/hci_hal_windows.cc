@@ -1,7 +1,7 @@
 
 #include "hal/hci_hal.h"
 #include "hal/snoop_logger.h"
-#include "metrics/counter_metrics.h"
+#include "hci_hal_windows.h"
 
 #include <future>
 #include <functional>
@@ -40,9 +40,13 @@ extern bool hci_transmit
 namespace bluetooth {
 namespace hal {
 
-class HciHalHostWindows : public HciHal {
- public:
-  void registerIncomingPacketCallback(HciHalCallbacks* callback) override {
+  HciHalImpl::HciHalImpl( os::Handler*, LinkClocker&, SnoopLogger* a_btsnoop_logger_ )
+  {
+    btsnoop_logger_ = a_btsnoop_logger_;
+    Start();
+  }
+
+  void HciHalImpl::registerIncomingPacketCallback(HciHalCallbacks* callback) {
     std::lock_guard<std::mutex> lock(api_mutex_);
     log::info("{} before", __func__);
     {
@@ -54,7 +58,7 @@ class HciHalHostWindows : public HciHal {
     log::info("{} after", __func__);
   }
 
-  void unregisterIncomingPacketCallback() override {
+  void HciHalImpl::unregisterIncomingPacketCallback() {
     std::lock_guard<std::mutex> lock(api_mutex_);
     log::info( "{} before", __func__ );
     {
@@ -64,86 +68,56 @@ class HciHalHostWindows : public HciHal {
     log::info("{} after", __func__);
   }
 
-  void sendHciCommand(HciPacket command) override {
+  void HciHalImpl::sendHciCommand(HciPacket command) {
     std::lock_guard<std::mutex> lock(api_mutex_);
     std::vector<uint8_t> packet = std::move(command);
     btsnoop_logger_->Capture(packet, SnoopLogger::Direction::OUTGOING, SnoopLogger::PacketType::CMD);
     send_data_to_controller(kH4Command,std::move(packet));
   }
 
-  void sendAclData(HciPacket data) override {
+  void HciHalImpl::sendAclData(HciPacket data) {
     std::lock_guard<std::mutex> lock(api_mutex_);
     std::vector<uint8_t> packet = std::move(data);
     btsnoop_logger_->Capture(packet, SnoopLogger::Direction::OUTGOING, SnoopLogger::PacketType::ACL);
     send_data_to_controller(kH4Acl,std::move(packet));
   }
 
-  void sendScoData(HciPacket data) override {
+  void HciHalImpl::sendScoData(HciPacket data) {
     std::lock_guard<std::mutex> lock(api_mutex_);
     std::vector<uint8_t> packet = std::move(data);
     btsnoop_logger_->Capture(packet, SnoopLogger::Direction::OUTGOING, SnoopLogger::PacketType::SCO);
     send_data_to_controller(kH4Sco,std::move(packet));
   }
 
-  void sendIsoData(HciPacket data) override {
+  void HciHalImpl::sendIsoData(HciPacket data) {
     std::lock_guard<std::mutex> lock(api_mutex_);
     std::vector<uint8_t> packet = std::move(data);
     btsnoop_logger_->Capture(packet, SnoopLogger::Direction::OUTGOING, SnoopLogger::PacketType::ISO);
     send_data_to_controller(kH4Iso,std::move(packet));
   }
 
- protected:
-
-  void ListDependencies(ModuleList* list) const {
-    list->add<metrics::CounterMetrics>();
-    list->add<SnoopLogger>();
-  }
-
-  void Start() override {
-    std::lock_guard<std::mutex> lock(api_mutex_);
-    btsnoop_logger_ = GetDependency<SnoopLogger>();
-
+  void HciHalImpl::Start()
+  {
     std::promise<void> init_promise;
     std::future<void> init_future = init_promise.get_future();
     hci_initialize(
-        std::move(init_promise),
-        std::bind(
-            &HciHalHostWindows::handle_data_from_chip,
-            this,
-            std::placeholders::_1,
-            std::placeholders::_2,
-            std::placeholders::_3));
+      std::move( init_promise ),
+      std::bind(
+        &HciHalImpl::handle_data_from_chip,
+        this,
+        std::placeholders::_1,
+        std::placeholders::_2,
+        std::placeholders::_3 ) );
 
     init_future.wait();
-    log::info("HAL opened successfully");
+    log::info( "HAL opened successfully" );
   }
 
-  void Stop() override {
-    std::lock_guard<std::mutex> lock(api_mutex_);
-    log::info("HAL is closing");
-    {
-      std::lock_guard<std::mutex> incoming_packet_callback_lock(incoming_packet_callback_mutex_);
-      incoming_packet_callback_ = nullptr;
-    }
-    log::info("HAL is closed");
-  }
-
-  std::string ToString() const override {
-    return std::string("HciHalHost");
-  }
-
- private:
-  // Held when APIs are called, NOT to be held during callbacks
-  std::mutex api_mutex_;
-  HciHalCallbacks* incoming_packet_callback_ = nullptr;
-  std::mutex incoming_packet_callback_mutex_;
-  SnoopLogger* btsnoop_logger_ = nullptr;
-
-  void send_data_to_controller(char type, std::vector<uint8_t> pkt) {
+  void HciHalImpl::send_data_to_controller(char type, std::vector<uint8_t> pkt) {
      hci_transmit(type, reinterpret_cast<char*>( pkt.data() ),pkt.size());
   }
 
-  void handle_data_from_chip(char type, char* buffer, uint16_t size)
+  void HciHalImpl::handle_data_from_chip(char type, char* buffer, uint16_t size)
   {
     if (incoming_packet_callback_ == nullptr) {
       log::info("Dropping an event after processing");
@@ -178,15 +152,6 @@ class HciHalHostWindows : public HciHal {
     }
 
   }
-
-};
-
-const ModuleFactory HciHal::Factory = ModuleFactory(
-    []()
-    {
-        return new HciHalHostWindows();
-    });
-
 }
 }  // namespace bluetooth
 

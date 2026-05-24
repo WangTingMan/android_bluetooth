@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,18 @@
 
 #define LOG_TAG "BluetoothKeystoreServiceJni"
 
+#include <bluetooth/log.h>
+#include <jni.h>
+
+#include <cstring>
+#include <mutex>
+#include <shared_mutex>
+#include <string>
+
 #include "com_android_bluetooth.h"
+#include "hardware/bluetooth.h"
 #include "hardware/bt_keystore.h"
 
-#include <string.h>
-#include <shared_mutex>
-
-using bluetooth::bluetooth_keystore::BluetoothKeystoreCallbacks;
 using bluetooth::bluetooth_keystore::BluetoothKeystoreInterface;
 
 namespace android {
@@ -37,24 +42,23 @@ static std::shared_timed_mutex callbacks_mutex;
 
 class BluetoothKeystoreCallbacksImpl
     : public bluetooth::bluetooth_keystore::BluetoothKeystoreCallbacks {
- public:
+public:
   ~BluetoothKeystoreCallbacksImpl() = default;
 
-  void set_encrypt_key_or_remove_key(
-      const std::string prefixString,
-      const std::string decryptedString) override {
+  void set_encrypt_key_or_remove_key(const std::string prefixString,
+                                     const std::string decryptedString) override {
     log::info("");
 
     std::shared_lock<std::shared_timed_mutex> lock(callbacks_mutex);
     CallbackEnv sCallbackEnv(__func__);
-    if (!sCallbackEnv.valid() || mCallbacksObj == nullptr) return;
+    if (!sCallbackEnv.valid() || mCallbacksObj == nullptr) {
+      return;
+    }
 
     jstring j_prefixString = sCallbackEnv->NewStringUTF(prefixString.c_str());
-    jstring j_decryptedString =
-        sCallbackEnv->NewStringUTF(decryptedString.c_str());
+    jstring j_decryptedString = sCallbackEnv->NewStringUTF(decryptedString.c_str());
 
-    sCallbackEnv->CallVoidMethod(mCallbacksObj,
-                                 method_setEncryptKeyOrRemoveKeyCallback,
+    sCallbackEnv->CallVoidMethod(mCallbacksObj, method_setEncryptKeyOrRemoveKeyCallback,
                                  j_prefixString, j_decryptedString);
   }
 
@@ -63,12 +67,14 @@ class BluetoothKeystoreCallbacksImpl
 
     std::shared_lock<std::shared_timed_mutex> lock(callbacks_mutex);
     CallbackEnv sCallbackEnv(__func__);
-    if (!sCallbackEnv.valid() || mCallbacksObj == nullptr) return "";
+    if (!sCallbackEnv.valid() || mCallbacksObj == nullptr) {
+      return "";
+    }
 
     jstring j_prefixString = sCallbackEnv->NewStringUTF(prefixString.c_str());
 
     jstring j_decrypt_str = (jstring)sCallbackEnv->CallObjectMethod(
-        mCallbacksObj, method_getKeyCallback, j_prefixString);
+            mCallbacksObj, method_getKeyCallback, j_prefixString);
 
     if (j_decrypt_str == nullptr) {
       log::error("Got a null decrypt_str");
@@ -112,7 +118,7 @@ static void initNative(JNIEnv* env, jobject object) {
   }
 
   sBluetoothKeystoreInterface =
-      (BluetoothKeystoreInterface*)btInf->get_profile_interface(BT_KEYSTORE_ID);
+          (BluetoothKeystoreInterface*)btInf->get_profile_interface(BT_KEYSTORE_ID);
   if (sBluetoothKeystoreInterface == nullptr) {
     log::error("Failed to get BluetoothKeystore Interface");
     return;
@@ -143,24 +149,21 @@ static void cleanupNative(JNIEnv* env, jobject /* object */) {
 
 int register_com_android_bluetooth_btservice_BluetoothKeystore(JNIEnv* env) {
   const JNINativeMethod methods[] = {
-      {"initNative", "()V", (void*)initNative},
-      {"cleanupNative", "()V", (void*)cleanupNative},
+          {"initNative", "()V", (void*)initNative},
+          {"cleanupNative", "()V", (void*)cleanupNative},
   };
-  const int result = REGISTER_NATIVE_METHODS(
-      env,
-      "com/android/bluetooth/btservice/bluetoothkeystore/"
-      "BluetoothKeystoreNativeInterface",
-      methods);
+  const int result = REGISTER_NATIVE_METHODS(env,
+                                             "com/android/bluetooth/btservice/bluetoothkeystore/"
+                                             "BluetoothKeystoreNativeInterface",
+                                             methods);
   if (result != 0) {
     return result;
   }
 
   const JNIJavaMethod javaMethods[] = {
-      {"setEncryptKeyOrRemoveKeyCallback",
-       "(Ljava/lang/String;Ljava/lang/String;)V",
-       &method_setEncryptKeyOrRemoveKeyCallback},
-      {"getKeyCallback", "(Ljava/lang/String;)Ljava/lang/String;",
-       &method_getKeyCallback},
+          {"setEncryptKeyOrRemoveKeyCallback", "(Ljava/lang/String;Ljava/lang/String;)V",
+           &method_setEncryptKeyOrRemoveKeyCallback},
+          {"getKeyCallback", "(Ljava/lang/String;)Ljava/lang/String;", &method_getKeyCallback},
   };
   GET_JAVA_METHODS(env,
                    "com/android/bluetooth/btservice/bluetoothkeystore/"

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ namespace bluetooth {
 namespace hal {
 
 class TestHciHal : public hal::HciHal {
- public:
+public:
   TestHciHal() : hal::HciHal() {}
 
   ~TestHciHal() {
@@ -44,9 +44,7 @@ class TestHciHal : public hal::HciHal {
     callbacks = callback;
   }
 
-  void unregisterIncomingPacketCallback() override {
-    callbacks = nullptr;
-  }
+  void unregisterIncomingPacketCallback() override { callbacks = nullptr; }
 
   void sendHciCommand(hal::HciPacket command) override;
 
@@ -61,32 +59,20 @@ class TestHciHal : public hal::HciHal {
   packet::PacketView<packet::kLittleEndian> GetPacketView(hal::HciPacket data);
 
   std::optional<hci::CommandView> GetSentCommand(
-      std::chrono::milliseconds timeout = std::chrono::seconds(1));
+          std::chrono::milliseconds timeout = std::chrono::seconds(1));
 
   std::optional<hci::AclView> GetSentAcl(
-      std::chrono::milliseconds timeout = std::chrono::seconds(1));
+          std::chrono::milliseconds timeout = std::chrono::seconds(1));
 
   std::optional<hci::ScoView> GetSentSco(
-      std::chrono::milliseconds timeout = std::chrono::seconds(1));
+          std::chrono::milliseconds timeout = std::chrono::seconds(1));
 
   std::optional<hci::IsoView> GetSentIso(
-      std::chrono::milliseconds timeout = std::chrono::seconds(1));
+          std::chrono::milliseconds timeout = std::chrono::seconds(1));
 
   void InjectEvent(std::unique_ptr<packet::BasePacketBuilder> event);
 
-  void Start() {}
-
-  void Stop() {}
-
-  void ListDependencies(ModuleList* /* list */) const {}
-
-  std::string ToString() const override {
-    return std::string("TestHciHal");
-  }
-
-  static const ModuleFactory Factory;
-
- private:
+private:
   common::BlockingQueue<hal::HciPacket> outgoing_commands_;
   common::BlockingQueue<hal::HciPacket> outgoing_acl_;
   common::BlockingQueue<hal::HciPacket> outgoing_sco_;

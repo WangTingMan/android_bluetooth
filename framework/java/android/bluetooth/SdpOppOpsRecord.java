@@ -12,8 +12,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package android.bluetooth;
 
+import android.annotation.RequiresNoPermission;
 import android.os.Parcel;
 import android.os.Parcelable;
 
@@ -40,22 +42,27 @@ public class SdpOppOpsRecord implements Parcelable {
         mFormatsList = formatsList;
     }
 
+    @RequiresNoPermission
     public String getServiceName() {
         return mServiceName;
     }
 
+    @RequiresNoPermission
     public int getRfcommChannel() {
         return mRfcommChannel;
     }
 
+    @RequiresNoPermission
     public int getL2capPsm() {
         return mL2capPsm;
     }
 
+    @RequiresNoPermission
     public int getProfileVersion() {
         return mProfileVersion;
     }
 
+    @RequiresNoPermission
     public byte[] getFormatsList() {
         return mFormatsList;
     }
@@ -86,7 +93,7 @@ public class SdpOppOpsRecord implements Parcelable {
         dest.writeInt(mRfcommChannel);
         dest.writeInt(mL2capPsm);
         dest.writeInt(mProfileVersion);
-        dest.writeString(mServiceName);
+        BluetoothUtils.writeStringToParcel(dest, mServiceName);
         if (mFormatsList != null && mFormatsList.length > 0) {
             dest.writeInt(mFormatsList.length);
             dest.writeByteArray(mFormatsList);

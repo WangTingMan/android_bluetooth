@@ -10,6 +10,9 @@ package {
 cc_library_static {
     name: "libbt-sbc-encoder",
     defaults: ["fluoride_defaults"],
+    cflags: [
+        "-Wno-missing-prototypes",
+    ],
     srcs: [
         "srce/sbc_analysis.c",
         "srce/sbc_dct.c",
@@ -29,8 +32,6 @@ cc_library_static {
         "packages/modules/Bluetooth/system/stack/include",
     ],
     host_supported: true,
-    apex_available: [
-        "com.android.btservices",
-    ],
-    min_sdk_version: "Tiramisu",
+    apex_available: ["com.android.bt"],
+    min_sdk_version: "36",
 }

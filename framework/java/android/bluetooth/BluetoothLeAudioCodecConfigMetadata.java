@@ -20,25 +20,31 @@ import static android.bluetooth.BluetoothLeAudioCodecConfig.FRAME_DURATION_10000
 import static android.bluetooth.BluetoothLeAudioCodecConfig.FRAME_DURATION_7500;
 import static android.bluetooth.BluetoothLeAudioCodecConfig.FRAME_DURATION_NONE;
 import static android.bluetooth.BluetoothLeAudioCodecConfig.FrameDuration;
+import static android.bluetooth.BluetoothLeAudioCodecConfig.SAMPLE_RATE_11025;
 import static android.bluetooth.BluetoothLeAudioCodecConfig.SAMPLE_RATE_16000;
+import static android.bluetooth.BluetoothLeAudioCodecConfig.SAMPLE_RATE_176400;
+import static android.bluetooth.BluetoothLeAudioCodecConfig.SAMPLE_RATE_192000;
+import static android.bluetooth.BluetoothLeAudioCodecConfig.SAMPLE_RATE_22050;
 import static android.bluetooth.BluetoothLeAudioCodecConfig.SAMPLE_RATE_24000;
 import static android.bluetooth.BluetoothLeAudioCodecConfig.SAMPLE_RATE_32000;
+import static android.bluetooth.BluetoothLeAudioCodecConfig.SAMPLE_RATE_384000;
 import static android.bluetooth.BluetoothLeAudioCodecConfig.SAMPLE_RATE_44100;
 import static android.bluetooth.BluetoothLeAudioCodecConfig.SAMPLE_RATE_48000;
 import static android.bluetooth.BluetoothLeAudioCodecConfig.SAMPLE_RATE_8000;
+import static android.bluetooth.BluetoothLeAudioCodecConfig.SAMPLE_RATE_88200;
+import static android.bluetooth.BluetoothLeAudioCodecConfig.SAMPLE_RATE_96000;
 import static android.bluetooth.BluetoothLeAudioCodecConfig.SAMPLE_RATE_NONE;
 import static android.bluetooth.BluetoothLeAudioCodecConfig.SampleRate;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.annotation.RequiresNoPermission;
 import android.annotation.SystemApi;
 import android.bluetooth.BluetoothLeAudioCodecConfig.FrameDuration;
 import android.bluetooth.BluetoothLeAudioCodecConfig.SampleRate;
 import android.bluetooth.BluetoothUtils.TypeValueEntry;
 import android.os.Parcel;
 import android.os.Parcelable;
-
-import com.android.bluetooth.flags.Flags;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -143,6 +149,7 @@ public final class BluetoothLeAudioCodecConfigMetadata implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public long getAudioLocation() {
         return mAudioLocation;
     }
@@ -158,6 +165,7 @@ public final class BluetoothLeAudioCodecConfigMetadata implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public @SampleRate int getSampleRate() {
         return mSampleRate;
     }
@@ -173,6 +181,7 @@ public final class BluetoothLeAudioCodecConfigMetadata implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public @FrameDuration int getFrameDuration() {
         return mFrameDuration;
     }
@@ -185,6 +194,7 @@ public final class BluetoothLeAudioCodecConfigMetadata implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public int getOctetsPerFrame() {
         return mOctetsPerFrame;
     }
@@ -200,6 +210,7 @@ public final class BluetoothLeAudioCodecConfigMetadata implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public @NonNull byte[] getRawMetadata() {
         return mRawMetadata;
     }
@@ -222,12 +233,7 @@ public final class BluetoothLeAudioCodecConfigMetadata implements Parcelable {
     @Override
     public void writeToParcel(Parcel out, int flags) {
         out.writeLong(mAudioLocation);
-        if (mRawMetadata != null) {
-            out.writeInt(mRawMetadata.length);
-            out.writeByteArray(mRawMetadata);
-        } else {
-            out.writeInt(-1);
-        }
+        out.writeByteArray(mRawMetadata);
         out.writeInt(mSampleRate);
         out.writeInt(mFrameDuration);
         out.writeInt(mOctetsPerFrame);
@@ -245,12 +251,8 @@ public final class BluetoothLeAudioCodecConfigMetadata implements Parcelable {
                 public @NonNull BluetoothLeAudioCodecConfigMetadata createFromParcel(
                         @NonNull Parcel in) {
                     long audioLocation = in.readLong();
-                    int rawMetadataLen = in.readInt();
-                    byte[] rawMetadata;
-                    if (rawMetadataLen != -1) {
-                        rawMetadata = new byte[rawMetadataLen];
-                        in.readByteArray(rawMetadata);
-                    } else {
+                    byte[] rawMetadata = in.createByteArray();
+                    if (rawMetadata == null) {
                         rawMetadata = new byte[0];
                     }
                     int sampleRate = in.readInt();
@@ -281,6 +283,7 @@ public final class BluetoothLeAudioCodecConfigMetadata implements Parcelable {
      */
     @SystemApi
     @NonNull
+    @RequiresNoPermission
     public static BluetoothLeAudioCodecConfigMetadata fromRawBytes(@NonNull byte[] rawBytes) {
         if (rawBytes == null) {
             throw new IllegalArgumentException("Raw bytes cannot be null");
@@ -370,8 +373,8 @@ public final class BluetoothLeAudioCodecConfigMetadata implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setAudioLocation(long audioLocation) {
+        @RequiresNoPermission
+        public @NonNull Builder setAudioLocation(long audioLocation) {
             mAudioLocation = audioLocation;
             return this;
         }
@@ -388,29 +391,23 @@ public final class BluetoothLeAudioCodecConfigMetadata implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setSampleRate(@SampleRate int sampleRate) {
+        @RequiresNoPermission
+        public @NonNull Builder setSampleRate(@SampleRate int sampleRate) {
             if (sampleRate != SAMPLE_RATE_NONE
                     && sampleRate != SAMPLE_RATE_8000
+                    && sampleRate != SAMPLE_RATE_11025
                     && sampleRate != SAMPLE_RATE_16000
+                    && sampleRate != SAMPLE_RATE_22050
                     && sampleRate != SAMPLE_RATE_24000
                     && sampleRate != SAMPLE_RATE_32000
                     && sampleRate != SAMPLE_RATE_44100
-                    && sampleRate != SAMPLE_RATE_48000) {
-
-                if (Flags.leaudioAddSamplingFrequencies()) {
-                    if (sampleRate != BluetoothLeAudioCodecConfig.SAMPLE_RATE_11025
-                            && sampleRate != BluetoothLeAudioCodecConfig.SAMPLE_RATE_22050
-                            && sampleRate != BluetoothLeAudioCodecConfig.SAMPLE_RATE_88200
-                            && sampleRate != BluetoothLeAudioCodecConfig.SAMPLE_RATE_96000
-                            && sampleRate != BluetoothLeAudioCodecConfig.SAMPLE_RATE_176400
-                            && sampleRate != BluetoothLeAudioCodecConfig.SAMPLE_RATE_192000
-                            && sampleRate != BluetoothLeAudioCodecConfig.SAMPLE_RATE_384000) {
-                        throw new IllegalArgumentException("Invalid sample rate " + sampleRate);
-                    }
-                } else {
-                    throw new IllegalArgumentException("Invalid sample rate " + sampleRate);
-                }
+                    && sampleRate != SAMPLE_RATE_48000
+                    && sampleRate != SAMPLE_RATE_88200
+                    && sampleRate != SAMPLE_RATE_96000
+                    && sampleRate != SAMPLE_RATE_176400
+                    && sampleRate != SAMPLE_RATE_192000
+                    && sampleRate != SAMPLE_RATE_384000) {
+                throw new IllegalArgumentException("Invalid sample rate " + sampleRate);
             }
             mSampleRate = sampleRate;
             return this;
@@ -428,8 +425,8 @@ public final class BluetoothLeAudioCodecConfigMetadata implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setFrameDuration(@FrameDuration int frameDuration) {
+        @RequiresNoPermission
+        public @NonNull Builder setFrameDuration(@FrameDuration int frameDuration) {
             if (frameDuration != FRAME_DURATION_NONE
                     && frameDuration != FRAME_DURATION_7500
                     && frameDuration != FRAME_DURATION_10000) {
@@ -449,8 +446,8 @@ public final class BluetoothLeAudioCodecConfigMetadata implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setOctetsPerFrame(int octetsPerFrame) {
+        @RequiresNoPermission
+        public @NonNull Builder setOctetsPerFrame(int octetsPerFrame) {
             if (octetsPerFrame < 0) {
                 throw new IllegalArgumentException("Invalid octetsPerFrame " + octetsPerFrame);
             }
@@ -466,6 +463,7 @@ public final class BluetoothLeAudioCodecConfigMetadata implements Parcelable {
          * @hide
          */
         @SystemApi
+        @RequiresNoPermission
         public @NonNull BluetoothLeAudioCodecConfigMetadata build() {
             List<TypeValueEntry> entries = new ArrayList<>();
             if (mRawMetadata != null) {
@@ -525,98 +523,56 @@ public final class BluetoothLeAudioCodecConfigMetadata implements Parcelable {
     }
 
     private static int convertToSampleRateBitset(int samplingFrequencyValue) {
-        switch (samplingFrequencyValue) {
-            case CONFIG_SAMPLING_FREQUENCY_8000:
-                return SAMPLE_RATE_8000;
-            case CONFIG_SAMPLING_FREQUENCY_16000:
-                return SAMPLE_RATE_16000;
-            case CONFIG_SAMPLING_FREQUENCY_24000:
-                return SAMPLE_RATE_24000;
-            case CONFIG_SAMPLING_FREQUENCY_32000:
-                return SAMPLE_RATE_32000;
-            case CONFIG_SAMPLING_FREQUENCY_44100:
-                return SAMPLE_RATE_44100;
-            case CONFIG_SAMPLING_FREQUENCY_48000:
-                return SAMPLE_RATE_48000;
-            default:
-                if (Flags.leaudioAddSamplingFrequencies()) {
-                    switch (samplingFrequencyValue) {
-                        case CONFIG_SAMPLING_FREQUENCY_11025:
-                            return BluetoothLeAudioCodecConfig.SAMPLE_RATE_11025;
-                        case CONFIG_SAMPLING_FREQUENCY_22050:
-                            return BluetoothLeAudioCodecConfig.SAMPLE_RATE_22050;
-                        case CONFIG_SAMPLING_FREQUENCY_88200:
-                            return BluetoothLeAudioCodecConfig.SAMPLE_RATE_88200;
-                        case CONFIG_SAMPLING_FREQUENCY_96000:
-                            return BluetoothLeAudioCodecConfig.SAMPLE_RATE_96000;
-                        case CONFIG_SAMPLING_FREQUENCY_176400:
-                            return BluetoothLeAudioCodecConfig.SAMPLE_RATE_176400;
-                        case CONFIG_SAMPLING_FREQUENCY_192000:
-                            return BluetoothLeAudioCodecConfig.SAMPLE_RATE_192000;
-                        case CONFIG_SAMPLING_FREQUENCY_384000:
-                            return BluetoothLeAudioCodecConfig.SAMPLE_RATE_384000;
-                    }
-                }
-                return SAMPLE_RATE_NONE;
-        }
+        return switch (samplingFrequencyValue) {
+            case CONFIG_SAMPLING_FREQUENCY_8000 -> SAMPLE_RATE_8000;
+            case CONFIG_SAMPLING_FREQUENCY_11025 -> SAMPLE_RATE_11025;
+            case CONFIG_SAMPLING_FREQUENCY_16000 -> SAMPLE_RATE_16000;
+            case CONFIG_SAMPLING_FREQUENCY_22050 -> SAMPLE_RATE_22050;
+            case CONFIG_SAMPLING_FREQUENCY_24000 -> SAMPLE_RATE_24000;
+            case CONFIG_SAMPLING_FREQUENCY_32000 -> SAMPLE_RATE_32000;
+            case CONFIG_SAMPLING_FREQUENCY_44100 -> SAMPLE_RATE_44100;
+            case CONFIG_SAMPLING_FREQUENCY_48000 -> SAMPLE_RATE_48000;
+            case CONFIG_SAMPLING_FREQUENCY_88200 -> SAMPLE_RATE_88200;
+            case CONFIG_SAMPLING_FREQUENCY_96000 -> SAMPLE_RATE_96000;
+            case CONFIG_SAMPLING_FREQUENCY_176400 -> SAMPLE_RATE_176400;
+            case CONFIG_SAMPLING_FREQUENCY_192000 -> SAMPLE_RATE_192000;
+            case CONFIG_SAMPLING_FREQUENCY_384000 -> SAMPLE_RATE_384000;
+            default -> SAMPLE_RATE_NONE;
+        };
     }
 
     private static int convertToSamplingFrequencyValue(int sampleRateBitSet) {
-        switch (sampleRateBitSet) {
-            case SAMPLE_RATE_8000:
-                return CONFIG_SAMPLING_FREQUENCY_8000;
-            case SAMPLE_RATE_16000:
-                return CONFIG_SAMPLING_FREQUENCY_16000;
-            case SAMPLE_RATE_24000:
-                return CONFIG_SAMPLING_FREQUENCY_24000;
-            case SAMPLE_RATE_32000:
-                return CONFIG_SAMPLING_FREQUENCY_32000;
-            case SAMPLE_RATE_44100:
-                return CONFIG_SAMPLING_FREQUENCY_44100;
-            case SAMPLE_RATE_48000:
-                return CONFIG_SAMPLING_FREQUENCY_48000;
-            default:
-                if (Flags.leaudioAddSamplingFrequencies()) {
-                    switch (sampleRateBitSet) {
-                        case BluetoothLeAudioCodecConfig.SAMPLE_RATE_11025:
-                            return CONFIG_SAMPLING_FREQUENCY_11025;
-                        case BluetoothLeAudioCodecConfig.SAMPLE_RATE_22050:
-                            return CONFIG_SAMPLING_FREQUENCY_22050;
-                        case BluetoothLeAudioCodecConfig.SAMPLE_RATE_88200:
-                            return CONFIG_SAMPLING_FREQUENCY_88200;
-                        case BluetoothLeAudioCodecConfig.SAMPLE_RATE_96000:
-                            return CONFIG_SAMPLING_FREQUENCY_96000;
-                        case BluetoothLeAudioCodecConfig.SAMPLE_RATE_176400:
-                            return CONFIG_SAMPLING_FREQUENCY_176400;
-                        case BluetoothLeAudioCodecConfig.SAMPLE_RATE_192000:
-                            return CONFIG_SAMPLING_FREQUENCY_192000;
-                        case BluetoothLeAudioCodecConfig.SAMPLE_RATE_384000:
-                            return CONFIG_SAMPLING_FREQUENCY_384000;
-                    }
-                }
-                return CONFIG_SAMPLING_FREQUENCY_UNKNOWN;
-        }
+        return switch (sampleRateBitSet) {
+            case SAMPLE_RATE_8000 -> CONFIG_SAMPLING_FREQUENCY_8000;
+            case SAMPLE_RATE_11025 -> CONFIG_SAMPLING_FREQUENCY_11025;
+            case SAMPLE_RATE_16000 -> CONFIG_SAMPLING_FREQUENCY_16000;
+            case SAMPLE_RATE_22050 -> CONFIG_SAMPLING_FREQUENCY_22050;
+            case SAMPLE_RATE_24000 -> CONFIG_SAMPLING_FREQUENCY_24000;
+            case SAMPLE_RATE_32000 -> CONFIG_SAMPLING_FREQUENCY_32000;
+            case SAMPLE_RATE_44100 -> CONFIG_SAMPLING_FREQUENCY_44100;
+            case SAMPLE_RATE_48000 -> CONFIG_SAMPLING_FREQUENCY_48000;
+            case SAMPLE_RATE_88200 -> CONFIG_SAMPLING_FREQUENCY_88200;
+            case SAMPLE_RATE_96000 -> CONFIG_SAMPLING_FREQUENCY_96000;
+            case SAMPLE_RATE_176400 -> CONFIG_SAMPLING_FREQUENCY_176400;
+            case SAMPLE_RATE_192000 -> CONFIG_SAMPLING_FREQUENCY_192000;
+            case SAMPLE_RATE_384000 -> CONFIG_SAMPLING_FREQUENCY_384000;
+            default -> CONFIG_SAMPLING_FREQUENCY_UNKNOWN;
+        };
     }
 
     private static int convertToFrameDurationBitset(int frameDurationValue) {
-        switch (frameDurationValue) {
-            case CONFIG_FRAME_DURATION_7500:
-                return FRAME_DURATION_7500;
-            case CONFIG_FRAME_DURATION_10000:
-                return FRAME_DURATION_10000;
-            default:
-                return FRAME_DURATION_NONE;
-        }
+        return switch (frameDurationValue) {
+            case CONFIG_FRAME_DURATION_7500 -> FRAME_DURATION_7500;
+            case CONFIG_FRAME_DURATION_10000 -> FRAME_DURATION_10000;
+            default -> FRAME_DURATION_NONE;
+        };
     }
 
     private static int convertToFrameDurationValue(int frameDurationBitset) {
-        switch (frameDurationBitset) {
-            case FRAME_DURATION_7500:
-                return CONFIG_FRAME_DURATION_7500;
-            case FRAME_DURATION_10000:
-                return CONFIG_FRAME_DURATION_10000;
-            default:
-                return CONFIG_FRAME_DURATION_UNKNOWN;
-        }
+        return switch (frameDurationBitset) {
+            case FRAME_DURATION_7500 -> CONFIG_FRAME_DURATION_7500;
+            case FRAME_DURATION_10000 -> CONFIG_FRAME_DURATION_10000;
+            default -> CONFIG_FRAME_DURATION_UNKNOWN;
+        };
     }
 }

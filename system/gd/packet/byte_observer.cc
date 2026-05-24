@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,16 +19,13 @@
 namespace bluetooth {
 namespace packet {
 
-ByteObserver::ByteObserver(const std::function<void(uint8_t)>& on_byte, const std::function<uint64_t()>& get_value)
+ByteObserver::ByteObserver(const std::function<void(uint8_t)>& on_byte,
+                           const std::function<uint64_t()>& get_value)
     : on_byte_(on_byte), get_value_(get_value) {}
 
-void ByteObserver::OnByte(uint8_t byte) {
-  on_byte_(byte);
-}
+void ByteObserver::OnByte(uint8_t byte) { on_byte_(byte); }
 
-uint64_t ByteObserver::GetValue() {
-  return get_value_();
-}
+uint64_t ByteObserver::GetValue() { return get_value_(); }
 
 }  // namespace packet
 }  // namespace bluetooth

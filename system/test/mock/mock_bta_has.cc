@@ -16,16 +16,15 @@
 
 #include <base/bind_helpers.h>
 #include <base/functional/bind.h>
+#include <bluetooth/types/address.h>
 
 #include "bta/include/bta_has_api.h"
 #include "test/common/mock_functions.h"
-#include "types/raw_address.h"
 
 namespace bluetooth::le_audio {
 namespace has {
 
-void HasClient::Initialize(bluetooth::has::HasClientCallbacks*,
-                           base::RepeatingCallback<void()>) {
+void HasClient::Initialize(bluetooth::has::HasClientCallbacks*, base::RepeatingCallback<void()>) {
   inc_func_call_count(__func__);
 }
 void HasClient::CleanUp() { inc_func_call_count(__func__); }
@@ -34,8 +33,7 @@ bool HasClient::IsHasClientRunning() {
   inc_func_call_count(__func__);
   return false;
 }
-void HasClient::AddFromStorage(RawAddress const&, unsigned char,
-                               unsigned short) {
+void HasClient::AddFromStorage(RawAddress const&, unsigned char, uint16_t) {
   inc_func_call_count(__func__);
 }
 HasClient* HasClient::Get() {

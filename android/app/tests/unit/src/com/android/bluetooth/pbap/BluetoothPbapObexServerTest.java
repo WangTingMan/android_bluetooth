@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,10 +43,10 @@ import static com.android.obex.ApplicationParameter.TRIPLET_VALUE.ORDER.ORDER_BY
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
 
-import static org.mockito.Mockito.any;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -54,9 +54,9 @@ import static org.mockito.Mockito.when;
 import android.os.Handler;
 import android.os.UserManager;
 
-import androidx.test.InstrumentationRegistry;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.SmallTest;
-import androidx.test.runner.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
 
 import com.android.bluetooth.BluetoothMethodProxy;
 import com.android.bluetooth.pbap.BluetoothPbapObexServer.AppParamValue;
@@ -64,6 +64,7 @@ import com.android.obex.ApplicationParameter;
 import com.android.obex.HeaderSet;
 import com.android.obex.Operation;
 import com.android.obex.ResponseCodes;
+import com.android.tests.bluetooth.MockitoRule;
 
 import org.junit.After;
 import org.junit.Before;
@@ -72,19 +73,17 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.Spy;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
 import java.io.IOException;
 import java.io.OutputStream;
 
+/** Test cases for {@link BluetoothPbapObexServer}. */
 @SmallTest
 @RunWith(AndroidJUnit4.class)
 public class BluetoothPbapObexServerTest {
-
     private static final String TAG = BluetoothPbapObexServerTest.class.getSimpleName();
 
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
 
     @Mock Handler mMockHandler;
     @Mock PbapStateMachine mMockStateMachine;
@@ -114,7 +113,7 @@ public class BluetoothPbapObexServerTest {
         mServer =
                 new BluetoothPbapObexServer(
                         mMockHandler,
-                        InstrumentationRegistry.getTargetContext(),
+                        InstrumentationRegistry.getInstrumentation().getContext(),
                         mMockStateMachine);
     }
 
@@ -691,13 +690,13 @@ public class BluetoothPbapObexServerTest {
     }
 
     @Test
-    public void setCallversionCounters() {
+    public void setCallVersionCounters() {
         ApplicationParameter param = new ApplicationParameter();
         AppParamValue value = new AppParamValue();
         value.callHistoryVersionCounter =
                 new byte[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 
-        BluetoothPbapObexServer.setCallversionCounters(param, value);
+        BluetoothPbapObexServer.setCallVersionCounters(param, value);
 
         byte[] expectedResult =
                 new byte[] {

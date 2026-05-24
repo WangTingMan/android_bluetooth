@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,15 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#if TARGET_FLOSS
 #include "hci/msft.h"
 
 #include <bluetooth/log.h>
 #include <com_android_bluetooth_flags.h>
 #include <hardware/bt_common_types.h>
 
-#include "hal/hci_hal.h"
-#include "hci/hci_layer.h"
 #include "hci/hci_packets.h"
 
 namespace bluetooth {
@@ -38,16 +35,10 @@ struct Msft {
   std::vector<uint8_t> prefix;
 };
 
-const ModuleFactory MsftExtensionManager::Factory = ModuleFactory([]() { return new MsftExtensionManager(); });
-
 struct MsftExtensionManager::impl {
-  impl(Module* module) : module_(module){};
-
-  ~impl() {}
-
-  void start(os::Handler* handler, hal::HciHal* hal, hci::HciLayer* hci_layer) {
+  impl(os::Handler* handler, hal::HciHal* hal, hci::HciInterface* hci_layer) {
     log::info("MsftExtensionManager start()");
-    module_handler_ = handler;
+    handler_ = handler;
     hal_ = hal;
     hci_layer_ = hci_layer;
 
@@ -56,10 +47,13 @@ struct MsftExtensionManager::impl {
      * Query the kernel/drivers to derive the MSFT opcode so that
      * we can issue MSFT vendor specific commands.
      */
-    if (!supports_msft_extensions()) {
+    uint16_t opcode = hal_->getMsftOpcode();
+    if (opcode == 0) {
       log::info("MSFT extension is not supported.");
       return;
     }
+    msft_.opcode = opcode;
+    log::info("MSFT opcode 0x{:04x}", msft_.opcode.value());
 
     /*
      * The vendor prefix is required to distinguish among the vendor events
@@ -67,12 +61,16 @@ struct MsftExtensionManager::impl {
      * derive the vendor prefix as well as other supported features.
      */
     hci_layer_->EnqueueCommand(
-        MsftReadSupportedFeaturesBuilder::Create(static_cast<OpCode>(msft_.opcode.value())),
-        module_handler_->BindOnceOn(this, &impl::on_msft_read_supported_features_complete));
+            MsftReadSupportedFeaturesBuilder::Create(static_cast<OpCode>(msft_.opcode.value())),
+            handler_->BindOnceOn(this, &impl::on_msft_read_supported_features_complete));
   }
 
-  void stop() {
-    log::info("MsftExtensionManager stop()");
+  ~impl() {
+    if (!com_android_bluetooth_flags_same_handler_for_all_modules()) {
+      handler_->Clear();
+      handler_->WaitUntilStopped(std::chrono::milliseconds(2000));
+      delete handler_;
+    }
   }
 
   void handle_rssi_event(MsftRssiEventPayloadView /* view */) {
@@ -106,7 +104,7 @@ struct MsftExtensionManager::impl {
     }
 
     auto msft_view = MsftEventPayloadView::Create(
-        payload.GetLittleEndianSubview(msft_.prefix.size() - 1, payload.size()));
+            payload.GetLittleEndianSubview(msft_.prefix.size() - 1, payload.size()));
     log::assert_that(msft_view.IsValid(), "assert failed: msft_view.IsValid()");
 
     MsftEventCode ev_code = msft_view.GetMsftEventCode();
@@ -123,16 +121,7 @@ struct MsftExtensionManager::impl {
     }
   }
 
-  bool supports_msft_extensions() {
-    if (msft_.opcode.has_value()) return true;
-
-    uint16_t opcode = hal_->getMsftOpcode();
-    if (opcode == 0) return false;
-
-    msft_.opcode = opcode;
-    log::info("MSFT opcode 0x{:04x}", msft_.opcode.value());
-    return true;
-  }
+  bool supports_msft_extensions() { return msft_.opcode.has_value(); }
 
   void msft_adv_monitor_add(const MsftAdvMonitor& monitor, MsftAdvMonitorAddCallback cb) {
     if (!supports_msft_extensions()) {
@@ -140,7 +129,7 @@ struct MsftExtensionManager::impl {
       return;
     }
 
-    if (com::android::bluetooth::flags::msft_addr_tracking_quirk()) {
+    if (com_android_bluetooth_flags_msft_addr_tracking_quirk()) {
       if (monitor.condition_type != MSFT_CONDITION_TYPE_ADDRESS &&
           monitor.condition_type != MSFT_CONDITION_TYPE_PATTERNS) {
         log::warn("Disallowed as MSFT condition type {} is not supported.", monitor.condition_type);
@@ -152,15 +141,11 @@ struct MsftExtensionManager::impl {
         Address addr;
         Address::FromString(monitor.addr_info.bd_addr.ToString(), addr);
         hci_layer_->EnqueueCommand(
-            MsftLeMonitorAdvConditionAddressBuilder::Create(
-                static_cast<OpCode>(msft_.opcode.value()),
-                monitor.rssi_threshold_high,
-                monitor.rssi_threshold_low,
-                monitor.rssi_threshold_low_time_interval,
-                monitor.rssi_sampling_period,
-                monitor.addr_info.addr_type,
-                addr),
-            module_handler_->BindOnceOn(this, &impl::on_msft_adv_monitor_add_complete));
+                MsftLeMonitorAdvConditionAddressBuilder::Create(
+                        static_cast<OpCode>(msft_.opcode.value()), monitor.rssi_threshold_high,
+                        monitor.rssi_threshold_low, monitor.rssi_threshold_low_time_interval,
+                        monitor.rssi_sampling_period, monitor.addr_info.addr_type, addr),
+                handler_->BindOnceOn(this, &impl::on_msft_adv_monitor_add_complete));
         return;
       }
     }
@@ -184,14 +169,11 @@ struct MsftExtensionManager::impl {
 
     msft_adv_monitor_add_cb_ = cb;
     hci_layer_->EnqueueCommand(
-        MsftLeMonitorAdvConditionPatternsBuilder::Create(
-            static_cast<OpCode>(msft_.opcode.value()),
-            monitor.rssi_threshold_high,
-            monitor.rssi_threshold_low,
-            monitor.rssi_threshold_low_time_interval,
-            monitor.rssi_sampling_period,
-            patterns),
-        module_handler_->BindOnceOn(this, &impl::on_msft_adv_monitor_add_complete));
+            MsftLeMonitorAdvConditionPatternsBuilder::Create(
+                    static_cast<OpCode>(msft_.opcode.value()), monitor.rssi_threshold_high,
+                    monitor.rssi_threshold_low, monitor.rssi_threshold_low_time_interval,
+                    monitor.rssi_sampling_period, patterns),
+            handler_->BindOnceOn(this, &impl::on_msft_adv_monitor_add_complete));
   }
 
   void msft_adv_monitor_remove(uint8_t monitor_handle, MsftAdvMonitorRemoveCallback cb) {
@@ -202,9 +184,9 @@ struct MsftExtensionManager::impl {
 
     msft_adv_monitor_remove_cb_ = cb;
     hci_layer_->EnqueueCommand(
-        MsftLeCancelMonitorAdvBuilder::Create(
-            static_cast<OpCode>(msft_.opcode.value()), monitor_handle),
-        module_handler_->BindOnceOn(this, &impl::on_msft_adv_monitor_remove_complete));
+            MsftLeCancelMonitorAdvBuilder::Create(static_cast<OpCode>(msft_.opcode.value()),
+                                                  monitor_handle),
+            handler_->BindOnceOn(this, &impl::on_msft_adv_monitor_remove_complete));
   }
 
   void msft_adv_monitor_enable(bool enable, MsftAdvMonitorEnableCallback cb) {
@@ -215,13 +197,12 @@ struct MsftExtensionManager::impl {
 
     msft_adv_monitor_enable_cb_ = cb;
     hci_layer_->EnqueueCommand(
-        MsftLeSetAdvFilterEnableBuilder::Create(static_cast<OpCode>(msft_.opcode.value()), enable),
-        module_handler_->BindOnceOn(this, &impl::on_msft_adv_monitor_enable_complete));
+            MsftLeSetAdvFilterEnableBuilder::Create(static_cast<OpCode>(msft_.opcode.value()),
+                                                    enable),
+            handler_->BindOnceOn(this, &impl::on_msft_adv_monitor_enable_complete));
   }
 
-  void set_scanning_callback(ScanningCallback* callbacks) {
-    scanning_callbacks_ = callbacks;
-  }
+  void set_scanning_callback(ScanningCallback* callbacks) { scanning_callbacks_ = callbacks; }
 
   /*
    * Get the event prefix from the packet for configuring MSFT's
@@ -229,8 +210,13 @@ struct MsftExtensionManager::impl {
    */
   void on_msft_read_supported_features_complete(CommandCompleteView view) {
     log::assert_that(view.IsValid(), "assert failed: view.IsValid()");
-    auto status_view = MsftReadSupportedFeaturesCommandCompleteView::Create(MsftCommandCompleteView::Create(view));
-    log::assert_that(status_view.IsValid(), "assert failed: status_view.IsValid()");
+    auto status_view = MsftReadSupportedFeaturesCommandCompleteView::Create(
+            MsftCommandCompleteView::Create(view));
+    if (!status_view.IsValid()) {
+      log::error("MSFT Read supported features failed");
+      msft_.opcode = std::nullopt;
+      return;
+    }
 
     if (status_view.GetStatus() != ErrorCode::SUCCESS) {
       log::warn("MSFT Command complete status {}", ErrorCodeText(status_view.GetStatus()));
@@ -249,8 +235,9 @@ struct MsftExtensionManager::impl {
     auto prefix = status_view.GetPrefix();
     msft_.prefix.assign(prefix.begin(), prefix.end());
 
-    if (prefix.size() > kMsftEventPrefixLengthMax)
+    if (prefix.size() > kMsftEventPrefixLengthMax) {
       log::warn("The MSFT prefix length {} is too large", (unsigned int)prefix.size());
+    }
 
     log::info("MSFT features 0x{:016x} prefix length {}", msft_.features, prefix.size());
 
@@ -261,14 +248,14 @@ struct MsftExtensionManager::impl {
     //       because each vendor controller should ensure that the first octet
     //       is unique within the vendor's events.
     hci_layer_->RegisterVendorSpecificEventHandler(
-        static_cast<VseSubeventCode>(msft_.prefix[0]),
-        module_handler_->BindOn(this, &impl::handle_msft_events));
+            static_cast<VseSubeventCode>(msft_.prefix[0]),
+            handler_->BindOn(this, &impl::handle_msft_events));
   }
 
   void on_msft_adv_monitor_add_complete(CommandCompleteView view) {
     log::assert_that(view.IsValid(), "assert failed: view.IsValid()");
     auto status_view =
-        MsftLeMonitorAdvCommandCompleteView::Create(MsftCommandCompleteView::Create(view));
+            MsftLeMonitorAdvCommandCompleteView::Create(MsftCommandCompleteView::Create(view));
     log::assert_that(status_view.IsValid(), "assert failed: status_view.IsValid()");
 
     MsftSubcommandOpcode sub_opcode = status_view.GetSubcommandOpcode();
@@ -282,8 +269,8 @@ struct MsftExtensionManager::impl {
 
   void on_msft_adv_monitor_remove_complete(CommandCompleteView view) {
     log::assert_that(view.IsValid(), "assert failed: view.IsValid()");
-    auto status_view =
-        MsftLeCancelMonitorAdvCommandCompleteView::Create(MsftCommandCompleteView::Create(view));
+    auto status_view = MsftLeCancelMonitorAdvCommandCompleteView::Create(
+            MsftCommandCompleteView::Create(view));
     log::assert_that(status_view.IsValid(), "assert failed: status_view.IsValid()");
 
     MsftSubcommandOpcode sub_opcode = status_view.GetSubcommandOpcode();
@@ -297,8 +284,8 @@ struct MsftExtensionManager::impl {
 
   void on_msft_adv_monitor_enable_complete(CommandCompleteView view) {
     log::assert_that(view.IsValid(), "assert failed: view.IsValid()");
-    auto status_view =
-        MsftLeSetAdvFilterEnableCommandCompleteView::Create(MsftCommandCompleteView::Create(view));
+    auto status_view = MsftLeSetAdvFilterEnableCommandCompleteView::Create(
+            MsftCommandCompleteView::Create(view));
     log::assert_that(status_view.IsValid(), "assert failed: status_view.IsValid()");
 
     MsftSubcommandOpcode sub_opcode = status_view.GetSubcommandOpcode();
@@ -310,10 +297,9 @@ struct MsftExtensionManager::impl {
     msft_adv_monitor_enable_cb_.Run(status_view.GetStatus());
   }
 
-  Module* module_;
-  os::Handler* module_handler_;
+  os::Handler* handler_;
   hal::HciHal* hal_;
-  hci::HciLayer* hci_layer_;
+  hci::HciInterface* hci_layer_;
   Msft msft_;
   MsftAdvMonitorAddCallback msft_adv_monitor_add_cb_;
   MsftAdvMonitorRemoveCallback msft_adv_monitor_remove_cb_;
@@ -321,50 +307,36 @@ struct MsftExtensionManager::impl {
   ScanningCallback* scanning_callbacks_;
 };
 
-MsftExtensionManager::MsftExtensionManager() {
+MsftExtensionManager::MsftExtensionManager(os::Handler* handler, hal::HciHal* hal,
+                                           hci::HciInterface* hci_layer) {
   log::info("MsftExtensionManager()");
-  pimpl_ = std::make_unique<impl>(this);
+  pimpl_ = std::make_unique<impl>(handler, hal, hci_layer);
+  log::verbose("module started !!");
 }
 
-void MsftExtensionManager::ListDependencies(ModuleList* list) const {
-  list->add<hal::HciHal>();
-  list->add<hci::HciLayer>();
+MsftExtensionManager::~MsftExtensionManager() {
+  log::verbose("module stopped !!");
+};
+
+bool MsftExtensionManager::SupportsMsftExtensions() { return pimpl_->supports_msft_extensions(); }
+
+void MsftExtensionManager::MsftAdvMonitorAdd(const MsftAdvMonitor& monitor,
+                                             MsftAdvMonitorAddCallback cb) {
+  pimpl_->handler_->CallOn(pimpl_.get(), &impl::msft_adv_monitor_add, monitor, cb);
 }
 
-void MsftExtensionManager::Start() {
-  pimpl_->start(GetHandler(), GetDependency<hal::HciHal>(), GetDependency<hci::HciLayer>());
-}
-
-void MsftExtensionManager::Stop() {
-  pimpl_->stop();
-}
-
-std::string MsftExtensionManager::ToString() const {
-  return "Microsoft Extension Manager";
-}
-
-bool MsftExtensionManager::SupportsMsftExtensions() {
-  return pimpl_->supports_msft_extensions();
-}
-
-void MsftExtensionManager::MsftAdvMonitorAdd(
-    const MsftAdvMonitor& monitor, MsftAdvMonitorAddCallback cb) {
-  CallOn(pimpl_.get(), &impl::msft_adv_monitor_add, monitor, cb);
-}
-
-void MsftExtensionManager::MsftAdvMonitorRemove(
-    uint8_t monitor_handle, MsftAdvMonitorRemoveCallback cb) {
-  CallOn(pimpl_.get(), &impl::msft_adv_monitor_remove, monitor_handle, cb);
+void MsftExtensionManager::MsftAdvMonitorRemove(uint8_t monitor_handle,
+                                                MsftAdvMonitorRemoveCallback cb) {
+  pimpl_->handler_->CallOn(pimpl_.get(), &impl::msft_adv_monitor_remove, monitor_handle, cb);
 }
 
 void MsftExtensionManager::MsftAdvMonitorEnable(bool enable, MsftAdvMonitorEnableCallback cb) {
-  CallOn(pimpl_.get(), &impl::msft_adv_monitor_enable, enable, cb);
+  pimpl_->handler_->CallOn(pimpl_.get(), &impl::msft_adv_monitor_enable, enable, cb);
 }
 
 void MsftExtensionManager::SetScanningCallback(ScanningCallback* callbacks) {
-  CallOn(pimpl_.get(), &impl::set_scanning_callback, callbacks);
+  pimpl_->handler_->CallOn(pimpl_.get(), &impl::set_scanning_callback, callbacks);
 }
 
 }  // namespace hci
 }  // namespace bluetooth
-#endif

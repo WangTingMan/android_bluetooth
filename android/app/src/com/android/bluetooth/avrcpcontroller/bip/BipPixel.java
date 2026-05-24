@@ -16,6 +16,7 @@
 
 package com.android.bluetooth.avrcpcontroller;
 
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -45,7 +46,8 @@ import java.util.regex.Pattern;
  * <p>H=(W*H2)/W2
  */
 public class BipPixel {
-    private static final String TAG = "avrcpcontroller.BipPixel";
+    private static final String TAG =
+            AvrcpControllerUtils.TAG_PREFIX_AVRCP_CONTROLLER + BipPixel.class.getSimpleName();
 
     // The BIP specification declares this as the max size to be transferred. You can optionally
     // use this value to indicate there is no upper bound on pixel size.
@@ -111,7 +113,7 @@ public class BipPixel {
 
         int typeHint = determinePixelType(pixel);
         switch (typeHint) {
-            case TYPE_FIXED:
+            case TYPE_FIXED -> {
                 Pattern fixed = Pattern.compile("^(\\d{1,5})\\*(\\d{1,5})$");
                 Matcher m1 = fixed.matcher(pixel);
                 if (m1.matches()) {
@@ -121,8 +123,8 @@ public class BipPixel {
                     minHeight = Integer.parseInt(m1.group(2));
                     maxHeight = Integer.parseInt(m1.group(2));
                 }
-                break;
-            case TYPE_RESIZE_MODIFIED_ASPECT_RATIO:
+            }
+            case TYPE_RESIZE_MODIFIED_ASPECT_RATIO -> {
                 Pattern modifiedRatio =
                         Pattern.compile("^(\\d{1,5})\\*(\\d{1,5})-(\\d{1,5})\\*(\\d{1,5})$");
                 Matcher m2 = modifiedRatio.matcher(pixel);
@@ -133,8 +135,8 @@ public class BipPixel {
                     maxWidth = Integer.parseInt(m2.group(3));
                     maxHeight = Integer.parseInt(m2.group(4));
                 }
-                break;
-            case TYPE_RESIZE_FIXED_ASPECT_RATIO:
+            }
+            case TYPE_RESIZE_FIXED_ASPECT_RATIO -> {
                 Pattern fixedRatio = Pattern.compile("^(\\d{1,5})\\*\\*-(\\d{1,5})\\*(\\d{1,5})$");
                 Matcher m3 = fixedRatio.matcher(pixel);
                 if (m3.matches()) {
@@ -144,9 +146,8 @@ public class BipPixel {
                     maxHeight = Integer.parseInt(m3.group(3));
                     minHeight = (minWidth * maxHeight) / maxWidth;
                 }
-                break;
-            default:
-                break;
+            }
+            default -> {}
         }
         if (type == TYPE_UNKNOWN) {
             throw new ParseException("Failed to determine type of '" + pixel + "'");
@@ -197,9 +198,11 @@ public class BipPixel {
     private static int determinePixelType(String pixel) {
         if (pixel == null || pixel.length() > 23) return TYPE_UNKNOWN;
         int delimCount = 0;
-        for (char c : pixel.toCharArray()) {
+        for (int i = 0; i < pixel.length(); i++) {
+            char c = pixel.charAt(i);
             if (c == '*') delimCount++;
         }
+
         return delimCount > 0 && delimCount <= 3 ? delimCount : TYPE_UNKNOWN;
     }
 
@@ -209,10 +212,13 @@ public class BipPixel {
 
     @Override
     public boolean equals(Object o) {
-        if (o == this) return true;
-        if (!(o instanceof BipPixel)) return false;
+        if (o == this) {
+            return true;
+        }
+        if (!(o instanceof BipPixel p)) {
+            return false;
+        }
 
-        BipPixel p = (BipPixel) o;
         return p.getType() == getType()
                 && p.getMinWidth() == getMinWidth()
                 && p.getMaxWidth() == getMaxWidth()
@@ -221,19 +227,19 @@ public class BipPixel {
     }
 
     @Override
+    public int hashCode() {
+        return Objects.hash(
+                getType(), getMinWidth(), getMaxWidth(), getMinHeight(), getMaxHeight());
+    }
+
+    @Override
     public String toString() {
-        String s = null;
-        switch (mType) {
-            case TYPE_FIXED:
-                s = mMaxWidth + "*" + mMaxHeight;
-                break;
-            case TYPE_RESIZE_MODIFIED_ASPECT_RATIO:
-                s = mMinWidth + "*" + mMinHeight + "-" + mMaxWidth + "*" + mMaxHeight;
-                break;
-            case TYPE_RESIZE_FIXED_ASPECT_RATIO:
-                s = mMinWidth + "**-" + mMaxWidth + "*" + mMaxHeight;
-                break;
-        }
-        return s;
+        return switch (mType) {
+            case TYPE_FIXED -> mMaxWidth + "*" + mMaxHeight;
+            case TYPE_RESIZE_MODIFIED_ASPECT_RATIO ->
+                    mMinWidth + "*" + mMinHeight + "-" + mMaxWidth + "*" + mMaxHeight;
+            case TYPE_RESIZE_FIXED_ASPECT_RATIO -> mMinWidth + "**-" + mMaxWidth + "*" + mMaxHeight;
+            default -> null;
+        };
     }
 }

@@ -23,6 +23,7 @@
 // Mock include file to share data between tests and mock
 #include "test/mock/mock_osi_mutex.h"
 
+#include "osi/include/mutex.h"
 #include "test/common/mock_functions.h"
 
 // Mocked internal structures, if any

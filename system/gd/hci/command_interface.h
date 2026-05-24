@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,23 +21,33 @@
 #include "os/handler.h"
 #include "os/utils.h"
 
+#include <variant>
+
 namespace bluetooth {
 namespace hci {
 
+typedef std::variant<CommandStatusView, CommandCompleteView> CommandStatusOrCompleteView;
+
 template <typename T>
 class CommandInterface {
- public:
+public:
   CommandInterface() = default;
   CommandInterface(const CommandInterface&) = delete;
   CommandInterface& operator=(const CommandInterface&) = delete;
 
   virtual ~CommandInterface() = default;
 
-  virtual void EnqueueCommand(std::unique_ptr<T> command,
-                              common::ContextualOnceCallback<void(CommandCompleteView)> on_complete) = 0;
+  virtual void EnqueueCommand(
+          std::unique_ptr<T> command,
+          common::ContextualOnceCallback<void(CommandCompleteView)> on_complete) = 0;
+
+  virtual void EnqueueCommand(
+          std::unique_ptr<T> command,
+          common::ContextualOnceCallback<void(CommandStatusView)> on_status) = 0;
 
   virtual void EnqueueCommand(std::unique_ptr<T> command,
-                              common::ContextualOnceCallback<void(CommandStatusView)> on_status) = 0;
+                              common::ContextualOnceCallback<void(CommandStatusOrCompleteView)>
+                                      on_status_or_complete) = 0;
 };
 }  // namespace hci
 }  // namespace bluetooth

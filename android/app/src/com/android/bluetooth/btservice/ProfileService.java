@@ -16,37 +16,54 @@
 
 package com.android.bluetooth.btservice;
 
-import static java.util.Objects.requireNonNull;
-
-import android.annotation.RequiresPermission;
 import android.annotation.SuppressLint;
+import android.bluetooth.BluetoothProfile;
 import android.content.ComponentName;
-import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.pm.PackageManager;
 import android.os.IBinder;
 import android.util.Log;
 
-import com.android.bluetooth.BluetoothMetricsProto;
+import com.android.bluetooth.Utils;
 
-/** Base class for a background service that runs a Bluetooth profile */
+import java.util.Optional;
+
+/** Base class for a Bluetooth profile. */
 public abstract class ProfileService extends ContextWrapper {
-
-    public static final String BLUETOOTH_PERM = android.Manifest.permission.BLUETOOTH;
-    public static final String BLUETOOTH_PRIVILEGED =
-            android.Manifest.permission.BLUETOOTH_PRIVILEGED;
 
     public interface IProfileServiceBinder extends IBinder {
         void cleanup();
     }
 
-    private final IProfileServiceBinder mBinder;
-    private final String mName;
-    private boolean mAvailable = false;
-    private volatile boolean mTestModeEnabled = false;
+    protected final int mProfileId;
+    protected final AdapterService mAdapterService;
+    protected final String mName;
+    private final Optional<IProfileServiceBinder> mBinder;
 
-    public String getName() {
-        return getClass().getSimpleName();
+    private boolean mAvailable = false;
+
+    protected ProfileService(int id, AdapterService adapterService) {
+        super(adapterService);
+        mProfileId = id;
+        mAdapterService = adapterService;
+        mName = getClass().getSimpleName();
+        Log.d(mName, "Service created");
+        mBinder = Optional.ofNullable(initBinder());
+    }
+
+    @Override
+    public String toString() {
+        return mName;
+    }
+
+    /** The id of this Profile. see {@link BluetoothProfile} */
+    public final int getProfileId() {
+        return mProfileId;
+    }
+
+    /** Return the binder of the profile */
+    public Optional<IProfileServiceBinder> getBinder() {
+        return mBinder;
     }
 
     public boolean isAvailable() {
@@ -57,43 +74,18 @@ public abstract class ProfileService extends ContextWrapper {
         mAvailable = available;
     }
 
-    protected boolean isTestModeEnabled() {
-        return mTestModeEnabled;
-    }
-
     /**
-     * Called in ProfileService constructor to init binder interface for this profile service
+     * Called in ProfileService constructor to init binder interface for this profile service.
      *
-     * @return initialized binder interface for this profile service
+     * @return initialized binder interface for this profile service.
      */
     protected abstract IProfileServiceBinder initBinder();
 
-    /** Start service */
-    public void start() {}
+    /** Called when this object is no longer needed and is being discarded. */
+    public abstract void cleanup();
 
-    /** Stop service */
-    public abstract void stop();
-
-    /** Called when this object is completely discarded */
-    public void cleanup() {}
-
-    /**
-     * @param testModeEnabled if the profile should enter or exit a testing mode
-     */
-    protected void setTestModeEnabled(boolean testModeEnabled) {
-        mTestModeEnabled = testModeEnabled;
-    }
-
-    protected ProfileService(Context ctx) {
-        super(ctx);
-        mName = getName();
-        Log.d(mName, "Service created");
-        mBinder = requireNonNull(initBinder(), "Binder null is not allowed for " + mName);
-    }
-
-    /** return the binder of the profile */
-    public IProfileServiceBinder getBinder() {
-        return mBinder;
+    protected <T> T obtainSystemService(Class<T> serviceClass) {
+        return mAdapterService.getSystemService(serviceClass);
     }
 
     /**
@@ -107,32 +99,24 @@ public abstract class ProfileService extends ContextWrapper {
      * @param className The class name of the owned component residing in the Bluetooth package
      * @param enable True to enable the component, False to disable it
      */
-    @RequiresPermission(android.Manifest.permission.CHANGE_COMPONENT_ENABLED_STATE)
     protected void setComponentAvailable(String className, boolean enable) {
         Log.d(mName, "setComponentAvailable(className=" + className + ", enable=" + enable + ")");
         if (className == null) {
             return;
         }
-        ComponentName component = new ComponentName(getPackageName(), className);
-        setComponentAvailable(component, enable);
-    }
 
-    /**
-     * Set the availability of an owned/managed component (Service, Activity, Provider, etc.)
-     *
-     * <p>It's expected that profiles can have a set of components that they may use to provide
-     * features or interact with other services/the user. Profiles are expected to enable those
-     * components when they start, and disable them when they stop.
-     *
-     * @param component The component name of owned component
-     * @param enable True to enable the component, False to disable it
-     */
-    @RequiresPermission(android.Manifest.permission.CHANGE_COMPONENT_ENABLED_STATE)
-    protected void setComponentAvailable(ComponentName component, boolean enable) {
-        Log.d(mName, "setComponentAvailable(component=" + component + ", enable=" + enable + ")");
+        final var component = new ComponentName(getPackageName(), className);
+        // Test should not set components available for the device
+        if (Utils.isInstrumentationTestMode()) {
+            Log.w(mName, "Skip call to setComponentAvailable(" + component + ", " + enable + ")");
+            return;
+        }
+
+        Log.d(mName, "setComponentAvailable(" + component + ", " + enable + ")");
         if (component == null) {
             return;
         }
+
         getPackageManager()
                 .setComponentEnabledSetting(
                         component,
@@ -153,17 +137,6 @@ public abstract class ProfileService extends ContextWrapper {
         sb.append("\nProfile: ");
         sb.append(mName);
         sb.append("\n");
-    }
-
-    /**
-     * Support dumping scan events from GattService
-     *
-     * @param builder metrics proto builder
-     */
-    // Suppressed since this is called from framework
-    @SuppressLint("AndroidFrameworkRequiresPermission")
-    public void dumpProto(BluetoothMetricsProto.BluetoothLog.Builder builder) {
-        // Do nothing
     }
 
     /**

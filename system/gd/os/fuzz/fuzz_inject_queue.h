@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,19 +24,15 @@ namespace fuzz {
 
 template <typename T>
 class FuzzInjectQueue {
- public:
+public:
   FuzzInjectQueue(IQueueEnqueue<T>* queue, Handler* handler) : handler_(handler) {
     buffer_ = new EnqueueBuffer<T>(queue);
   }
-  ~FuzzInjectQueue() {
-    delete buffer_;
-  }
+  ~FuzzInjectQueue() { delete buffer_; }
 
-  void Inject(std::unique_ptr<T> data) {
-    buffer_->Enqueue(std::move(data), handler_);
-  }
+  void Inject(std::unique_ptr<T> data) { buffer_->Enqueue(std::move(data), handler_); }
 
- private:
+private:
   EnqueueBuffer<T>* buffer_;
   Handler* handler_;
 };

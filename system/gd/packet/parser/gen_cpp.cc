@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 #if __has_include(<unistd.h>)
 #include <unistd.h>
 #endif
+
 #include <cerrno>
 #include <cstdio>
 #include <filesystem>
@@ -30,10 +31,9 @@
 #include "declarations.h"
 #include "struct_parser_generator.h"
 
-void parse_namespace(
-    const std::string& root_namespace,
-    const std::filesystem::path& input_file_relative_path,
-    std::vector<std::string>* token) {
+void parse_namespace(const std::string& root_namespace,
+                     const std::filesystem::path& input_file_relative_path,
+                     std::vector<std::string>* token) {
   std::filesystem::path gen_namespace = root_namespace / input_file_relative_path;
   for (auto it = gen_namespace.begin(); it != gen_namespace.end(); ++it) {
     token->push_back(it->string());
@@ -52,26 +52,19 @@ void generate_namespace_close(const std::vector<std::string>& token, std::ostrea
   }
 }
 
-bool generate_cpp_headers_one_file(
-    const Declarations& decls,
-    bool generate_fuzzing,
-    bool generate_tests,
-    const std::filesystem::path& input_file,
-    const std::filesystem::path& include_dir,
-    const std::filesystem::path& out_dir,
-#ifdef _MSC_VER
-    const std::string& root_namespace,
-    bool force_to_out_dir
-    ){
-#else
-    const std::string& root_namespace) {
-#endif
+bool generate_cpp_headers_one_file(const Declarations& decls, bool generate_fuzzing,
+                                   bool generate_tests, const std::filesystem::path& input_file,
+                                   const std::filesystem::path& include_dir,
+                                   const std::filesystem::path& out_dir,
+                                   const std::string& root_namespace) {
   auto gen_relative_path = input_file.lexically_relative(include_dir).parent_path();
 
-  auto input_filename = input_file.filename().string().substr(0, input_file.filename().string().find(".pdl"));
+  auto input_filename =
+          input_file.filename().string().substr(0, input_file.filename().string().find(".pdl"));
   auto gen_path = out_dir / gen_relative_path;
 
 #ifdef _MSC_VER
+  bool force_to_out_dir = true;
   if ( force_to_out_dir ) {
     gen_path = out_dir;
   }
@@ -91,7 +84,7 @@ bool generate_cpp_headers_one_file(
   }
 
   out_file <<
-      R"(
+          R"(
 #pragma once
 
 #include <cstdint>
@@ -131,7 +124,7 @@ bool generate_cpp_headers_one_file(
 
   if (generate_fuzzing || generate_tests) {
     out_file <<
-        R"(
+            R"(
 
 #if defined(PACKET_FUZZ_TESTING) || defined(PACKET_TESTING) || defined(FUZZ_TARGET)
 #include "packet/raw_builder.h"
@@ -165,7 +158,7 @@ bool generate_cpp_headers_one_file(
   }
 
   out_file <<
-      R"(
+          R"(
 
 using ::bluetooth::packet::BasePacketBuilder;
 using ::bluetooth::packet::BitInserter;
@@ -181,7 +174,7 @@ using ::bluetooth::packet::parser::ChecksumTypeChecker;
 
   if (generate_fuzzing || generate_tests) {
     out_file <<
-        R"(
+            R"(
 #if defined(PACKET_FUZZ_TESTING) || defined(PACKET_TESTING) || defined(FUZZ_TARGET)
 using ::bluetooth::packet::RawBuilder;
 #endif
@@ -292,7 +285,7 @@ using ::bluetooth::packet::RawBuilder;
     namespace_prefix += "::";
   }
 
-  out_file << "#if __has_include(<bluetooth/log.h>)" << std::endl << "namespace fmt {" << std::endl;
+  out_file << "#if __has_include(<bluetooth/log.h>)" << std::endl << "namespace std {" << std::endl;
   for (const auto& e : decls.type_defs_queue_) {
     if (e.second->GetDefinitionType() == TypeDef::Type::ENUM) {
       const auto* enum_def = static_cast<const EnumDef*>(e.second);
@@ -302,7 +295,7 @@ using ::bluetooth::packet::RawBuilder;
                << std::endl;
     }
   }
-  out_file << "} // namespace fmt" << std::endl
+  out_file << "} // namespace std" << std::endl
            << "#endif // __has_include(<bluetooth/log.h>)" << std::endl;
 
   out_file.close();
@@ -311,7 +304,8 @@ using ::bluetooth::packet::RawBuilder;
 }
 
 // Get the out_file shard at a symbol_count
-std::ofstream& get_out_file(size_t symbol_count, size_t symbol_total, std::vector<std::ofstream>* out_files) {
+std::ofstream& get_out_file(size_t symbol_count, size_t symbol_total,
+                            std::vector<std::ofstream>* out_files) {
   auto symbols_per_shard = symbol_total / out_files->size();
   auto file_index = std::min(symbol_count / symbols_per_shard, out_files->size() - 1);
   return out_files->at(file_index);

@@ -17,6 +17,7 @@
 package android.bluetooth;
 
 import android.annotation.NonNull;
+import android.annotation.RequiresNoPermission;
 import android.annotation.SystemApi;
 import android.os.Parcel;
 import android.os.Parcelable;
@@ -28,11 +29,11 @@ import android.os.Parcelable;
  */
 @SystemApi
 public final class BufferConstraint implements Parcelable {
+    private static final String TAG = BufferConstraint.class.getSimpleName();
 
-    private static final String TAG = "BufferConstraint";
-    private int mDefaultMillis;
-    private int mMaxMillis;
-    private int mMinMillis;
+    private final int mDefaultMillis;
+    private final int mMaxMillis;
+    private final int mMinMillis;
 
     public BufferConstraint(int defaultMillis, int maxMillis, int minMillis) {
         mDefaultMillis = defaultMillis;
@@ -76,6 +77,7 @@ public final class BufferConstraint implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public int getDefaultMillis() {
         return mDefaultMillis;
     }
@@ -87,6 +89,7 @@ public final class BufferConstraint implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public int getMaxMillis() {
         return mMaxMillis;
     }
@@ -98,6 +101,7 @@ public final class BufferConstraint implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public int getMinMillis() {
         return mMinMillis;
     }

@@ -15,8 +15,8 @@
 Copied from tools/rootcanal/scripts/test_channel.py
 """
 
-import socket
 import enum
+import socket
 from time import sleep
 
 
@@ -92,6 +92,7 @@ class Dongle(enum.Enum):
     DEFAULT = "default"
     LAIRD_BL654 = "laird_bl654"
     CSR_RCK_PTS_DONGLE = "csr_rck_pts_dongle"
+    INTEL_BE200 = "intel_be200"
 
 
 class RootCanal:

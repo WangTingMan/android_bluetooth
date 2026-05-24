@@ -20,14 +20,16 @@ cc_library_static {
     ],
     export_include_dirs: ["./"],
     srcs: [
+        "avrcp_sdp_records.cc",
+        "avrcp_sdp_service.cc",
         "connection_handler.cc",
         "device.cc",
     ],
     static_libs: [
+        "bluetooth_flags_c_lib",
         "lib-bt-packets",
-        "libbluetooth-types",
         "libbluetooth_log",
-        "libbt_shim_bridge",
+        "libbluetooth_types",
         "libosi",
     ],
     whole_static_libs: [
@@ -36,12 +38,9 @@ cc_library_static {
     shared_libs: [
         "liblog",
     ],
-    apex_available: [
-        "com.android.btservices",
-    ],
-    min_sdk_version: "Tiramisu",
+    apex_available: ["com.android.bt"],
+    min_sdk_version: "36",
     header_libs: ["libbluetooth_headers"],
-    cflags: ["-Wno-unused-parameter"],
 }
 
 cc_test {
@@ -70,17 +69,17 @@ cc_test {
     ],
     static_libs: [
         "avrcp-target-service",
+        "bluetooth_flags_c_lib_for_test",
         "lib-bt-packets",
         "lib-bt-packets-avrcp",
         "lib-bt-packets-base",
         "libbase",
-        "libbluetooth-types",
         "libbluetooth_gd",
         "libbluetooth_log",
-        "libbt_shim_bridge",
-        "libbt_shim_ffi",
+        "libbluetooth_types",
         "libbtdevice",
         "libchrome",
+        "libcom.android.sysprop.bluetooth.wrapped",
         "libcutils",
         "libevent",
         "libgmock",
@@ -90,10 +89,6 @@ cc_test {
     sanitize: {
         cfi: false,
     },
-
-    cflags: [
-        "-Wno-unused-parameter",
-    ],
     header_libs: ["libbluetooth_headers"],
 }
 
@@ -102,6 +97,9 @@ cc_fuzz {
     host_supported: true,
     defaults: [
         "fluoride_defaults",
+    ],
+    cflags: [
+        "-Wno-missing-prototypes",
     ],
     srcs: [
         "tests/avrcp_device_fuzz/avrcp_device_fuzz.cc",
@@ -112,22 +110,24 @@ cc_fuzz {
         "packages/modules/Bluetooth/system/packet/tests",
         "packages/modules/Bluetooth/system/stack/include",
     ],
+    shared_libs: [
+        "libaconfig_storage_read_api_cc",
+        "server_configurable_flags",
+    ],
     static_libs: [
         "avrcp-target-service",
+        "bluetooth_flags_c_lib_for_test",
         "lib-bt-packets",
         "lib-bt-packets-avrcp",
         "lib-bt-packets-base",
         "libbase",
-        "libbluetooth-types",
         "libbluetooth_gd",
         "libbluetooth_log",
-        "libbt_shim_bridge",
-        "libbt_shim_ffi",
+        "libbluetooth_types",
         "libchrome",
         "libcutils",
         "libevent",
         "liblog",
-        "libstatslog_bt",
         "libutils",
     ],
     header_libs: ["libbluetooth_headers"],
@@ -139,5 +139,4 @@ cc_fuzz {
             enabled: false,
         },
     },
-    cflags: ["-Wno-unused-parameter"],
 }

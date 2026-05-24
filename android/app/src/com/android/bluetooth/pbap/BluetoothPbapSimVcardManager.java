@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -44,13 +44,12 @@ import com.android.vcard.VCardConfig;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 
 /** VCard composer especially for Call Log used in Bluetooth. */
 // Next tag value for ContentProfileErrorReportUtils.report(): 6
-public class BluetoothPbapSimVcardManager {
-    private static final String TAG = "PbapSIMvCardComposer";
+public class BluetoothPbapSimVcardManager implements AutoCloseable {
+    private static final String TAG = BluetoothPbapSimVcardManager.class.getSimpleName();
 
     @VisibleForTesting
     public static final String FAILURE_REASON_FAILED_TO_GET_DATABASE_INFO =
@@ -88,9 +87,8 @@ public class BluetoothPbapSimVcardManager {
     private static final int NUMBERLABEL_COLUMN_INDEX = 3;
 
     private final Context mContext;
-    private ContentResolver mContentResolver;
+    private final ContentResolver mContentResolver;
     private Cursor mCursor;
-    private boolean mTerminateIsCalled;
     private String mErrorReason = NO_ERROR;
 
     public BluetoothPbapSimVcardManager(final Context context) {
@@ -166,7 +164,7 @@ public class BluetoothPbapSimVcardManager {
             name = mCursor.getString(NUMBER_COLUMN_INDEX);
         }
         // Create ContentValues for making name as Structured name
-        List<ContentValues> contentValuesList = new ArrayList<ContentValues>();
+        List<ContentValues> contentValuesList = new ArrayList<>();
         ContentValues nameContentValues = new ContentValues();
         nameContentValues.put(StructuredName.DISPLAY_NAME, name);
         contentValuesList.add(nameContentValues);
@@ -194,7 +192,9 @@ public class BluetoothPbapSimVcardManager {
         return builder.toString();
     }
 
-    public void terminate() {
+    /** Closes the manager, releasing all of its resources. */
+    @Override
+    public void close() {
         if (mCursor != null) {
             try {
                 mCursor.close();
@@ -207,15 +207,6 @@ public class BluetoothPbapSimVcardManager {
                 Log.e(TAG, "SQLiteException on Cursor#close(): " + e.getMessage());
             }
             mCursor = null;
-        }
-
-        mTerminateIsCalled = true;
-    }
-
-    @Override
-    public void finalize() {
-        if (!mTerminateIsCalled) {
-            terminate();
         }
     }
 
@@ -252,7 +243,7 @@ public class BluetoothPbapSimVcardManager {
         if (mCursor == null) {
             return;
         }
-        ArrayList<String> nameList = new ArrayList<String>();
+        ArrayList<String> nameList = new ArrayList<>();
         for (mCursor.moveToFirst(); !mCursor.isAfterLast(); mCursor.moveToNext()) {
             String name = mCursor.getString(NAME_COLUMN_INDEX);
             if (TextUtils.isEmpty(name)) {
@@ -261,14 +252,7 @@ public class BluetoothPbapSimVcardManager {
             nameList.add(name);
         }
 
-        Collections.sort(
-                nameList,
-                new Comparator<String>() {
-                    @Override
-                    public int compare(String str1, String str2) {
-                        return str1.compareToIgnoreCase(str2);
-                    }
-                });
+        Collections.sort(nameList, String::compareToIgnoreCase);
 
         for (mCursor.moveToFirst(); !mCursor.isAfterLast(); mCursor.moveToNext()) {
             if (mCursor.getString(NAME_COLUMN_INDEX).equals(nameList.get(position))) {
@@ -297,10 +281,10 @@ public class BluetoothPbapSimVcardManager {
     }
 
     public final List<String> getSIMPhonebookNameList(final int orderByWhat) {
-        List<String> nameList = new ArrayList<String>();
+        List<String> nameList = new ArrayList<>();
         nameList.add(BluetoothPbapService.getLocalPhoneName());
         // Since owner card should always be 0.vcf, maintain a separate list to avoid sorting
-        ArrayList<String> allnames = new ArrayList<String>();
+        ArrayList<String> allnames = new ArrayList<>();
         Cursor contactCursor = null;
         try {
             contactCursor =
@@ -327,14 +311,7 @@ public class BluetoothPbapSimVcardManager {
             Log.v(TAG, "getPhonebookNameList, order by index");
         } else if (orderByWhat == BluetoothPbapObexServer.ORDER_BY_ALPHABETICAL) {
             Log.v(TAG, "getPhonebookNameList, order by alpha");
-            Collections.sort(
-                    allnames,
-                    new Comparator<String>() {
-                        @Override
-                        public int compare(String str1, String str2) {
-                            return str1.compareToIgnoreCase(str2);
-                        }
-                    });
+            Collections.sort(allnames, String::compareToIgnoreCase);
         }
 
         nameList.addAll(allnames);
@@ -342,8 +319,8 @@ public class BluetoothPbapSimVcardManager {
     }
 
     public final List<String> getSIMContactNamesByNumber(final String phoneNumber) {
-        List<String> nameList = new ArrayList<String>();
-        List<String> startNameList = new ArrayList<String>();
+        List<String> nameList = new ArrayList<>();
+        List<String> startNameList = new ArrayList<>();
         Cursor contactCursor = null;
 
         try {
@@ -410,10 +387,8 @@ public class BluetoothPbapSimVcardManager {
                     2);
             return ResponseCodes.OBEX_HTTP_INTERNAL_ERROR;
         }
-        BluetoothPbapSimVcardManager composer = null;
         HandlerForStringBuffer buffer = null;
-        try {
-            composer = new BluetoothPbapSimVcardManager(context);
+        try (BluetoothPbapSimVcardManager composer = new BluetoothPbapSimVcardManager(context)) {
             buffer = new HandlerForStringBuffer(op, ownerVCard);
 
             if (!composer.init(SIM_URI, null, null, null) || !buffer.init()) {
@@ -445,9 +420,6 @@ public class BluetoothPbapSimVcardManager {
                 buffer.writeVCard(vcard);
             }
         } finally {
-            if (composer != null) {
-                composer.terminate();
-            }
             if (buffer != null) {
                 buffer.terminate();
             }
@@ -472,10 +444,8 @@ public class BluetoothPbapSimVcardManager {
             return ResponseCodes.OBEX_HTTP_INTERNAL_ERROR;
         }
         Log.v(TAG, "composeAndSendSIMPhonebookOneVcard orderByWhat " + orderByWhat);
-        BluetoothPbapSimVcardManager composer = null;
         HandlerForStringBuffer buffer = null;
-        try {
-            composer = new BluetoothPbapSimVcardManager(context);
+        try (BluetoothPbapSimVcardManager composer = new BluetoothPbapSimVcardManager(context)) {
             buffer = new HandlerForStringBuffer(op, ownerVCard);
             if (!composer.init(SIM_URI, null, null, null) || !buffer.init()) {
                 return ResponseCodes.OBEX_HTTP_INTERNAL_ERROR;
@@ -501,9 +471,6 @@ public class BluetoothPbapSimVcardManager {
             }
             buffer.writeVCard(vcard);
         } finally {
-            if (composer != null) {
-                composer.terminate();
-            }
             if (buffer != null) {
                 buffer.terminate();
             }

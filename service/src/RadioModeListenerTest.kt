@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.server.bluetooth.test
 
 import android.content.ContentResolver
@@ -57,16 +58,16 @@ internal fun enableMode(resolver: ContentResolver, looper: Looper, modeKey: Stri
 
 @RunWith(RobolectricTestRunner::class)
 class RadioModeListenerTest {
+    @get:Rule val testName = TestName()
     private val resolver: ContentResolver =
         ApplicationProvider.getApplicationContext<Context>().getContentResolver()
-    @JvmField @Rule val testName = TestName()
 
     private val looper: Looper = Looper.getMainLooper()
 
     private lateinit var mode: ArrayList<Boolean>
 
     @Before
-    public fun setup() {
+    fun setup() {
         Log.i("RadioModeListenerTest", "\t--> setup of " + testName.getMethodName())
         mode = ArrayList()
     }

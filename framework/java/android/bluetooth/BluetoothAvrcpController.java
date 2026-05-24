@@ -16,6 +16,11 @@
 
 package android.bluetooth;
 
+import static android.Manifest.permission.BLUETOOTH_CONNECT;
+import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTED;
+import static android.bluetooth.BluetoothUtils.isValidDevice;
+
+import android.annotation.RequiresNoPermission;
 import android.annotation.RequiresPermission;
 import android.annotation.SdkConstant;
 import android.annotation.SdkConstant.SdkConstantType;
@@ -41,9 +46,10 @@ import java.util.List;
  * @hide
  */
 public final class BluetoothAvrcpController implements BluetoothProfile {
-    private static final String TAG = "BluetoothAvrcpController";
-    private static final boolean DBG = false;
-    private static final boolean VDBG = false;
+    private static final String TAG = BluetoothAvrcpController.class.getSimpleName();
+
+    private static final boolean DBG = Log.isLoggable("bluetooth", Log.DEBUG);
+    private static final boolean VDBG = Log.isLoggable("bluetooth", Log.VERBOSE);
 
     /**
      * Intent used to broadcast the change in connection state of the AVRCP Controller profile.
@@ -62,7 +68,7 @@ public final class BluetoothAvrcpController implements BluetoothProfile {
      */
     @RequiresLegacyBluetoothPermission
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
     public static final String ACTION_CONNECTION_STATE_CHANGED =
             "android.bluetooth.avrcp-controller.profile.action.CONNECTION_STATE_CHANGED";
@@ -78,7 +84,7 @@ public final class BluetoothAvrcpController implements BluetoothProfile {
      * </ul>
      */
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
     public static final String ACTION_PLAYER_SETTING =
             "android.bluetooth.avrcp-controller.profile.action.PLAYER_SETTING";
@@ -103,12 +109,14 @@ public final class BluetoothAvrcpController implements BluetoothProfile {
 
     /** @hide */
     @Override
+    @RequiresNoPermission
     public void onServiceConnected(IBinder service) {
         mService = IBluetoothAvrcpController.Stub.asInterface(service);
     }
 
     /** @hide */
     @Override
+    @RequiresNoPermission
     public void onServiceDisconnected() {
         mService = null;
     }
@@ -119,6 +127,7 @@ public final class BluetoothAvrcpController implements BluetoothProfile {
 
     /** @hide */
     @Override
+    @RequiresNoPermission
     public BluetoothAdapter getAdapter() {
         return mAdapter;
     }
@@ -130,7 +139,7 @@ public final class BluetoothAvrcpController implements BluetoothProfile {
     /** {@inheritDoc} */
     @Override
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     public List<BluetoothDevice> getConnectedDevices() {
         if (VDBG) log("getConnectedDevices()");
         final IBluetoothAvrcpController service = getService();
@@ -151,7 +160,7 @@ public final class BluetoothAvrcpController implements BluetoothProfile {
     /** {@inheritDoc} */
     @Override
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     public List<BluetoothDevice> getDevicesMatchingConnectionStates(int[] states) {
         if (VDBG) log("getDevicesMatchingStates()");
         final IBluetoothAvrcpController service = getService();
@@ -173,7 +182,7 @@ public final class BluetoothAvrcpController implements BluetoothProfile {
     /** {@inheritDoc} */
     @Override
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     public int getConnectionState(BluetoothDevice device) {
         if (VDBG) log("getState(" + device + ")");
         final IBluetoothAvrcpController service = getService();
@@ -187,88 +196,11 @@ public final class BluetoothAvrcpController implements BluetoothProfile {
                 Log.e(TAG, e.toString() + "\n" + Log.getStackTraceString(new Throwable()));
             }
         }
-        return BluetoothProfile.STATE_DISCONNECTED;
-    }
-
-    /**
-     * Gets the player application settings.
-     *
-     * @return the {@link BluetoothAvrcpPlayerSettings} or {@code null} if there is an error.
-     */
-    @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
-    public BluetoothAvrcpPlayerSettings getPlayerSettings(BluetoothDevice device) {
-        if (DBG) Log.d(TAG, "getPlayerSettings");
-        final IBluetoothAvrcpController service = getService();
-        if (service == null) {
-            Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
-        } else if (isEnabled()) {
-            try {
-                return service.getPlayerSettings(device, mAttributionSource);
-            } catch (RemoteException e) {
-                Log.e(TAG, e.toString() + "\n" + Log.getStackTraceString(new Throwable()));
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Sets the player app setting for current player. returns true in case setting is supported by
-     * remote, false otherwise
-     */
-    @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
-    public boolean setPlayerApplicationSetting(BluetoothAvrcpPlayerSettings plAppSetting) {
-        if (DBG) Log.d(TAG, "setPlayerApplicationSetting");
-        final IBluetoothAvrcpController service = getService();
-        if (service == null) {
-            Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
-        } else if (isEnabled()) {
-            try {
-                service.setPlayerApplicationSetting(plAppSetting, mAttributionSource);
-            } catch (RemoteException e) {
-                Log.e(TAG, e.toString() + "\n" + Log.getStackTraceString(new Throwable()));
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Send Group Navigation Command to Remote. possible keycode values: next_grp, previous_grp
-     * defined above
-     */
-    @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
-    public void sendGroupNavigationCmd(BluetoothDevice device, int keyCode, int keyState) {
-        Log.d(
-                TAG,
-                "sendGroupNavigationCmd dev = "
-                        + device
-                        + " key "
-                        + keyCode
-                        + " State = "
-                        + keyState);
-        final IBluetoothAvrcpController service = getService();
-        if (service == null) {
-            Log.w(TAG, "Proxy not attached to service");
-            if (DBG) log(Log.getStackTraceString(new Throwable()));
-        } else if (isEnabled()) {
-            try {
-                service.sendGroupNavigationCmd(device, keyCode, keyState, mAttributionSource);
-            } catch (RemoteException e) {
-                Log.e(TAG, e.toString() + "\n" + Log.getStackTraceString(new Throwable()));
-            }
-        }
+        return STATE_DISCONNECTED;
     }
 
     private boolean isEnabled() {
         return mAdapter.getState() == BluetoothAdapter.STATE_ON;
-    }
-
-    private static boolean isValidDevice(BluetoothDevice device) {
-        return device != null && BluetoothAdapter.checkBluetoothAddress(device.getAddress());
     }
 
     private static void log(String msg) {

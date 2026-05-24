@@ -12,15 +12,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth;
 
-import android.annotation.RequiresPermission;
+import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
 import android.util.Log;
 
+import com.android.bluetooth.btservice.AdapterService;
 import com.android.obex.ResponseCodes;
 import com.android.obex.ServerSession;
 
@@ -29,12 +32,12 @@ import java.io.IOException;
 /**
  * Wraps multiple BluetoothServerSocket objects to make it possible to accept connections on both a
  * RFCOMM and L2CAP channel in parallel.<br>
- * Create an instance using {@link #create()}, which will block until the sockets have been created
+ * Create an instance using {@link #create}, which will block until the sockets have been created
  * and channel numbers have been assigned.<br>
  * Use {@link #getRfcommChannel()} and {@link #getL2capPsm()} to get the channel numbers to put into
  * the SDP record.<br>
  * Call {@link #shutdown(boolean)} to terminate the accept threads created by the call to {@link
- * #create(IObexConnectionHandler)}.<br>
+ * #create(AdapterService, IObexConnectionHandler)}.<br>
  * A reference to an object of this type cannot be reused, and the {@link BluetoothServerSocket}
  * object references passed to this object will be closed by this object, hence cannot be reused
  * either (This is needed, as the only way to interrupt an accept call is to close the socket...)
@@ -46,20 +49,24 @@ import java.io.IOException;
  * In both cases the {@link ObexServerSockets} object have terminated, and a new must be created.
  */
 public class ObexServerSockets {
-    private static final String TAG = "ObexServerSockets";
+    private static final String TAG = ObexServerSockets.class.getSimpleName();
 
+    private final AdapterService mAdapterService;
     private final IObexConnectionHandler mConHandler;
     /* The wrapped sockets */
     private final BluetoothServerSocket mRfcommSocket;
     private final BluetoothServerSocket mL2capSocket;
+
     /* Handles to the accept threads. Needed for shutdown. */
     private SocketAcceptThread mRfcommThread;
     private SocketAcceptThread mL2capThread;
 
     private ObexServerSockets(
+            AdapterService adapterService,
             IObexConnectionHandler conHandler,
             BluetoothServerSocket rfcommSocket,
             BluetoothServerSocket l2capSocket) {
+        mAdapterService = adapterService;
         mConHandler = conHandler;
         mRfcommSocket = rfcommSocket;
         mL2capSocket = l2capSocket;
@@ -72,13 +79,9 @@ public class ObexServerSockets {
      *     an incoming connection.
      * @return a reference to a {@link ObexServerSockets} object instance.
      */
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
-    public static ObexServerSockets create(IObexConnectionHandler validator) {
-        return create(
-                validator,
-                BluetoothAdapter.SOCKET_CHANNEL_AUTO_STATIC_NO_SDP,
-                BluetoothAdapter.SOCKET_CHANNEL_AUTO_STATIC_NO_SDP,
-                true);
+    public static ObexServerSockets create(
+            AdapterService adapterService, IObexConnectionHandler validator) {
+        return create(adapterService, validator, true);
     }
 
     /**
@@ -89,13 +92,9 @@ public class ObexServerSockets {
      *     an incoming connection.
      * @return a reference to a {@link ObexServerSockets} object instance.
      */
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
-    public static ObexServerSockets createInsecure(IObexConnectionHandler validator) {
-        return create(
-                validator,
-                BluetoothAdapter.SOCKET_CHANNEL_AUTO_STATIC_NO_SDP,
-                BluetoothAdapter.SOCKET_CHANNEL_AUTO_STATIC_NO_SDP,
-                false);
+    public static ObexServerSockets createInsecure(
+            AdapterService adapterService, IObexConnectionHandler validator) {
+        return create(adapterService, validator, false);
     }
 
     private static final int CREATE_RETRY_TIME = 10;
@@ -108,22 +107,21 @@ public class ObexServerSockets {
      *
      * @param validator a reference to the {@link IObexConnectionHandler} object to call to validate
      *     an incoming connection.
-     * @param isSecure boolean flag to determine whther socket would be secured or inseucure.
+     * @param isSecure boolean flag to determine whether socket would be secured or insecure.
      * @return a reference to a {@link ObexServerSockets} object instance.
      *     <p>TODO: Make public when it becomes possible to determine that the listen-call failed
      *     due to channel-in-use.
      */
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @SuppressLint("AndroidFrameworkRequiresPermission") // TODO: b/350563786
     private static ObexServerSockets create(
-            IObexConnectionHandler validator, int rfcommChannel, int l2capPsm, boolean isSecure) {
-        Log.d(TAG, "create(rfcomm = " + rfcommChannel + ", l2capPsm = " + l2capPsm + ")");
-        BluetoothAdapter bt = BluetoothAdapter.getDefaultAdapter();
-        if (bt == null) {
-            throw new RuntimeException("No bluetooth adapter...");
-        }
+            AdapterService adapterService, IObexConnectionHandler validator, boolean isSecure) {
+        Log.d(TAG, "create()");
+
         BluetoothServerSocket rfcommSocket = null;
         BluetoothServerSocket l2capSocket = null;
         boolean initSocketOK = false;
+
+        final var adapter = adapterService.getSystemService(BluetoothManager.class).getAdapter();
 
         // It's possible that create will fail in some cases. retry for 10 times
         for (int i = 0; i < CREATE_RETRY_TIME; i++) {
@@ -131,16 +129,20 @@ public class ObexServerSockets {
             try {
                 if (rfcommSocket == null) {
                     if (isSecure) {
-                        rfcommSocket = bt.listenUsingRfcommOn(rfcommChannel);
+                        rfcommSocket = adapter.listenUsingRfcommOn();
                     } else {
-                        rfcommSocket = bt.listenUsingInsecureRfcommOn(rfcommChannel);
+                        rfcommSocket = adapter.listenUsingInsecureRfcommOn();
                     }
                 }
                 if (l2capSocket == null) {
                     if (isSecure) {
-                        l2capSocket = bt.listenUsingL2capOn(l2capPsm);
+                        l2capSocket =
+                                adapter.listenUsingL2capOn(
+                                        BluetoothAdapter.SOCKET_CHANNEL_AUTO_STATIC_NO_SDP);
                     } else {
-                        l2capSocket = bt.listenUsingInsecureL2capOn(l2capPsm);
+                        l2capSocket =
+                                adapter.listenUsingInsecureL2capOn(
+                                        BluetoothAdapter.SOCKET_CHANNEL_AUTO_STATIC_NO_SDP);
                     }
                 }
             } catch (IOException e) {
@@ -153,7 +155,7 @@ public class ObexServerSockets {
             }
             if (!initSocketOK) {
                 // Need to break out of this loop if BT is being turned off.
-                int state = bt.getState();
+                int state = adapter.getState();
                 if ((state != BluetoothAdapter.STATE_TURNING_ON)
                         && (state != BluetoothAdapter.STATE_ON)) {
                     Log.w(TAG, "initServerSockets failed as BT is (being) turned off");
@@ -172,7 +174,8 @@ public class ObexServerSockets {
 
         if (initSocketOK) {
             Log.d(TAG, "Succeed to create listening sockets ");
-            ObexServerSockets sockets = new ObexServerSockets(validator, rfcommSocket, l2capSocket);
+            ObexServerSockets sockets =
+                    new ObexServerSockets(adapterService, validator, rfcommSocket, l2capSocket);
             sockets.startAccept();
             return sockets;
         } else {
@@ -231,8 +234,7 @@ public class ObexServerSockets {
     /** Signal to the {@link IObexConnectionHandler} that an error have occurred. */
     private synchronized void onAcceptFailed() {
         shutdown(false);
-        BluetoothAdapter mAdapter = BluetoothAdapter.getDefaultAdapter();
-        if ((mAdapter != null) && (mAdapter.getState() == BluetoothAdapter.STATE_ON)) {
+        if (mAdapterService.getState() == BluetoothAdapter.STATE_ON) {
             Log.d(TAG, "onAcceptFailed() calling shutdown...");
             mConHandler.onAcceptFailed();
         }
@@ -335,12 +337,11 @@ public class ObexServerSockets {
 
                         if (!isValid) {
                             /* Close connection if we already have a connection with another device
-                             * by responding to the OBEX connect request.
-                             */
+                             * by responding to the OBEX connect request. */
                             Log.i(TAG, "RemoteDevice is invalid - creating ObexRejectServer.");
                             BluetoothObexTransport obexTrans =
-                                    new BluetoothObexTransport(connSocket);
-                            // Create and detach a selfdestructing ServerSession to respond to any
+                                    new BluetoothObexTransport(mAdapterService, connSocket);
+                            // Create and detach a self destructing ServerSession to respond to any
                             // incoming OBEX signals.
                             new ServerSession(
                                     obexTrans,
@@ -371,7 +372,7 @@ public class ObexServerSockets {
          * BluetoothSockets to disconnect, hence do not call until all all accepted connections are
          * ready to be disconnected.
          */
-        public void shutdown() {
+        void shutdown() {
             if (!mStopped) {
                 mStopped = true;
                 // TODO: According to the documentation, this should not close the accepted
@@ -386,7 +387,7 @@ public class ObexServerSockets {
             // If called from another thread, interrupt the thread
             if (!Thread.currentThread().equals(this)) {
                 // TODO: Will this interrupt the thread if it is blocked in synchronized?
-                // Else: change to use InterruptableLock
+                // Else: change to use InterruptibleLock
                 Log.d(TAG, "shutdown called from another thread - interrupt().");
                 interrupt();
             }

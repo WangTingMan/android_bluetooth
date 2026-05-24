@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -82,8 +82,6 @@ TEST(FilesTest, write_read_empty_string_test) {
   EXPECT_TRUE(std::filesystem::remove(temp_file));
 }
 
-TEST(FilesTest, read_non_existing_file_test) {
-  EXPECT_FALSE(ReadSmallFile("/woof"));
-}
+TEST(FilesTest, read_non_existing_file_test) { EXPECT_FALSE(ReadSmallFile("/woof")); }
 
 }  // namespace testing

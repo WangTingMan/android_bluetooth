@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@
 #include <vector>
 
 class Size {
- public:
+public:
   Size() {}
 
   Size(int bits) {
@@ -48,44 +48,35 @@ class Size {
   }
 
   std::string dynamic_string() const {
-    if (dynamic_.empty()) return "0";
+    if (dynamic_.empty()) {
+      return "0";
+    }
 
     std::stringstream result;
     // Print everything but the last element then append it manually to avoid
     // the trailing "+" operator.
-    std::copy(dynamic_.begin(), dynamic_.end() - 1, std::ostream_iterator<std::string>(result, " + "));
+    std::copy(dynamic_.begin(), dynamic_.end() - 1,
+              std::ostream_iterator<std::string>(result, " + "));
     result << dynamic_.back();
     return result.str();
   }
 
-  std::vector<std::string> dynamic_string_list() {
-    return dynamic_;
-  }
+  std::vector<std::string> dynamic_string_list() { return dynamic_; }
 
-  bool empty() const {
-    return !is_valid_;
-  }
+  bool empty() const { return !is_valid_; }
 
-  bool has_bits() const {
-    return bits_ != 0;
-  }
+  bool has_bits() const { return bits_ != 0; }
 
-  bool has_dynamic() const {
-    return !dynamic_.empty();
-  }
+  bool has_dynamic() const { return !dynamic_.empty(); }
 
-  int bits() const {
-    return bits_;
-  }
+  int bits() const { return bits_; }
 
   int bytes() const {
     // Round up to the nearest byte
     return (bits_ + 7) / 8;
   }
 
-  Size operator+(int rhs) {
-    return Size(bits_ + rhs);
-  }
+  Size operator+(int rhs) { return Size(bits_ + rhs); }
 
   Size operator+(std::string rhs) {
     auto ret = Size();
@@ -124,7 +115,11 @@ class Size {
 
   std::string ToString() const {
     std::stringstream str;
-    str << "/* Bits: */ " << bits_ << " + /* Dynamic: */ " << dynamic_string();
+    if (dynamic_.empty()) {
+      str << bits_;
+    } else {
+      str << "/* Bits: */ " << bits_ << " + /* Dynamic: */ " << dynamic_string();
+    }
     if (!is_valid_) {
       str << " (invalid) ";
     }
@@ -135,7 +130,7 @@ class Size {
     return os << rhs.ToString();
   }
 
- private:
+private:
   bool is_valid_ = false;
   int bits_ = 0;
   std::vector<std::string> dynamic_;

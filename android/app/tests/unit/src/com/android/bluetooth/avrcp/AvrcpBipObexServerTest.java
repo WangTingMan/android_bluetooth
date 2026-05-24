@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import static com.google.common.truth.Truth.assertThat;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -28,13 +27,13 @@ import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 
-import androidx.test.InstrumentationRegistry;
-import androidx.test.runner.AndroidJUnit4;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import com.android.bluetooth.TestUtils;
 import com.android.bluetooth.audio_util.Image;
 import com.android.bluetooth.avrcpcontroller.BipEncoding;
 import com.android.bluetooth.avrcpcontroller.BipImageDescriptor;
+import com.android.bluetooth.tests.R;
 import com.android.obex.HeaderSet;
 import com.android.obex.Operation;
 import com.android.obex.ResponseCodes;
@@ -48,6 +47,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 
+/** Test cases for {@link AvrcpBipObexServer}. */
 @RunWith(AndroidJUnit4.class)
 public class AvrcpBipObexServerTest {
     private static final String TYPE_GET_LINKED_THUMBNAIL = "x-bt/img-thm";
@@ -102,7 +102,7 @@ public class AvrcpBipObexServerTest {
     private static final String IMAGE_HANDLE_UNSTORED = "0000256";
     private static final String IMAGE_HANDLE_INVALID = "abc1234"; // no non-numeric characters
 
-    private Resources mTestResources;
+    private final Resources mTestResources = TestUtils.getTestApplicationResources();
     private CoverArt mCoverArt;
 
     private AvrcpCoverArtService mAvrcpCoverArtService = null;
@@ -116,10 +116,7 @@ public class AvrcpBipObexServerTest {
 
     @Before
     public void setUp() throws Exception {
-        mTestResources =
-                TestUtils.getTestApplicationResources(InstrumentationRegistry.getTargetContext());
-
-        mCoverArt = loadCoverArt(com.android.bluetooth.tests.R.raw.image_200_200);
+        mCoverArt = loadCoverArt(R.raw.image_200_200);
 
         mAvrcpCoverArtService = mock(AvrcpCoverArtService.class);
         mCallback = mock(AvrcpBipObexServer.Callback.class);
@@ -140,7 +137,6 @@ public class AvrcpBipObexServerTest {
         mCallback = null;
         mAvrcpCoverArtService = null;
         mCoverArt = null;
-        mTestResources = null;
     }
 
     private CoverArt loadCoverArt(int resId) {
@@ -161,7 +157,8 @@ public class AvrcpBipObexServerTest {
      * <p>Our server will use: - getReceivedHeader - sendHeaders - getMaxPacketSize -
      * openOutputStream
      */
-    private Operation makeOperation(HeaderSet requestHeaders, OutputStream os) throws Exception {
+    private static Operation makeOperation(HeaderSet requestHeaders, OutputStream os)
+            throws Exception {
         Operation op = mock(Operation.class);
         when(op.getReceivedHeader()).thenReturn(requestHeaders);
         when(op.getMaxPacketSize()).thenReturn(256);
@@ -169,7 +166,7 @@ public class AvrcpBipObexServerTest {
         return op;
     }
 
-    private byte[] makeDescriptor(int encoding, int width, int height) {
+    private static byte[] makeDescriptor(int encoding, int width, int height) {
         return new BipImageDescriptor.Builder()
                 .setEncoding(encoding)
                 .setFixedDimensions(width, height)
@@ -182,7 +179,7 @@ public class AvrcpBipObexServerTest {
     public void testConnectWithValidUuidHeader() throws Exception {
         mRequest.setHeader(HeaderSet.TARGET, BLUETOOTH_UUID_AVRCP_COVER_ART);
         int responseCode = mAvrcpBipObexServer.onConnect(mRequest, mReply);
-        verify(mCallback, times(1)).onConnected();
+        verify(mCallback).onConnected();
         assertThat(responseCode).isEqualTo(ResponseCodes.OBEX_HTTP_OK);
     }
 
@@ -197,16 +194,16 @@ public class AvrcpBipObexServerTest {
 
     /** Make sure onDisconnect notifies the callbacks in the proper way */
     @Test
-    public void testDisonnect() {
+    public void testDisconnect() {
         mAvrcpBipObexServer.onDisconnect(mRequest, mReply);
-        verify(mCallback, times(1)).onDisconnected();
+        verify(mCallback).onDisconnected();
     }
 
     /** Make sure onClose notifies the callbacks in the proper way */
     @Test
     public void testOnClose() {
         mAvrcpBipObexServer.onClose();
-        verify(mCallback, times(1)).onClose();
+        verify(mCallback).onClose();
     }
 
     /** Make sure onGet handles null headers gracefully */
@@ -283,7 +280,7 @@ public class AvrcpBipObexServerTest {
     }
 
     /**
-     * Make sure a getImageProperties request with a valid handle returns a valie properties object
+     * Make sure a getImageProperties request with a valid handle returns a valid properties object
      */
     @Test
     public void testGetImagePropertiesWithValidHandle() throws Exception {

@@ -18,9 +18,9 @@ package com.android.bluetooth.avrcpcontroller;
 
 import android.util.SparseArray;
 
-import com.google.common.base.Ascii;
-
 import java.util.HashMap;
+import java.util.Locale;
+import java.util.Objects;
 
 /**
  * Represents an encoding method in which a BIP image is available.
@@ -85,7 +85,7 @@ public class BipEncoding {
         if (encoding == null) {
             throw new ParseException("Encoding input invalid");
         }
-        encoding = Ascii.toUpperCase(encoding.trim());
+        encoding = encoding.trim().toUpperCase(Locale.ROOT);
         mType = determineEncoding(encoding);
 
         String proprietaryEncodingId = null;
@@ -119,7 +119,7 @@ public class BipEncoding {
                 throw new IllegalArgumentException(
                         "Received invalid user defined encoding id '" + proprietaryId + "'");
             }
-            proprietaryEncodingId = Ascii.toUpperCase(proprietaryId);
+            proprietaryEncodingId = proprietaryId.toUpperCase(Locale.ROOT);
         }
         mProprietaryEncodingId = proprietaryEncodingId;
     }
@@ -172,12 +172,20 @@ public class BipEncoding {
 
     @Override
     public boolean equals(Object o) {
-        if (o == this) return true;
-        if (!(o instanceof BipEncoding)) return false;
+        if (o == this) {
+            return true;
+        }
+        if (!(o instanceof BipEncoding e)) {
+            return false;
+        }
 
-        BipEncoding e = (BipEncoding) o;
         return e.getType() == getType()
-                && e.getProprietaryEncodingId() == getProprietaryEncodingId();
+                && Objects.equals(e.getProprietaryEncodingId(), getProprietaryEncodingId());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getType(), getProprietaryEncodingId());
     }
 
     @Override

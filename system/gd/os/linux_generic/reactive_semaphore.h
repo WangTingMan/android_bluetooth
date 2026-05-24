@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ namespace os {
 
 // A event_fd work in non-blocking and Semaphore mode
 class ReactiveSemaphore {
- public:
+public:
   // Creates a new ReactiveSemaphore with an initial value of |value|.
   explicit ReactiveSemaphore(unsigned int value);
 
@@ -38,7 +38,7 @@ class ReactiveSemaphore {
   void Increase();
   int GetFd();
 
- private:
+private:
   int fd_;
 #ifdef _MSC_VER
   std::atomic_int32_t value_;

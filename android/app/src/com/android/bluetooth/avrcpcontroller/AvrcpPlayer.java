@@ -53,11 +53,11 @@ class AvrcpPlayer {
     public static final int FEATURE_BROWSING = 59;
     public static final int FEATURE_NOW_PLAYING = 65;
 
-    private BluetoothDevice mDevice;
+    private final BluetoothDevice mDevice;
     private int mPlayStatus = PlaybackStateCompat.STATE_NONE;
     private long mPlayTime = PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN;
     private float mPlaySpeed = 1;
-    private int mId;
+    private final int mId;
     private String mName = "";
     private byte[] mPlayerFeatures = new byte[16];
     private long mAvailableActions = PlaybackStateCompat.ACTION_PREPARE;
@@ -106,28 +106,22 @@ class AvrcpPlayer {
 
     public void setPlayStatus(int playStatus) {
         if (mPlayTime != PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN) {
-            mPlayTime +=
-                    mPlaySpeed
-                            * (SystemClock.elapsedRealtime()
-                                    - mPlaybackStateCompat.getLastPositionUpdateTime());
+            mPlayTime =
+                    (long)
+                            (mPlayTime
+                                    + mPlaySpeed
+                                            * (SystemClock.elapsedRealtime()
+                                                    - mPlaybackStateCompat
+                                                            .getLastPositionUpdateTime()));
         }
         mPlayStatus = playStatus;
         switch (mPlayStatus) {
-            case PlaybackStateCompat.STATE_STOPPED:
-                mPlaySpeed = 0;
-                break;
-            case PlaybackStateCompat.STATE_PLAYING:
-                mPlaySpeed = 1;
-                break;
-            case PlaybackStateCompat.STATE_PAUSED:
-                mPlaySpeed = 0;
-                break;
-            case PlaybackStateCompat.STATE_FAST_FORWARDING:
-                mPlaySpeed = 3;
-                break;
-            case PlaybackStateCompat.STATE_REWINDING:
-                mPlaySpeed = -3;
-                break;
+            case PlaybackStateCompat.STATE_STOPPED -> mPlaySpeed = 0;
+            case PlaybackStateCompat.STATE_PLAYING -> mPlaySpeed = 1;
+            case PlaybackStateCompat.STATE_PAUSED -> mPlaySpeed = 0;
+            case PlaybackStateCompat.STATE_FAST_FORWARDING -> mPlaySpeed = 3;
+            case PlaybackStateCompat.STATE_REWINDING -> mPlaySpeed = -3;
+            default -> {} // Nothing to do
         }
 
         mPlaybackStateCompat =
@@ -266,7 +260,7 @@ class AvrcpPlayer {
         /**
          * Set the device that this Player came from
          *
-         * @param device The BleutoothDevice representing the remote device
+         * @param device The BluetoothDevice representing the remote device
          * @return This object, so you can continue building
          */
         public Builder setDevice(BluetoothDevice device) {

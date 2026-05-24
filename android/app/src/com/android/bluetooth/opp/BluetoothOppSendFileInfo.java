@@ -32,8 +32,11 @@
 
 package com.android.bluetooth.opp;
 
+import static android.os.UserHandle.myUserId;
+
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.BluetoothProtoEnums;
+import android.content.ContentProvider;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.res.AssetFileDescriptor;
@@ -41,6 +44,7 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteException;
 import android.net.Uri;
 import android.provider.OpenableColumns;
+import android.text.TextUtils;
 import android.util.EventLog;
 import android.util.Log;
 
@@ -53,14 +57,15 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.Objects;
 
 /**
  * This class stores information about a single sending file It will only be used for outbound
  * share.
  */
-// Next tag value for ContentProfileErrorReportUtils.report(): 15
+// Next tag value for ContentProfileErrorReportUtils.report(): 16
 public class BluetoothOppSendFileInfo {
-    private static final String TAG = "BluetoothOppSendFileInfo";
+    private static final String TAG = BluetoothOppSendFileInfo.class.getSimpleName();
 
     /** Reusable SendFileInfo for error status. */
     static final BluetoothOppSendFileInfo SEND_FILE_INFO_ERROR =
@@ -121,6 +126,16 @@ public class BluetoothOppSendFileInfo {
                         BluetoothProtoEnums.BLUETOOTH_OPP_SEND_FILE_INFO,
                         BluetoothStatsLog.BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_ERROR,
                         0);
+                return SEND_FILE_INFO_ERROR;
+            }
+
+            if (isContentUriForOtherUser(uri)) {
+                Log.e(TAG, "Uri: " + uri + " is invalid for user " + myUserId());
+                ContentProfileErrorReportUtils.report(
+                        BluetoothProfile.OPP,
+                        BluetoothProtoEnums.BLUETOOTH_OPP_SEND_FILE_INFO,
+                        BluetoothStatsLog.BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_ERROR,
+                        15);
                 return SEND_FILE_INFO_ERROR;
             }
 
@@ -351,6 +366,33 @@ public class BluetoothOppSendFileInfo {
         }
 
         return new BluetoothOppSendFileInfo(fileName, contentType, length, is, 0);
+    }
+
+    /**
+     * Determine if the given {@link Uri} is a content uri for another user.
+     *
+     * <p>RFC 2396 s.3.2. states that <tt>'@'</tt> is reserved in the authority component. Its
+     * encoded form should be interpreted as data within the authority component. However,
+     * ContentProvider APIs use the decoded {@link Uri#getAuthority()} with {@link
+     * ContentProvider#getUserIdFromAuthority(String, int)} to determine the <tt>userId</tt> in the
+     * userInfo, rather than {@link Uri#getUserInfo()}. An encoded <tt>'@'</tt>, which is
+     * <tt>'%40'</tt>, is interpreted by ContentProvider as the separator for userInfo and host.
+     *
+     * <p>As an unbundled module, Bluetooth cannot access ContentProvider#getUserIdFromAuthority, so
+     * parse userInfo here from the authority.
+     */
+    private static boolean isContentUriForOtherUser(Uri uri) {
+        String authority = uri.getAuthority();
+        if (authority == null) {
+            return false;
+        }
+        int atIndex = authority.lastIndexOf('@');
+        if (atIndex == -1) {
+            return false;
+        }
+        String uriUserId = authority.substring(0, atIndex);
+        return !TextUtils.isEmpty(uriUserId)
+                && !Objects.equals(uriUserId, String.valueOf(myUserId()));
     }
 
     private static long getStreamSize(FileInputStream is) throws IOException {

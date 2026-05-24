@@ -18,12 +18,12 @@
 
 #pragma once
 
+#include <bluetooth/types/address.h>
 #include <hardware/bluetooth.h>
 #include <stdbool.h>
 
 #include "include/hardware/bluetooth.h"
 #include "osi/include/list.h"
-#include "raw_address.h"
 
 static const char INTEROP_MODULE[] = "interop_module";
 
@@ -31,7 +31,6 @@ static const char INTEROP_MODULE[] = "interop_module";
 // Only add values at the end of this enum and before END_OF_INTEROP_LIST
 // do NOT delete values as they may be used in dynamic device configuration.
 typedef enum {
-
   BEGINNING_OF_INTEROP_LIST = 0,
   // Disable secure connections
   // This is for pre BT 4.1/2 devices that do not handle secure mode
@@ -48,6 +47,9 @@ typedef enum {
   // control correctly, leading to undesirable (potentially harmful) volume
   // levels or general lack of controlability.
   INTEROP_DISABLE_ABSOLUTE_VOLUME,
+
+  // Devices requiring this read characteristics via GATT_READ_CHAR_VALUE
+  INTEROP_DISABLE_SIRK_READ_BY_TYPE,
 
   // Disable automatic pairing with headsets/car-kits
   // Some car kits do not react kindly to a failed pairing attempt and
@@ -308,7 +310,7 @@ typedef enum {
   // are sent before sco is opened
   INTEROP_DELAY_SCO_FOR_MO_CALL,
 
-  // Some remote hid devices cannot work properly as they laod special hid usb
+  // Some remote hid devices cannot work properly as they load special hid usb
   // driver in kernel, so modify their vid/pid so that generic hid driver are
   // loaded.
   INTEROP_CHANGE_HID_VID_PID,
@@ -345,6 +347,9 @@ typedef enum {
   // collision.
   INTEROP_DELAY_AUTH,
 
+  // Add remote device into INTEROP_A2DP_DELAY_DISCONNECT blacklist
+  INTEROP_A2DP_DELAY_DISCONNECT,
+
   // Some LE HID devices contain more than one HOGP service.
   INTEROP_MULTIPLE_HOGP_SERVICE_CHOOSE_THIRD,
 
@@ -356,6 +361,31 @@ typedef enum {
   // Peer can request proper latency based on its power state later.
   INTEROP_HID_PREF_CONN_ZERO_LATENCY,
 
+  // Some HOGP devices have the report map longer than the maximum GATT
+  // attribute value length (512 bytes).
+  INTEROP_HOGP_LONG_REPORT,
+
+  // Some HOGP devices requires MTU exchange be part of the initial setup to
+  // function.
+  INTEROP_HOGP_FORCE_MTU_EXCHANGE,
+
+  // Some devices claim to support HFP in EIR but does not actually support it.
+  INTEROP_DISABLE_HF_PROFILE,
+
+  INTEROP_DISABLE_READ_LE_APPEARANCE,
+
+  // Some devices need inband ringing disabled
+  INTEROP_INBAND_RINGTONE_SET_TO_FALSE,
+
+  // Some devices don't respond when accept connection request
+  // with central role.
+  INTEROP_REMAIN_PERIPHERAL_ON_ACCEPT_CONNECTION_REQUEST,
+
+  // Some devices do not work well with incoming SMP over BR/EDR pairing requests
+  INTEROP_DISABLE_OUTGOING_BR_SMP,
+
+  INTEROP_HFP_SEND_OK_FOR_CLCC_AFTER_VOIP_CALL_END,
+
   END_OF_INTEROP_LIST
 } interop_feature_t;
 
@@ -363,8 +393,7 @@ typedef enum {
 // identified by the |interop_feature_t| enum. This API is used for simple
 // address based lookups where more information is not available. No
 // look-ups or random address resolution are performed on |addr|.
-bool interop_match_addr(const interop_feature_t feature,
-                        const RawAddress* addr);
+bool interop_match_addr(const interop_feature_t feature, const RawAddress* addr);
 
 // Check if a given remote device |name| matches a known workaround.
 // Name comparisons are case sensitive and do not allow for partial matches.
@@ -377,23 +406,21 @@ bool interop_match_name(const interop_feature_t feature, const char* name);
 // This api will lookup remote name with |addr| by btif_storage api internally.
 // Then if either interop_match_addr or interop_match_name is matched, this
 // function will return true.
-bool interop_match_addr_or_name(const interop_feature_t feature,
-                                const RawAddress* addr,
-                                bt_status_t (*get_remote_device_property)(
-                                    const RawAddress*, bt_property_t*));
+bool interop_match_addr_or_name(const interop_feature_t feature, const RawAddress* addr,
+                                bt_status_t (*get_remote_device_property)(const RawAddress*,
+                                                                          bt_property_t*));
 
 // Check if a given |manufacturer| matches a known interoperability workaround
 // as identified by the |interop_feature_t| enum. This API is used for
 // manufacturer based lookups where more information is not available.
-bool interop_match_manufacturer(const interop_feature_t feature,
-                                uint16_t manufacturer);
+bool interop_match_manufacturer(const interop_feature_t feature, uint16_t manufacturer);
 
 // Check if a given |vendor_id, |product_id| matches a known
 // interoperability workaround as identified by the |interop_feature_t|
 // enum. This API is used for simple name based lookups where more information
 // is not available.
-bool interop_match_vendor_product_ids(const interop_feature_t feature,
-                                      uint16_t vendor_id, uint16_t product_id);
+bool interop_match_vendor_product_ids(const interop_feature_t feature, uint16_t vendor_id,
+                                      uint16_t product_id);
 
 // Add a dynamic interop database entry for a device matching the first |length|
 // bytes of |addr|, implementing the workaround identified by |feature|.
@@ -401,22 +428,20 @@ bool interop_match_vendor_product_ids(const interop_feature_t feature,
 // |length| must be greater than 0 and less than RawAddress::kLength.
 // As |interop_feature_t| is not exposed in the public API, feature must be a
 // valid integer representing an option in the enum.
-void interop_database_add(const uint16_t feature, const RawAddress* addr,
-                          size_t length);
+void interop_database_add(const uint16_t feature, const RawAddress* addr, size_t length);
 
 // Clear the dynamic portion of the interoperability workaround database.
 void interop_database_clear(void);
 
 // check if device version is matching with the interop database
-bool interop_database_match_version(const interop_feature_t feature,
-                                    uint16_t version);
+bool interop_database_match_version(const interop_feature_t feature, uint16_t version);
 // Check if a given |addr| matches a known interoperability workaround as
 // identified by the |interop_feature_t| enum. This API is used for simple
 // address based lookups where more information is not available. No look-ups or
 // random address resolution are performed on |addr|. If address is matched, max
 // latency for SSR stored for particular remote device is returned.
-bool interop_match_addr_get_max_lat(const interop_feature_t feature,
-                                    const RawAddress* addr, uint16_t* max_lat);
+bool interop_match_addr_get_max_lat(const interop_feature_t feature, const RawAddress* addr,
+                                    uint16_t* max_lat);
 
 // Return feature's enum value according to feature'name.
 int interop_feature_name_to_feature_id(const char* feature_name);

@@ -31,9 +31,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-#include "common/init_flags.h"
 #include "hal/snoop_logger_common.h"
-#include "os/log.h"
 
 namespace bluetooth {
 namespace hal {
@@ -44,17 +42,20 @@ SnoopLoggerSocketThread::SnoopLoggerSocketThread(std::unique_ptr<SnoopLoggerSock
   listen_thread_running_ = false;
 }
 
-SnoopLoggerSocketThread::~SnoopLoggerSocketThread() {
-  Stop();
-}
+SnoopLoggerSocketThread::~SnoopLoggerSocketThread() { Stop(); }
 
 std::future<bool> SnoopLoggerSocketThread::Start() {
   log::debug("");
   std::promise<bool> thread_started;
+  if (listen_thread_) {
+    thread_started.set_value(true);
+    return thread_started.get_future();
+  }
   auto future = thread_started.get_future();
-  listen_thread_ = std::make_unique<std::thread>(&SnoopLoggerSocketThread::Run, this, std::move(thread_started));
   stop_thread_ = false;
-  return std::move(future);
+  listen_thread_ = std::make_unique<std::thread>(&SnoopLoggerSocketThread::Run, this,
+                                                 std::move(thread_started));
+  return future;
 }
 
 void SnoopLoggerSocketThread::Stop() {
@@ -66,6 +67,7 @@ void SnoopLoggerSocketThread::Stop() {
   if (listen_thread_ && listen_thread_->joinable()) {
     listen_thread_->join();
     listen_thread_.reset();
+    socket_->Cleanup();
   }
 }
 
@@ -73,13 +75,9 @@ void SnoopLoggerSocketThread::Write(const void* data, size_t length) {
   socket_->Write(data, length);
 }
 
-bool SnoopLoggerSocketThread::ThreadIsRunning() const {
-  return listen_thread_running_;
-}
+bool SnoopLoggerSocketThread::ThreadIsRunning() const { return listen_thread_running_; }
 
-SnoopLoggerSocket* SnoopLoggerSocketThread::GetSocket() {
-  return socket_.get();
-}
+SnoopLoggerSocket* SnoopLoggerSocketThread::GetSocket() const { return socket_.get(); }
 
 void SnoopLoggerSocketThread::Run(std::promise<bool> thread_started) {
   log::debug("");
@@ -94,7 +92,12 @@ void SnoopLoggerSocketThread::Run(std::promise<bool> thread_started) {
   while (!stop_thread_ && socket_->ProcessIncomingRequest()) {
   }
 
-  socket_->Cleanup();
+  // We don't call `socket_->Cleanup()` here because it's possible for that to lead to SIGPIPE: in
+  // `Stop` it sets `stop_thread_` to true, and then calls `socket_->NotifySocketListener()`. Within
+  // that small window, we might have checked `stop_thread_` above, and if we were to call
+  // `socket_->Cleanup` here, that would then mean that `socket_->NotifySocketListener()` could
+  // result in SIGPIPE, which, by default will terminate the process.
+
   listen_thread_running_ = false;
 }
 

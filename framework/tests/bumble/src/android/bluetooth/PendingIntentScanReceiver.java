@@ -35,7 +35,7 @@ import java.util.concurrent.CompletableFuture;
  * future that completes when scan results are next delivered.
  */
 public class PendingIntentScanReceiver extends BroadcastReceiver {
-    private static final String TAG = "PendingIntentScanReceiver";
+    private static final String TAG = PendingIntentScanReceiver.class.getSimpleName();
 
     public static final String ACTION_SCAN_RESULT = "android.bluetooth.test.ACTION_SCAN_RESULT";
 
@@ -60,7 +60,6 @@ public class PendingIntentScanReceiver extends BroadcastReceiver {
      *
      * @param context The context to associate the PendingIntent with.
      * @param requestCode The request code to uniquely identify this PendingIntent with.
-     * @return
      */
     public static PendingIntent newBroadcastPendingIntent(Context context, int requestCode) {
         return PendingIntent.getBroadcast(
@@ -93,7 +92,7 @@ public class PendingIntentScanReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         Log.d(TAG, "onReceive() intent: " + intent);
 
-        if (intent.getAction() != ACTION_SCAN_RESULT) {
+        if (!ACTION_SCAN_RESULT.equals(intent.getAction())) {
             throw new RuntimeException();
         }
 

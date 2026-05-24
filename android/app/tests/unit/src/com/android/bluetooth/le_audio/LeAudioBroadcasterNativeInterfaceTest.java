@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,22 +23,24 @@ import static org.mockito.Mockito.when;
 
 import android.bluetooth.BluetoothLeBroadcastMetadata;
 
-import androidx.test.runner.AndroidJUnit4;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
-import org.junit.After;
+import com.android.bluetooth.btservice.AdapterService;
+import com.android.tests.bluetooth.MockitoRule;
+
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
+/** Test cases for {@link LeAudioBroadcasterNativeInterface}. */
 @RunWith(AndroidJUnit4.class)
 public class LeAudioBroadcasterNativeInterfaceTest {
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
 
+    @Mock private AdapterService mAdapterService;
     @Mock private LeAudioService mMockService;
 
     private LeAudioBroadcasterNativeInterface mNativeInterface;
@@ -46,13 +48,7 @@ public class LeAudioBroadcasterNativeInterfaceTest {
     @Before
     public void setUp() throws Exception {
         when(mMockService.isAvailable()).thenReturn(true);
-        LeAudioService.setLeAudioService(mMockService);
-        mNativeInterface = LeAudioBroadcasterNativeInterface.getInstance();
-    }
-
-    @After
-    public void tearDown() {
-        LeAudioService.setLeAudioService(null);
+        mNativeInterface = new LeAudioBroadcasterNativeInterface(mAdapterService, mMockService);
     }
 
     @Test

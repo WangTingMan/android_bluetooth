@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,14 +37,18 @@ TEST(MutationTest, simple_sequence_test) {
   config.SetProperty("AA:BB:CC:DD:EE:FF", "C", "D");
   config.SetProperty("CC:DD:EE:FF:00:11", "LinkKey", "AABBAABBCCDDEE");
   Mutation mutation(&config, &memory_only_config);
-  mutation.Add(MutationEntry::Set(MutationEntry::PropertyType::NORMAL, "AA:BB:CC:DD:EE:FF", "LinkKey", "CCDDEEFFGG"));
-  mutation.Add(MutationEntry::Remove(MutationEntry::PropertyType::NORMAL, "AA:BB:CC:DD:EE:FF", "LinkKey"));
+  mutation.Add(MutationEntry::Set(MutationEntry::PropertyType::NORMAL, "AA:BB:CC:DD:EE:FF",
+                                  "LinkKey", "CCDDEEFFGG"));
+  mutation.Add(MutationEntry::Remove(MutationEntry::PropertyType::NORMAL, "AA:BB:CC:DD:EE:FF",
+                                     "LinkKey"));
   mutation.Commit();
   ASSERT_THAT(config.GetPersistentSections(), ElementsAre("CC:DD:EE:FF:00:11"));
   Mutation mutation2(&config, &memory_only_config);
-  mutation2.Add(MutationEntry::Set(MutationEntry::PropertyType::NORMAL, "AA:BB:CC:DD:EE:FF", "LinkKey", "CCDDEEFFGG"));
+  mutation2.Add(MutationEntry::Set(MutationEntry::PropertyType::NORMAL, "AA:BB:CC:DD:EE:FF",
+                                   "LinkKey", "CCDDEEFFGG"));
   mutation2.Commit();
-  ASSERT_THAT(config.GetPersistentSections(), ElementsAre("CC:DD:EE:FF:00:11", "AA:BB:CC:DD:EE:FF"));
+  ASSERT_THAT(config.GetPersistentSections(),
+              ElementsAre("CC:DD:EE:FF:00:11", "AA:BB:CC:DD:EE:FF"));
 }
 
 TEST(MutationTest, remove_property_and_section) {

@@ -16,19 +16,19 @@
 
 #pragma once
 
-#include <base/strings/stringprintf.h>
 #include <bluetooth/log.h>
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/uuid.h>
 
 #include <queue>
 #include <string>
 
+#include "bta/dm/bta_dm_device_search_int.h"
 #include "bta/include/bta_api.h"
 #include "bta/sys/bta_sys.h"
 #include "macros.h"
 #include "stack/include/sdp_status.h"
 #include "stack/sdp/sdp_discovery_db.h"
-#include "types/bluetooth/uuid.h"
-#include "types/raw_address.h"
 
 #define BTA_SERVICE_ID_TO_SERVICE_MASK(id) (1 << (id))
 
@@ -65,15 +65,16 @@ typedef struct {
   tHCI_STATUS hci_status;
 } tBTA_DM_SVC_RES;
 
-using tBTA_DM_MSG = std::variant<tBTA_DM_API_DISCOVER, tBTA_DM_SVC_RES>;
+/* data type for BTA_DM_API_DISCOVER_EVT */
+typedef struct {
+  uint16_t conn_id;
+} tBTA_DM_TOUT;
 
-typedef enum {
-  BTA_DM_DISCOVER_IDLE,
-  BTA_DM_DISCOVER_ACTIVE
-} tBTA_DM_SERVICE_DISCOVERY_STATE;
+using tBTA_DM_MSG = std::variant<tBTA_DM_API_DISCOVER, tBTA_DM_SVC_RES, tBTA_DM_TOUT>;
 
-inline std::string bta_dm_state_text(
-    const tBTA_DM_SERVICE_DISCOVERY_STATE& state) {
+typedef enum { BTA_DM_DISCOVER_IDLE, BTA_DM_DISCOVER_ACTIVE } tBTA_DM_SERVICE_DISCOVERY_STATE;
+
+inline std::string bta_dm_state_text(const tBTA_DM_SERVICE_DISCOVERY_STATE& state) {
   switch (state) {
     CASE_RETURN_TEXT(BTA_DM_DISCOVER_IDLE);
     CASE_RETURN_TEXT(BTA_DM_DISCOVER_ACTIVE);
@@ -110,7 +111,7 @@ typedef struct {
   tBTA_DM_SERVICE_DISCOVERY_STATE service_discovery_state;
   std::unique_ptr<tBTA_DM_SDP_STATE> sdp_state;
 
-  uint16_t conn_id;
+  tCONN_ID conn_id;
   alarm_t* gatt_close_timer;    /* GATT channel close delay timer */
   RawAddress pending_close_bda; /* pending GATT channel remote device address */
 } tBTA_DM_SERVICE_DISCOVERY_CB;
@@ -119,9 +120,9 @@ extern const uint32_t bta_service_id_to_btm_srv_id_lkup_tbl[];
 extern const uint16_t bta_service_id_to_uuid_lkup_tbl[];
 
 void bta_dm_disc_override_sdp_performer_for_testing(
-    base::RepeatingCallback<void(tBTA_DM_SDP_STATE*)> sdp_performer);
+        base::RepeatingCallback<void(tBTA_DM_SDP_STATE*)> sdp_performer);
 void bta_dm_disc_override_gatt_performer_for_testing(
-    base::RepeatingCallback<void(const RawAddress&)> test_gatt_performer);
+        base::RepeatingCallback<void(const RawAddress&)> test_gatt_performer);
 void bta_dm_sdp_find_services(tBTA_DM_SDP_STATE* sdp_state);
 void bta_dm_sdp_result(tSDP_STATUS sdp_result, tBTA_DM_SDP_STATE* sdp_state);
 void bta_dm_sdp_finished(RawAddress bda, tBTA_STATUS result,
@@ -132,14 +133,20 @@ void bta_dm_gatt_finished(RawAddress bda, tBTA_STATUS result,
 void bta_dm_sdp_callback(const RawAddress& bd_addr, tSDP_STATUS sdp_status);
 
 #ifdef TARGET_FLOSS
-void bta_dm_sdp_received_di(const RawAddress& bd_addr,
-                            tSDP_DI_GET_RECORD& di_record);
+void bta_dm_sdp_received_di(const RawAddress& bd_addr, tSDP_DI_GET_RECORD& di_record);
 #endif
 
-namespace fmt {
+namespace std {
 template <>
 struct formatter<tBTA_DM_DISC_EVT> : enum_formatter<tBTA_DM_DISC_EVT> {};
 template <>
 struct formatter<tBTA_DM_SERVICE_DISCOVERY_STATE>
     : enum_formatter<tBTA_DM_SERVICE_DISCOVERY_STATE> {};
-}  // namespace fmt
+}  // namespace std
+
+namespace bluetooth::legacy::testing {
+
+tBT_TRANSPORT bta_dm_determine_discovery_transport(const RawAddress& bd_addr);
+void bta_dm_remote_name_cmpl(const tBTA_DM_REMOTE_NAME& remote_name_msg);
+
+}  // namespace bluetooth::legacy::testing

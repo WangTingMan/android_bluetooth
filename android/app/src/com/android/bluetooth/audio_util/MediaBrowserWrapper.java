@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 The Android Open Source Project
+ * Copyright (C) 2024 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,9 @@ package com.android.bluetooth.audio_util;
 
 import android.content.ComponentName;
 import android.content.Context;
+import android.media.MediaDescription;
 import android.media.browse.MediaBrowser.MediaItem;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -79,6 +81,7 @@ class MediaBrowserWrapper {
     private final Looper mLooper;
     private final String mPackageName;
     private final Handler mRunHandler;
+    private final String mClassName;
 
     private ConnectionState mBrowserConnectionState = ConnectionState.DISCONNECTED;
 
@@ -94,6 +97,7 @@ class MediaBrowserWrapper {
             Context context, Looper looper, String packageName, String className) {
         mContext = context;
         mPackageName = packageName;
+        mClassName = className;
         mLooper = looper;
         mRunHandler = new Handler(mLooper);
         mWrappedBrowser =
@@ -188,9 +192,20 @@ class MediaBrowserWrapper {
                                     + " and "
                                     + mediaId
                                     + ": adding callback and subscribing.");
-                    mSubscribedIds.put(mediaId, new ArrayList<>(Arrays.asList(callback)));
-                    mWrappedBrowser.subscribe(
-                            mediaId, new BrowserSubscriptionCallback(mLooper, mediaId));
+                    // Empty mediaId can cause an exception, retrieve root instead.
+                    if (mediaId.isEmpty()) {
+                        getRootId(
+                                (rootId) -> {
+                                    mSubscribedIds.put(
+                                            rootId, new ArrayList<>(Arrays.asList(callback)));
+                                    mWrappedBrowser.subscribe(
+                                            rootId, new BrowserSubscriptionCallback(rootId));
+                                });
+                    } else {
+                        mSubscribedIds.put(mediaId, new ArrayList<>(Arrays.asList(callback)));
+                        mWrappedBrowser.subscribe(
+                                mediaId, new BrowserSubscriptionCallback(mediaId));
+                    }
                 });
     }
 
@@ -210,16 +225,12 @@ class MediaBrowserWrapper {
         mRunHandler.post(
                 () -> {
                     switch (mBrowserConnectionState) {
-                        case CONNECTED:
-                            callback.run();
-                            break;
-                        case DISCONNECTED:
+                        case CONNECTED -> callback.run();
+                        case DISCONNECTED -> {
                             connect();
                             mRequestsList.add(callback);
-                            break;
-                        case CONNECTING:
-                            mRequestsList.add(callback);
-                            break;
+                        }
+                        case CONNECTING -> mRequestsList.add(callback);
                     }
                 });
     }
@@ -319,7 +330,7 @@ class MediaBrowserWrapper {
         private final Runnable mTimeoutRunnable;
         private boolean mCallbacksExecuted = false;
 
-        public BrowserSubscriptionCallback(Looper looper, String mediaId) {
+        BrowserSubscriptionCallback(String mediaId) {
             mTimeoutRunnable =
                     () -> {
                         executeCallbacks(mediaId, new ArrayList<>());
@@ -333,19 +344,22 @@ class MediaBrowserWrapper {
             }
             mCallbacksExecuted = true;
             mRunHandler.removeCallbacks(mTimeoutRunnable);
-            for (GetFolderItemsCallback callback : mSubscribedIds.get(parentId)) {
-                Log.v(
-                        TAG,
-                        "getFolderItems for "
-                                + mPackageName
-                                + " and "
-                                + parentId
-                                + ": callback called with "
-                                + browsableContent.size()
-                                + " items.");
-                callback.run(parentId, browsableContent);
-            }
 
+            List<GetFolderItemsCallback> callbackList = mSubscribedIds.get(parentId);
+            if (callbackList != null) {
+                for (GetFolderItemsCallback callback : callbackList) {
+                    Log.v(
+                            TAG,
+                            "getFolderItems for "
+                                    + mPackageName
+                                    + " and "
+                                    + parentId
+                                    + ": callback called with "
+                                    + browsableContent.size()
+                                    + " items.");
+                    callback.run(parentId, browsableContent);
+                }
+            }
             mSubscribedIds.remove(parentId);
             mWrappedBrowser.unsubscribe(parentId);
         }
@@ -360,7 +374,17 @@ class MediaBrowserWrapper {
                     if (title.isEmpty()) {
                         title = mContext.getString(R.string.not_provided);
                     }
-                    Folder f = new Folder(item.getMediaId(), false, title);
+                    Bundle data = item.getDescription().getExtras();
+                    long folderType = MediaDescription.BT_FOLDER_TYPE_PLAYLISTS;
+                    if (data != null) {
+                        folderType = (byte) data.getLong(MediaDescription.EXTRA_BT_FOLDER_TYPE);
+                    }
+                    if (folderType < MediaDescription.BT_FOLDER_TYPE_MIXED
+                            || folderType > MediaDescription.BT_FOLDER_TYPE_YEARS) {
+                        folderType = MediaDescription.BT_FOLDER_TYPE_PLAYLISTS;
+                    }
+
+                    Folder f = new Folder(item.getMediaId(), false, title, (int) folderType);
                     browsableContent.add(new ListItem(f));
                 } else {
                     Metadata data = Util.toMetadata(mContext, item);
@@ -383,5 +407,10 @@ class MediaBrowserWrapper {
         public Handler getTimeoutHandler() {
             return mRunHandler;
         }
+    }
+
+    @Override
+    public String toString() {
+        return "Browsable Package & Class Name: " + mPackageName + " " + mClassName + "\n";
     }
 }

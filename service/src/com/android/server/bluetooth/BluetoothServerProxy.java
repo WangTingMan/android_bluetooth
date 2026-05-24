@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package com.android.server.bluetooth;
 
 import android.annotation.NonNull;
 import android.content.ContentResolver;
-import android.os.Binder;
 import android.os.IBinder;
 import android.provider.Settings;
 
@@ -63,22 +62,12 @@ class BluetoothServerProxy {
         return Settings.Secure.getString(contentResolver, name);
     }
 
-    int settingsGlobalGetInt(ContentResolver contentResolver, String name, int def) {
-        return Settings.Global.getInt(contentResolver, name, def);
-    }
-
     int getBluetoothPersistedState(ContentResolver resolver, int defaultValue) {
         return Settings.Global.getInt(resolver, Settings.Global.BLUETOOTH_ON, defaultValue);
     }
 
     void setBluetoothPersistedState(ContentResolver resolver, int state) {
         Log.i(TAG, "setBluetoothPersistedState(" + state + ")");
-        // waive WRITE_SECURE_SETTINGS permission check
-        final long callingIdentity = Binder.clearCallingIdentity();
-        try {
-            Settings.Global.putInt(resolver, Settings.Global.BLUETOOTH_ON, state);
-        } finally {
-            Binder.restoreCallingIdentity(callingIdentity);
-        }
+        Settings.Global.putInt(resolver, Settings.Global.BLUETOOTH_ON, state);
     }
 }

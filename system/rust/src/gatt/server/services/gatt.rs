@@ -1,34 +1,27 @@
 //! The GATT service as defined in Core Spec 5.3 Vol 3G Section 7
 
-use std::{cell::RefCell, collections::HashMap, ops::RangeInclusive, rc::Rc};
+use pdl_runtime::Packet;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::ops::RangeInclusive;
+use std::rc::Rc;
 
 use anyhow::Result;
 use async_trait::async_trait;
 use log::{error, warn};
 use tokio::task::spawn_local;
 
-use crate::{
-    core::{
-        shared_box::{WeakBox, WeakBoxRef},
-        uuid::Uuid,
-    },
-    gatt::{
-        callbacks::GattDatastore,
-        ffi::AttributeBackingType,
-        ids::{AttHandle, TransportIndex},
-        server::{
-            att_server_bearer::AttServerBearer,
-            gatt_database::{
-                AttDatabaseImpl, AttPermissions, GattCharacteristicWithHandle, GattDatabase,
-                GattDatabaseCallbacks, GattDescriptorWithHandle, GattServiceWithHandle,
-            },
-        },
-    },
-    packets::{
-        AttErrorCode, GattClientCharacteristicConfigurationBuilder,
-        GattClientCharacteristicConfigurationView, GattServiceChangedBuilder, Packet, Serializable,
-    },
+use crate::core::shared_box::SharedBox;
+use crate::core::uuid::Uuid;
+use crate::gatt::callbacks::GattDatastore;
+use crate::gatt::ffi::AttributeBackingType;
+use crate::gatt::ids::{AttHandle, TransportIndex};
+use crate::gatt::server::att_client::{AttClient, WeakAttClient};
+use crate::gatt::server::gatt_database::{
+    AttPermissions, GattCharacteristicWithHandle, GattDatabase, GattDatabaseCallbacks,
+    GattDescriptorWithHandle, GattServiceWithHandle,
 };
+use crate::packets::att::{self, AttErrorCode};
 
 #[derive(Default)]
 struct GattService {
@@ -37,7 +30,7 @@ struct GattService {
 
 #[derive(Clone)]
 struct ClientState {
-    bearer: WeakBox<AttServerBearer<AttDatabaseImpl>>,
+    client: WeakAttClient,
     registered_for_service_change: bool,
 }
 
@@ -62,7 +55,7 @@ impl GattDatastore for GattService {
         _: AttributeBackingType,
     ) -> Result<Vec<u8>, AttErrorCode> {
         if handle == SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE {
-            GattClientCharacteristicConfigurationBuilder {
+            att::GattClientCharacteristicConfiguration {
                 notification: 0,
                 indication: self
                     .clients
@@ -72,8 +65,8 @@ impl GattDatastore for GattService {
                     .unwrap_or(false)
                     .into(),
             }
-            .to_vec()
-            .map_err(|_| AttErrorCode::UNLIKELY_ERROR)
+            .encode_to_vec()
+            .map_err(|_| AttErrorCode::UnlikelyError)
         } else {
             unreachable!()
         }
@@ -87,18 +80,18 @@ impl GattDatastore for GattService {
         data: &[u8],
     ) -> Result<(), AttErrorCode> {
         if handle == SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE {
-            let ccc = GattClientCharacteristicConfigurationView::try_parse_from_buffer(data)
-                .map_err(|err| {
+            let ccc =
+                att::GattClientCharacteristicConfiguration::decode_full(data).map_err(|err| {
                     warn!("failed to parse CCC descriptor, got: {err:?}");
-                    AttErrorCode::APPLICATION_ERROR
+                    AttErrorCode::ApplicationError
                 })?;
             let mut clients = self.clients.borrow_mut();
             let state = clients.get_mut(&tcb_idx);
             let Some(state) = state else {
                 error!("Received write request from disconnected client...");
-                return Err(AttErrorCode::UNLIKELY_ERROR);
+                return Err(AttErrorCode::UnlikelyError);
             };
-            state.registered_for_service_change = ccc.get_indication() != 0;
+            state.registered_for_service_change = ccc.indication != 0;
             Ok(())
         } else {
             unreachable!()
@@ -107,15 +100,11 @@ impl GattDatastore for GattService {
 }
 
 impl GattDatabaseCallbacks for GattService {
-    fn on_le_connect(
-        &self,
-        tcb_idx: TransportIndex,
-        bearer: WeakBoxRef<AttServerBearer<AttDatabaseImpl>>,
-    ) {
+    fn on_le_connect(&self, client: &SharedBox<AttClient>) {
         // TODO(aryarahul): registered_for_service_change may not be false for bonded devices
         self.clients.borrow_mut().insert(
-            tcb_idx,
-            ClientState { bearer: bearer.downgrade(), registered_for_service_change: false },
+            client.tcb_idx(),
+            ClientState { client: client.downgrade(), registered_for_service_change: false },
         );
     }
 
@@ -126,22 +115,22 @@ impl GattDatabaseCallbacks for GattService {
     fn on_service_change(&self, range: RangeInclusive<AttHandle>) {
         for (conn_id, client) in self.clients.borrow().clone() {
             if client.registered_for_service_change {
-                client.bearer.with(|bearer| match bearer {
-                    Some(bearer) => {
+                client.client.with(|client| match client {
+                    Some(client) => {
                         spawn_local(
-                            bearer.send_indication(
+                            client.bearer().send_indication(
                                 SERVICE_CHANGE_HANDLE,
-                                GattServiceChangedBuilder {
+                                att::GattServiceChanged {
                                     start_handle: (*range.start()).into(),
                                     end_handle: (*range.end()).into(),
                                 }
-                                .to_vec()
+                                .encode_to_vec()
                                 .unwrap(),
                             ),
                         );
                     }
                     None => {
-                        error!("Registered client's bearer has been destructed ({conn_id:?})")
+                        error!("Registered client has been destructed ({conn_id:?})")
                     }
                 });
             }
@@ -176,24 +165,16 @@ pub fn register_gatt_service(database: &mut GattDatabase) -> Result<()> {
 }
 #[cfg(test)]
 mod test {
-    use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
-
     use super::*;
 
-    use crate::{
-        core::shared_box::SharedBox,
-        gatt::{
-            mocks::mock_datastore::MockDatastore,
-            server::{
-                att_database::AttDatabase,
-                gatt_database::{
-                    GattDatabase, CHARACTERISTIC_UUID, PRIMARY_SERVICE_DECLARATION_UUID,
-                },
-            },
-        },
-        packets::{AttBuilder, AttChild},
-        utils::task::{block_on_locally, try_await},
+    use crate::core::shared_box::SharedBox;
+    use crate::gatt::mocks::mock_datastore::MockDatastore;
+    use crate::gatt::server::att_client::{AttClient, WeakAttClient};
+    use crate::gatt::server::gatt_database::{
+        GattDatabase, CHARACTERISTIC_UUID, PRIMARY_SERVICE_DECLARATION_UUID,
     };
+    use crate::packets::att;
+    use crate::utils::task::{block_on_locally, try_await};
 
     const TCB_IDX: TransportIndex = TransportIndex(1);
     const ANOTHER_TCB_IDX: TransportIndex = TransportIndex(2);
@@ -206,29 +187,14 @@ mod test {
         SharedBox::new(gatt_database)
     }
 
-    fn add_connection(
-        gatt_database: &SharedBox<GattDatabase>,
-        tcb_idx: TransportIndex,
-    ) -> (AttDatabaseImpl, SharedBox<AttServerBearer<AttDatabaseImpl>>, UnboundedReceiver<AttBuilder>)
-    {
-        let att_database = gatt_database.get_att_database(tcb_idx);
-        let (tx, rx) = unbounded_channel();
-        let bearer = SharedBox::new(AttServerBearer::new(att_database.clone(), move |packet| {
-            tx.send(packet).unwrap();
-            Ok(())
-        }));
-        gatt_database.on_bearer_ready(tcb_idx, bearer.as_ref());
-        (att_database, bearer, rx)
-    }
-
     #[test]
     fn test_gatt_service_discovery() {
         // arrange
         let gatt_db = init_gatt_db();
-        let (att_db, _, _) = add_connection(&gatt_db, TCB_IDX);
+        let (client, _) = AttClient::new_test_client(TCB_IDX, &gatt_db);
 
         // act: discover all services
-        let attrs = att_db.list_attributes();
+        let attrs = client.list_attributes();
 
         // assert: 1 service + 1 char decl + 1 char value + 1 char descriptor = 4 attrs
         assert_eq!(attrs.len(), 4);
@@ -252,28 +218,28 @@ mod test {
     fn test_default_indication_subscription() {
         // arrange
         let gatt_db = init_gatt_db();
-        let (att_db, _, _) = add_connection(&gatt_db, TCB_IDX);
+        let (client, _) = AttClient::new_test_client(TCB_IDX, &gatt_db);
 
         // act: try to read the CCC descriptor
         let resp =
-            block_on_locally(att_db.read_attribute(SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE)).unwrap();
+            block_on_locally(client.read_attribute(SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE)).unwrap();
 
         assert_eq!(
             Ok(resp),
-            GattClientCharacteristicConfigurationBuilder { notification: 0, indication: 0 }
-                .to_vec()
+            att::GattClientCharacteristicConfiguration { notification: 0, indication: 0 }
+                .encode_to_vec()
         );
     }
 
     async fn register_for_indication(
-        att_db: &impl AttDatabase,
+        client: WeakAttClient,
         handle: AttHandle,
     ) -> Result<(), AttErrorCode> {
-        att_db
+        client
             .write_attribute(
                 handle,
-                &GattClientCharacteristicConfigurationBuilder { notification: 0, indication: 1 }
-                    .to_vec()
+                &att::GattClientCharacteristicConfiguration { notification: 0, indication: 1 }
+                    .encode_to_vec()
                     .unwrap(),
             )
             .await
@@ -283,58 +249,76 @@ mod test {
     fn test_subscribe_to_indication() {
         // arrange
         let gatt_db = init_gatt_db();
-        let (att_db, _, _) = add_connection(&gatt_db, TCB_IDX);
+        let (client, _) = AttClient::new_test_client(TCB_IDX, &gatt_db);
 
         // act: register for service change indication
-        block_on_locally(register_for_indication(&att_db, SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE))
-            .unwrap();
+        block_on_locally(register_for_indication(
+            client.downgrade(),
+            SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE,
+        ))
+        .unwrap();
         // read our registration status
         let resp =
-            block_on_locally(att_db.read_attribute(SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE)).unwrap();
+            block_on_locally(client.read_attribute(SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE)).unwrap();
 
         // assert: we are registered for indications
         assert_eq!(
             Ok(resp),
-            GattClientCharacteristicConfigurationBuilder { notification: 0, indication: 1 }
-                .to_vec()
+            att::GattClientCharacteristicConfiguration { notification: 0, indication: 1 }
+                .encode_to_vec()
         );
+    }
+
+    #[test]
+    fn test_subscribe_to_indication_malformed() {
+        // arrange
+        let gatt_db = init_gatt_db();
+        let (client, _) = AttClient::new_test_client(TCB_IDX, &gatt_db);
+
+        // act: register for service change indication with a malformed value
+        let result = block_on_locally(
+            client.write_attribute(SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE, &[0x01, 0x02, 0x03]),
+        );
+
+        // assert: we get an application error
+        assert_eq!(result, Err(AttErrorCode::ApplicationError));
     }
 
     #[test]
     fn test_unsubscribe_to_indication() {
         // arrange
         let gatt_db = init_gatt_db();
-        let (att_db, _, _) = add_connection(&gatt_db, TCB_IDX);
+        let (client, _) = AttClient::new_test_client(TCB_IDX, &gatt_db);
 
         // act: register for service change indication
         block_on_locally(
-            att_db.write_attribute(
+            client.write_attribute(
                 SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE,
-                &GattClientCharacteristicConfigurationBuilder { notification: 0, indication: 1 }
-                    .to_vec()
+                &att::GattClientCharacteristicConfiguration { notification: 0, indication: 1 }
+                    .encode_to_vec()
                     .unwrap(),
             ),
         )
         .unwrap();
         // act: next, unregister from this indication
         block_on_locally(
-            att_db.write_attribute(
+            client.write_attribute(
                 SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE,
-                &GattClientCharacteristicConfigurationBuilder { notification: 0, indication: 0 }
-                    .to_vec()
+                &att::GattClientCharacteristicConfiguration { notification: 0, indication: 0 }
+                    .encode_to_vec()
                     .unwrap(),
             ),
         )
         .unwrap();
         // read our registration status
         let resp =
-            block_on_locally(att_db.read_attribute(SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE)).unwrap();
+            block_on_locally(client.read_attribute(SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE)).unwrap();
 
         // assert: we are not registered for indications
         assert_eq!(
             Ok(resp),
-            GattClientCharacteristicConfigurationBuilder { notification: 0, indication: 0 }
-                .to_vec()
+            att::GattClientCharacteristicConfiguration { notification: 0, indication: 0 }
+                .encode_to_vec()
         );
     }
 
@@ -343,10 +327,12 @@ mod test {
         block_on_locally(async {
             // arrange
             let gatt_db = init_gatt_db();
-            let (att_db, _bearer, mut rx) = add_connection(&gatt_db, TCB_IDX);
+            let (client, mut rx) = AttClient::new_test_client(TCB_IDX, &gatt_db);
             let (gatt_datastore, _) = MockDatastore::new();
             let gatt_datastore = Rc::new(gatt_datastore);
-            register_for_indication(&att_db, SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE).await.unwrap();
+            register_for_indication(client.downgrade(), SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE)
+                .await
+                .unwrap();
 
             // act: register some new service
             gatt_db
@@ -367,17 +353,14 @@ mod test {
 
             // assert: we received the service change indication
             let resp = rx.recv().await.unwrap();
-            let AttChild::AttHandleValueIndication(resp) = resp._child_ else {
+            let Ok(resp): Result<att::AttHandleValueIndication, _> = resp.try_into() else {
                 unreachable!();
             };
-            assert_eq!(
-                Ok(resp.value.into()),
-                GattServiceChangedBuilder {
-                    start_handle: AttHandle(15).into(),
-                    end_handle: AttHandle(17).into(),
-                }
-                .to_vec()
-            );
+            let Ok(resp) = att::GattServiceChanged::decode_full(resp.value.as_slice()) else {
+                unreachable!();
+            };
+            assert_eq!(resp.start_handle.handle, 15);
+            assert_eq!(resp.end_handle.handle, 17);
         });
     }
 
@@ -386,11 +369,15 @@ mod test {
         block_on_locally(async {
             // arrange: two connections, both registered
             let gatt_db = init_gatt_db();
-            let (att_db_1, _bearer, mut rx1) = add_connection(&gatt_db, TCB_IDX);
-            let (att_db_2, _bearer, mut rx2) = add_connection(&gatt_db, ANOTHER_TCB_IDX);
+            let (client1, mut rx1) = AttClient::new_test_client(TCB_IDX, &gatt_db);
+            let (client2, mut rx2) = AttClient::new_test_client(ANOTHER_TCB_IDX, &gatt_db);
 
-            register_for_indication(&att_db_1, SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE).await.unwrap();
-            register_for_indication(&att_db_2, SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE).await.unwrap();
+            register_for_indication(client1.downgrade(), SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE)
+                .await
+                .unwrap();
+            register_for_indication(client2.downgrade(), SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE)
+                .await
+                .unwrap();
 
             let (gatt_datastore, _) = MockDatastore::new();
             let gatt_datastore = Rc::new(gatt_datastore);
@@ -415,8 +402,8 @@ mod test {
             // assert: both connections received the service change indication
             let resp1 = rx1.recv().await.unwrap();
             let resp2 = rx2.recv().await.unwrap();
-            assert!(matches!(resp1._child_, AttChild::AttHandleValueIndication(_)));
-            assert!(matches!(resp2._child_, AttChild::AttHandleValueIndication(_)));
+            assert!(matches!(resp1.try_into(), Ok(att::AttHandleValueIndication { .. })));
+            assert!(matches!(resp2.try_into(), Ok(att::AttHandleValueIndication { .. })));
         });
     }
 
@@ -425,10 +412,12 @@ mod test {
         block_on_locally(async {
             // arrange: two connections, only the first is registered
             let gatt_db = init_gatt_db();
-            let (att_db_1, _bearer, mut rx1) = add_connection(&gatt_db, TCB_IDX);
-            let (_, _bearer, mut rx2) = add_connection(&gatt_db, ANOTHER_TCB_IDX);
+            let (client1, mut rx1) = AttClient::new_test_client(TCB_IDX, &gatt_db);
+            let (_client2, mut rx2) = AttClient::new_test_client(ANOTHER_TCB_IDX, &gatt_db);
 
-            register_for_indication(&att_db_1, SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE).await.unwrap();
+            register_for_indication(client1.downgrade(), SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE)
+                .await
+                .unwrap();
 
             let (gatt_datastore, _) = MockDatastore::new();
             let gatt_datastore = Rc::new(gatt_datastore);
@@ -452,7 +441,7 @@ mod test {
 
             // assert: the first connection received the service change indication
             let resp1 = rx1.recv().await.unwrap();
-            assert!(matches!(resp1._child_, AttChild::AttHandleValueIndication(_)));
+            assert!(matches!(resp1.try_into(), Ok(att::AttHandleValueIndication { .. })));
             // assert: the second connection received nothing
             assert!(try_await(async move { rx2.recv().await }).await.is_err());
         });
@@ -463,14 +452,17 @@ mod test {
         block_on_locally(async {
             // arrange: two connections, both register, but the second one disconnects
             let gatt_db = init_gatt_db();
-            let (att_db_1, _bearer, mut rx1) = add_connection(&gatt_db, TCB_IDX);
-            let (att_db_2, bearer_2, mut rx2) = add_connection(&gatt_db, ANOTHER_TCB_IDX);
+            let (client1, mut rx1) = AttClient::new_test_client(TCB_IDX, &gatt_db);
+            let (client2, mut rx2) = AttClient::new_test_client(ANOTHER_TCB_IDX, &gatt_db);
 
-            register_for_indication(&att_db_1, SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE).await.unwrap();
-            register_for_indication(&att_db_2, SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE).await.unwrap();
+            register_for_indication(client1.downgrade(), SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE)
+                .await
+                .unwrap();
+            register_for_indication(client2.downgrade(), SERVICE_CHANGE_CCC_DESCRIPTOR_HANDLE)
+                .await
+                .unwrap();
 
-            drop(bearer_2);
-            gatt_db.on_bearer_dropped(ANOTHER_TCB_IDX);
+            drop(client2);
 
             let (gatt_datastore, _) = MockDatastore::new();
             let gatt_datastore = Rc::new(gatt_datastore);
@@ -494,7 +486,7 @@ mod test {
 
             // assert: the first connection received the service change indication
             let resp1 = rx1.recv().await.unwrap();
-            assert!(matches!(resp1._child_, AttChild::AttHandleValueIndication(_)));
+            assert!(matches!(resp1.try_into(), Ok(att::AttHandleValueIndication { .. })));
             // assert: the second connection is closed
             assert!(rx2.recv().await.is_none());
         });

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ namespace packet {
 
 // A base struct to provide Serialize() and size() to be overridden.
 class BaseStruct {
- public:
+public:
   virtual ~BaseStruct() = default;
 
   virtual size_t size() const = 0;
@@ -37,7 +37,7 @@ class BaseStruct {
   // Write to the vector with the given iterator.
   virtual void Serialize(BitInserter& it) const = 0;
 
- protected:
+protected:
   BaseStruct() = default;
 };
 

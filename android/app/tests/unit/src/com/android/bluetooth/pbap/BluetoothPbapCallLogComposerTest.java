@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import static com.android.bluetooth.pbap.BluetoothPbapCallLogComposer.NO_ERROR;
 
 import static com.google.common.truth.Truth.assertThat;
 
-import static org.mockito.Mockito.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -34,11 +34,12 @@ import android.net.Uri;
 import android.provider.CallLog;
 import android.provider.ContactsContract;
 
-import androidx.test.InstrumentationRegistry;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.SmallTest;
-import androidx.test.runner.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
 
 import com.android.bluetooth.BluetoothMethodProxy;
+import com.android.tests.bluetooth.MockitoRule;
 
 import org.junit.After;
 import org.junit.Before;
@@ -47,9 +48,8 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.Spy;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
+/** Test cases for {@link BluetoothPbapCallLogComposer}. */
 @SmallTest
 @RunWith(AndroidJUnit4.class)
 public class BluetoothPbapCallLogComposerTest {
@@ -66,7 +66,7 @@ public class BluetoothPbapCallLogComposerTest {
 
     @Spy BluetoothMethodProxy mPbapCallProxy = BluetoothMethodProxy.getInstance();
 
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
 
     @Mock Cursor mMockCursor;
 
@@ -81,12 +81,15 @@ public class BluetoothPbapCallLogComposerTest {
         when(mMockCursor.getCount()).thenReturn(validRowCount);
         when(mMockCursor.moveToFirst()).thenReturn(true);
 
-        mComposer = new BluetoothPbapCallLogComposer(InstrumentationRegistry.getTargetContext());
+        mComposer =
+                new BluetoothPbapCallLogComposer(
+                        InstrumentationRegistry.getInstrumentation().getContext());
     }
 
     @After
     public void tearDown() throws Exception {
         BluetoothMethodProxy.setInstanceForTesting(null);
+        mComposer.close();
     }
 
     @Test
@@ -165,18 +168,10 @@ public class BluetoothPbapCallLogComposerTest {
     }
 
     @Test
-    public void testTerminate() {
+    public void testClose() {
         mComposer.init(CALL_LOG_URI, SELECTION, SELECTION_ARGS, SORT_ORDER);
 
-        mComposer.terminate();
-        verify(mMockCursor).close();
-    }
-
-    @Test
-    public void testFinalize() {
-        mComposer.init(CALL_LOG_URI, SELECTION, SELECTION_ARGS, SORT_ORDER);
-
-        mComposer.finalize();
+        mComposer.close();
         verify(mMockCursor).close();
     }
 
@@ -205,6 +200,6 @@ public class BluetoothPbapCallLogComposerTest {
 
     @Test
     public void testIsAfterLast_returnsFalseWhenNotInitialized() {
-        assertThat(mComposer.isAfterLast()).isEqualTo(false);
+        assertThat(mComposer.isAfterLast()).isFalse();
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 The Android Open Source Project
+ * Copyright (C) 2024 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,18 @@
 
 package android.bluetooth.le;
 
-import android.annotation.FlaggedApi;
 import android.annotation.IntDef;
 import android.annotation.NonNull;
+import android.annotation.RequiresNoPermission;
 import android.annotation.SystemApi;
 import android.os.Parcel;
 import android.os.Parcelable;
 
-import com.android.bluetooth.flags.Flags;
-
+import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+import java.util.List;
 
 /**
  * The {@link ChannelSoundingParams} provide a way to adjust distance measurement preferences for
@@ -35,7 +36,6 @@ import java.lang.annotation.RetentionPolicy;
  *
  * @hide
  */
-@FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
 @SystemApi
 public final class ChannelSoundingParams implements Parcelable {
 
@@ -55,6 +55,7 @@ public final class ChannelSoundingParams implements Parcelable {
     @interface LocationType {}
 
     /** @hide */
+    @Target(ElementType.TYPE_USE)
     @Retention(RetentionPolicy.SOURCE)
     @IntDef(
             value = {
@@ -147,9 +148,9 @@ public final class ChannelSoundingParams implements Parcelable {
      */
     @SystemApi public static final int CS_SECURITY_LEVEL_FOUR = 4;
 
-    private int mSightType;
-    private int mLocationType;
-    private int mCsSecurityLevel;
+    private final int mSightType;
+    private final int mLocationType;
+    private final int mCsSecurityLevel;
 
     /** @hide */
     public ChannelSoundingParams(int sightType, int locationType, int csSecurityLevel) {
@@ -164,8 +165,8 @@ public final class ChannelSoundingParams implements Parcelable {
      * @hide
      */
     @SystemApi
-    @SightType
-    public int getSightType() {
+    @RequiresNoPermission
+    public @SightType int getSightType() {
         return mSightType;
     }
 
@@ -175,8 +176,8 @@ public final class ChannelSoundingParams implements Parcelable {
      * @hide
      */
     @SystemApi
-    @LocationType
-    public int getLocationType() {
+    @RequiresNoPermission
+    public @LocationType int getLocationType() {
         return mLocationType;
     }
 
@@ -186,8 +187,8 @@ public final class ChannelSoundingParams implements Parcelable {
      * @hide
      */
     @SystemApi
-    @CsSecurityLevel
-    public int getCsSecurityLevel() {
+    @RequiresNoPermission
+    public @CsSecurityLevel int getCsSecurityLevel() {
         return mCsSecurityLevel;
     }
 
@@ -250,16 +251,13 @@ public final class ChannelSoundingParams implements Parcelable {
          * @hide
          */
         @SystemApi
+        @RequiresNoPermission
         public @NonNull Builder setSightType(@SightType int sightType) {
-            switch (sightType) {
-                case SIGHT_TYPE_UNKNOWN:
-                case SIGHT_TYPE_LINE_OF_SIGHT:
-                case SIGHT_TYPE_NON_LINE_OF_SIGHT:
-                    mSightType = sightType;
-                    break;
-                default:
-                    throw new IllegalArgumentException("unknown sight type " + sightType);
+            if (!List.of(SIGHT_TYPE_UNKNOWN, SIGHT_TYPE_LINE_OF_SIGHT, SIGHT_TYPE_NON_LINE_OF_SIGHT)
+                    .contains(sightType)) {
+                throw new IllegalArgumentException("unknown sight type " + sightType);
             }
+            mSightType = sightType;
             return this;
         }
 
@@ -271,16 +269,13 @@ public final class ChannelSoundingParams implements Parcelable {
          * @hide
          */
         @SystemApi
+        @RequiresNoPermission
         public @NonNull Builder setLocationType(@LocationType int locationType) {
-            switch (locationType) {
-                case LOCATION_TYPE_UNKNOWN:
-                case LOCATION_TYPE_INDOOR:
-                case LOCATION_TYPE_OUTDOOR:
-                    mLocationType = locationType;
-                    break;
-                default:
-                    throw new IllegalArgumentException("unknown location type " + locationType);
+            if (!List.of(LOCATION_TYPE_UNKNOWN, LOCATION_TYPE_INDOOR, LOCATION_TYPE_OUTDOOR)
+                    .contains(locationType)) {
+                throw new IllegalArgumentException("unknown location type " + locationType);
             }
+            mLocationType = locationType;
             return this;
         }
 
@@ -294,18 +289,17 @@ public final class ChannelSoundingParams implements Parcelable {
          * @hide
          */
         @SystemApi
+        @RequiresNoPermission
         public @NonNull Builder setCsSecurityLevel(@CsSecurityLevel int csSecurityLevel) {
-            switch (csSecurityLevel) {
-                case CS_SECURITY_LEVEL_ONE:
-                case CS_SECURITY_LEVEL_TWO:
-                case CS_SECURITY_LEVEL_THREE:
-                case CS_SECURITY_LEVEL_FOUR:
-                    mCsSecurityLevel = csSecurityLevel;
-                    break;
-                default:
-                    throw new IllegalArgumentException(
-                            "unknown CS security level " + csSecurityLevel);
+            if (!List.of(
+                            CS_SECURITY_LEVEL_ONE,
+                            CS_SECURITY_LEVEL_TWO,
+                            CS_SECURITY_LEVEL_THREE,
+                            CS_SECURITY_LEVEL_FOUR)
+                    .contains(csSecurityLevel)) {
+                throw new IllegalArgumentException("unknown CS security level " + csSecurityLevel);
             }
+            mCsSecurityLevel = csSecurityLevel;
             return this;
         }
 
@@ -315,6 +309,7 @@ public final class ChannelSoundingParams implements Parcelable {
          * @hide
          */
         @SystemApi
+        @RequiresNoPermission
         public @NonNull ChannelSoundingParams build() {
             return new ChannelSoundingParams(mSightType, mLocationType, mCsSecurityLevel);
         }

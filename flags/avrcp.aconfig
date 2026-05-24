@@ -1,12 +1,5 @@
 package: "com.android.bluetooth.flags"
-container: "com.android.btservices"
-
-flag {
-    name: "avrcp_connect_a2dp_delayed"
-    namespace: "bluetooth"
-    description: "When peer device connects AVRCP but not A2DP we initiate A2DP connection after some time delay"
-    bug: "328406945"
-}
+container: "com.android.bt"
 
 flag {
     name: "abs_volume_sdp_conflict"
@@ -19,11 +12,45 @@ flag {
 }
 
 flag {
-    name: "browsing_refactor"
+    name: "get_all_element_attributes_empty"
     namespace: "bluetooth"
-    description: "Broadcast all players instead of BT player, remove MediaBrowser preload, support package modification"
-    bug: "338156685"
+    description: "Return all attributes even if empty when requesting all attributes with GetElementAttributes"
+    bug: "362896963"
     metadata {
         purpose: PURPOSE_BUGFIX
     }
+}
+
+flag {
+    name: "avrcp_16_default"
+    namespace: "bluetooth"
+    description: "Set AVRCP 1.6 as default AVRCP version"
+    bug: "374271695"
+}
+
+flag {
+    name: "set_a2dp_active_device_through_adapter_service"
+    namespace: "bluetooth"
+    description: "Instead of calling A2dpService#setActiveDevice, call AdapterService#setActiveDevice"
+    bug: "419448067"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "implement_get_image_from_descriptor_for_cover_art"
+    namespace: "bluetooth"
+    description: "Implement getImage from descriptor for cover art in AVRCP for IOP, some devices request image not 200*200"
+    bug: "427472266"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "use_returned_absolute_volume"
+    namespace: "bluetooth"
+    description: "Use the volume returned in an accepted SetAbsoluteVolume command"
+    bug: "429364070"
 }

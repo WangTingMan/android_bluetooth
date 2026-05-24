@@ -19,17 +19,15 @@
 #define BLE_SCANNER_HCI_INTERFACE_H
 
 #include <base/functional/callback.h>
+#include <bluetooth/types/address.h>
 
 #include <vector>
 
-#include "types/raw_address.h"
-
 class BleScannerHciInterface {
- public:
+public:
   using status_cb = base::Callback<void(uint8_t /* status */)>;
   using list_size_cb = base::Callback<void(int8_t /* list_size */)>;
-  using handle_cb =
-      base::Callback<void(uint8_t /* status */, uint16_t /* adv_handle */)>;
+  using handle_cb = base::Callback<void(uint8_t /* status */, uint16_t /* adv_handle */)>;
 
   static void Initialize();
   static BleScannerHciInterface* Get();
@@ -38,17 +36,15 @@ class BleScannerHciInterface {
   virtual ~BleScannerHciInterface() = default;
 
   class ScanEventObserver {
-   public:
+  public:
     virtual ~ScanEventObserver() = default;
-    virtual void OnPeriodicScanResult(uint16_t sync_handle, uint8_t tx_power,
-                                      int8_t rssi, uint8_t cte_type,
-                                      uint8_t pkt_data_status,
-                                      uint8_t pkt_data_len,
-                                      const uint8_t* pkt_data) = 0;
-    virtual void OnPeriodicScanEstablished(
-        uint8_t status, uint16_t sync_handle, uint8_t set_id,
-        uint8_t adv_addr_type, const RawAddress& adv_addr, uint8_t adv_phy,
-        uint16_t adv_interval, uint8_t adv_clock_accuracy) = 0;
+    virtual void OnPeriodicScanResult(uint16_t sync_handle, uint8_t tx_power, int8_t rssi,
+                                      uint8_t cte_type, uint8_t pkt_data_status,
+                                      uint8_t pkt_data_len, const uint8_t* pkt_data) = 0;
+    virtual void OnPeriodicScanEstablished(uint8_t status, uint16_t sync_handle, uint8_t set_id,
+                                           uint8_t adv_addr_type, const RawAddress& adv_addr,
+                                           uint8_t adv_phy, uint16_t adv_interval,
+                                           uint8_t adv_clock_accuracy) = 0;
     virtual void OnPeriodicScanLost(uint16_t sync_handle) = 0;
   };
 
@@ -77,11 +73,9 @@ class BleScannerHciInterface {
    * bit 4: do not sync to packets without a Constant Tone Extension, all other
    * bits: reserved for future use.
    */
-  virtual void PeriodicScanStart(uint8_t options, uint8_t set_id,
-                                 uint8_t adv_addr_type,
+  virtual void PeriodicScanStart(uint8_t options, uint8_t set_id, uint8_t adv_addr_type,
                                  const RawAddress& adv_addr, uint16_t skip_num,
-                                 uint16_t sync_timeout,
-                                 uint8_t sync_cte_type) = 0;
+                                 uint16_t sync_timeout, uint8_t sync_cte_type) = 0;
 
   /**
    * Used to cancel the HCI_LE_Periodic_Advertising_Create_Sync command while it
@@ -108,8 +102,7 @@ class BleScannerHciInterface {
    * @param enable whether enable or disable the advertising reports
    * @param cb  status callback
    */
-  virtual void PeriodicScanResultEvtEnable(uint16_t sync_handle, bool enable,
-                                           status_cb cb) = 0;
+  virtual void PeriodicScanResultEvtEnable(uint16_t sync_handle, bool enable, status_cb cb) = 0;
 
   /**
    * Used to add an entry, consisting of a single device address and SID, to the
@@ -123,10 +116,8 @@ class BleScannerHciInterface {
    * @param adv_sid advertising set ID
    * @param cb status callback
    */
-  virtual void PeriodicAdvertiserListAddDevice(uint8_t adv_addr_type,
-                                               RawAddress& adv_addr,
-                                               uint8_t adv_sid,
-                                               status_cb cb) = 0;
+  virtual void PeriodicAdvertiserListAddDevice(uint8_t adv_addr_type, RawAddress& adv_addr,
+                                               uint8_t adv_sid, status_cb cb) = 0;
   /**
    * Remove one entry from the list of Periodic Advertisers stored in the
    * Controller. Removals from the Periodic Advertisers List take effect
@@ -137,10 +128,8 @@ class BleScannerHciInterface {
    * @param adv_sid advertising set ID
    * @param cb status callback
    */
-  virtual void PeriodicAdvertiserListRemoveDevice(uint8_t adv_addr_type,
-                                                  RawAddress& adv_addr,
-                                                  uint8_t adv_sid,
-                                                  status_cb cb) = 0;
+  virtual void PeriodicAdvertiserListRemoveDevice(uint8_t adv_addr_type, RawAddress& adv_addr,
+                                                  uint8_t adv_sid, status_cb cb) = 0;
 
   /**
    * Remove all entries from the list of Periodic Advertisers in the Controller.
@@ -167,8 +156,7 @@ class BleScannerHciInterface {
    * @param sync_handle synced advewrtising handle
    * @param cb status and connection handle callback
    */
-  virtual void PeriodicAdvSyncTransfer(const RawAddress& bd_addr,
-                                       uint16_t service_data,
+  virtual void PeriodicAdvSyncTransfer(const RawAddress& bd_addr, uint16_t service_data,
                                        uint16_t sync_handle, handle_cb cb) = 0;
 
   /**
@@ -181,10 +169,8 @@ class BleScannerHciInterface {
    * @param sync_handle synced advertising handle
    * @param cb status and connection handle callback
    */
-  virtual void PeriodicAdvSetInfoTransfer(const RawAddress& bd_addr,
-                                          uint16_t service_data,
-                                          uint8_t sync_handle,
-                                          handle_cb cb) = 0;
+  virtual void PeriodicAdvSetInfoTransfer(const RawAddress& bd_addr, uint16_t service_data,
+                                          uint8_t sync_handle, handle_cb cb) = 0;
 
   /**
    * Specify how the Controller will process periodic advertising
@@ -216,11 +202,9 @@ class BleScannerHciInterface {
    * HCI_LE_SET_PERIODIC_ADVERTISING_SYNC_TRANSFER_PARAM.
    * @param cb status callback
    */
-  virtual void SetPeriodicAdvSyncTransferParams(const RawAddress& bd_addr,
-                                                uint8_t mode, uint16_t skip,
-                                                uint16_t sync_timeout,
-                                                uint8_t cte_type,
-                                                bool set_defaults,
+  virtual void SetPeriodicAdvSyncTransferParams(const RawAddress& bd_addr, uint8_t mode,
+                                                uint16_t skip, uint16_t sync_timeout,
+                                                uint8_t cte_type, bool set_defaults,
                                                 status_cb cb) = 0;
 
   static constexpr uint8_t kOptUseAdvertiserList = 0x01;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,95 +16,11 @@
 
 package com.android.bluetooth.hfp;
 
-import static org.mockito.Mockito.*;
-
-import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothHeadset;
-import android.bluetooth.BluetoothProfile;
-import android.content.Intent;
-
-import org.junit.Assert;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
 
 /** Helper functions for HFP related tests */
 public class HeadsetTestUtils {
-
-    /**
-     * Verify the content of a {@link BluetoothHeadset#ACTION_AUDIO_STATE_CHANGED} intent
-     *
-     * @param device Bluetooth device
-     * @param toState value of {@link BluetoothProfile#EXTRA_STATE}
-     * @param fromState value of {@link BluetoothProfile#EXTRA_PREVIOUS_STATE}
-     * @param intent a {@link BluetoothHeadset#ACTION_AUDIO_STATE_CHANGED} intent
-     */
-    public static void verifyAudioStateBroadcast(
-            BluetoothDevice device, int toState, int fromState, Intent intent) {
-        Assert.assertNotNull(intent);
-        Assert.assertEquals(BluetoothHeadset.ACTION_AUDIO_STATE_CHANGED, intent.getAction());
-        Assert.assertEquals(device, intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE));
-        Assert.assertEquals(toState, intent.getIntExtra(BluetoothProfile.EXTRA_STATE, -1));
-        Assert.assertEquals(
-                fromState, intent.getIntExtra(BluetoothProfile.EXTRA_PREVIOUS_STATE, -1));
-    }
-
-    /**
-     * Verify the content of a {@link BluetoothHeadset#ACTION_CONNECTION_STATE_CHANGED} intent
-     *
-     * @param device Bluetooth device
-     * @param toState value of {@link BluetoothProfile#EXTRA_STATE}
-     * @param fromState value of {@link BluetoothProfile#EXTRA_PREVIOUS_STATE}
-     * @param intent a {@link BluetoothHeadset#ACTION_CONNECTION_STATE_CHANGED} intent
-     * @param checkFlag whether intent flag should be verified, normally this can only be done at
-     *     the sender end
-     */
-    public static void verifyConnectionStateBroadcast(
-            BluetoothDevice device, int toState, int fromState, Intent intent, boolean checkFlag) {
-        Assert.assertNotNull(intent);
-        Assert.assertEquals(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED, intent.getAction());
-        if (checkFlag) {
-            Assert.assertEquals(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND, intent.getFlags());
-        }
-        Assert.assertEquals(device, intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE));
-        Assert.assertEquals(toState, intent.getIntExtra(BluetoothProfile.EXTRA_STATE, -1));
-        Assert.assertEquals(
-                fromState, intent.getIntExtra(BluetoothProfile.EXTRA_PREVIOUS_STATE, -1));
-    }
-
-    /**
-     * Verify the content of a {@link BluetoothHeadset#ACTION_CONNECTION_STATE_CHANGED} intent and
-     * its flag, normally used at sender end
-     *
-     * @param device Bluetooth device
-     * @param toState value of {@link BluetoothProfile#EXTRA_STATE}
-     * @param fromState value of {@link BluetoothProfile#EXTRA_PREVIOUS_STATE}
-     * @param intent a {@link BluetoothHeadset#ACTION_CONNECTION_STATE_CHANGED} intent
-     */
-    public static void verifyConnectionStateBroadcast(
-            BluetoothDevice device, int toState, int fromState, Intent intent) {
-        verifyConnectionStateBroadcast(device, toState, fromState, intent, true);
-    }
-
-    /**
-     * Verify the content of a {@link BluetoothHeadset#ACTION_ACTIVE_DEVICE_CHANGED} intent and its
-     * flag, normally used at sender end
-     *
-     * @param device intended active Bluetooth device
-     * @param intent a {@link BluetoothHeadset#ACTION_ACTIVE_DEVICE_CHANGED} intent
-     * @param checkFlag whether intent flag should be verified, normally this can only be done at
-     *     the sender end
-     */
-    public static void verifyActiveDeviceChangedBroadcast(
-            BluetoothDevice device, Intent intent, boolean checkFlag) {
-        Assert.assertNotNull(intent);
-        Assert.assertEquals(BluetoothHeadset.ACTION_ACTIVE_DEVICE_CHANGED, intent.getAction());
-        Assert.assertEquals(device, intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE));
-        if (checkFlag) {
-            Assert.assertEquals(
-                    Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT
-                            | Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND,
-                    intent.getFlags());
-        }
-    }
-
     /**
      * Helper function to check if {@link HeadsetPhoneState} is set to correct values indicated in
      * {@code headsetCallState}

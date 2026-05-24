@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,16 +21,14 @@
 #include "fields/packet_field.h"
 
 class TypeDef {
- public:
+public:
   TypeDef(std::string name) : name_(name) {}
 
   TypeDef(std::string name, int size) : name_(name), size_(size) {}
 
   virtual ~TypeDef() = default;
 
-  std::string GetTypeName() const {
-    return name_;
-  }
+  std::string GetTypeName() const { return name_; }
 
   enum class Type {
     INVALID,

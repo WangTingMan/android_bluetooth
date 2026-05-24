@@ -16,13 +16,16 @@
 
 #include "asrc_resampler.h"
 
-#include <base/strings/stringprintf.h>
 #include <bluetooth/log.h>
 #include <com_android_bluetooth_flags.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <memory>
+#include <mutex>
 #include <utility>
+#include <vector>
 
 #include "asrc_tables.h"
 #include "common/repeating_timer.h"
@@ -38,8 +41,7 @@
 
 namespace bluetooth::audio::asrc {
 
-class SourceAudioHalAsrc::ClockRecovery
-    : public bluetooth::hal::ReadClockHandler {
+class SourceAudioHalAsrc::ClockRecovery : public bluetooth::hal::ReadClockHandler {
   std::mutex mutex_;
   bluetooth::common::RepeatingTimer read_clock_timer_;
 
@@ -71,8 +73,8 @@ class SourceAudioHalAsrc::ClockRecovery
     int drift_us;
   } output_stats_;
 
-  __attribute__((no_sanitize("integer"))) void OnEvent(
-      uint32_t timestamp_us, uint32_t bt_clock) override {
+  __attribute__((no_sanitize("integer"))) void OnEvent(uint32_t timestamp_us,
+                                                       uint32_t bt_clock) override {
     auto& state = state_;
 
     // Setup the start point of the streaming
@@ -99,7 +101,9 @@ class SourceAudioHalAsrc::ClockRecovery
     int dt_current = int(timestamp_us - local_time);
     state.decim_dt[1] = std::min(state.decim_dt[1], dt_current);
 
-    if (local_time - state.decim_t0 < 1000 * 1000) return;
+    if (local_time - state.decim_t0 < 1000 * 1000) {
+      return;
+    }
 
     state.decim_t0 += 1000 * 1000;
 
@@ -136,8 +140,7 @@ class SourceAudioHalAsrc::ClockRecovery
     const double b0 = 6.6077909823e-04, b1 = 1.3215581965e-03, b2 = b0;
 
     state.butter_drift = drift * b0 + state.butter_s[0];
-    state.butter_s[0] =
-        state.butter_s[1] + drift * b1 - state.butter_drift * a1;
+    state.butter_s[0] = state.butter_s[1] + drift * b1 - state.butter_drift * a1;
     state.butter_s[1] = drift * b2 - state.butter_drift * a2;
 
     // The stream time is adjusted with the filtered drift, and the error is
@@ -146,8 +149,7 @@ class SourceAudioHalAsrc::ClockRecovery
     // corrected by the decimated deviation.
 
     int err = state.stream_time - (state.local_time + state.decim_dt[0]);
-    state.stream_time +=
-        (int(ldexpf(state.butter_drift, 8)) - err + (1 << 7)) >> 8;
+    state.stream_time += (int(ldexpf(state.butter_drift, 8)) - err + (1 << 7)) >> 8;
 
     // Update recovered timing information, and sample the output statistics.
 
@@ -165,42 +167,27 @@ class SourceAudioHalAsrc::ClockRecovery
     }
 
     log::info(
-        "Deviation: {:6} us ({:3.0f} ppm) | Output Fs: {:5.2f} Hz  drift: {:2} "
-        "us",
-        state.stream_time - state.local_time, state.butter_drift,
-        output_stats.sample_rate, output_stats.drift_us);
+            "Deviation: {:6} us ({:3.0f} ppm) | Output Fs: {:5.2f} Hz  drift: {:2} "
+            "us",
+            static_cast<int32_t>(state.stream_time - state.local_time), state.butter_drift,
+            output_stats.sample_rate, output_stats.drift_us);
   }
 
- public:
+public:
   ClockRecovery(bluetooth::common::MessageLoopThread* thread)
       : state_{.id = StateId::RESET}, reference_timing_{0, 0, 0} {
-    if (com::android::bluetooth::flags::run_clock_recovery_in_worker_thread()) {
-      read_clock_timer_.SchedulePeriodic(
-          thread->GetWeakPtr(), FROM_HERE,
-          base::BindRepeating(
-              [](void*) {
-                bluetooth::shim::GetHciLayer()->EnqueueCommand(
-                    bluetooth::hci::ReadClockBuilder::Create(
-                        0, bluetooth::hci::WhichClock::LOCAL),
-                    get_main_thread()->BindOnce(
-                        [](bluetooth::hci::CommandCompleteView) {}));
-              },
-              nullptr),
-          std::chrono::milliseconds(100));
-    } else {
-      read_clock_timer_.SchedulePeriodic(
-          get_main_thread()->GetWeakPtr(), FROM_HERE,
-          base::BindRepeating(
-              [](void*) {
-                bluetooth::shim::GetHciLayer()->EnqueueCommand(
-                    bluetooth::hci::ReadClockBuilder::Create(
-                        0, bluetooth::hci::WhichClock::LOCAL),
-                    get_main_thread()->BindOnce(
-                        [](bluetooth::hci::CommandCompleteView) {}));
-              },
-              nullptr),
-          std::chrono::milliseconds(100));
-    }
+    read_clock_timer_.SchedulePeriodic(
+            thread,
+            base::BindRepeating(
+                    [](void*) {
+                      bluetooth::shim::GetHciLayer()->EnqueueCommand(
+                              bluetooth::hci::ReadClockBuilder::Create(
+                                      0, bluetooth::hci::WhichClock::LOCAL),
+                              get_main_thread()->BindOnce(
+                                      [](bluetooth::hci::CommandCompleteView) {}));
+                    },
+                    nullptr),
+            std::chrono::milliseconds(100));
 
     hal::LinkClocker::Register(this);
   }
@@ -210,8 +197,7 @@ class SourceAudioHalAsrc::ClockRecovery
     read_clock_timer_.Cancel();
   }
 
-  __attribute__((no_sanitize("integer"))) uint32_t Convert(
-      uint32_t stream_time) {
+  __attribute__((no_sanitize("integer"))) uint32_t Convert(uint32_t stream_time) {
     // Compute the difference between the stream time and the sampled time
     // of the clock recovery, and adjust according to the drift.
     // Then return the sampled local time, modified by this converted gap.
@@ -250,17 +236,16 @@ class SourceAudioHalAsrc::Resampler {
   // Apply the transfer coefficients `h`, corrected by linear interpolation,
   // given fraction position `mu` weigthed by `d` values.
 
-  inline int32_t Filter(const int32_t* in, const int32_t* h, int16_t mu,
-                        const int16_t* d);
+  inline int32_t Filter(const int32_t* in, const int32_t* h, int16_t mu, const int16_t* d);
 
   // Upsampling loop, the ratio is less than 1.0 in Q26 format,
   // more output samples are produced compared to input.
 
   template <typename T>
-  __attribute__((no_sanitize("integer"))) void Upsample(
-      unsigned ratio, const T* in, int in_stride, size_t in_len,
-      size_t* in_count, T* out, int out_stride, size_t out_len,
-      size_t* out_count) {
+  __attribute__((no_sanitize("integer"))) void Upsample(unsigned ratio, const T* in, int in_stride,
+                                                        size_t in_len, size_t* in_count, T* out,
+                                                        int out_stride, size_t out_len,
+                                                        size_t* out_count) {
     int nin = in_len, nout = out_len;
 
     while (nin > 0 && nout > 0) {
@@ -293,10 +278,10 @@ class SourceAudioHalAsrc::Resampler {
   // less output samples are produced compared to input.
 
   template <typename T>
-  __attribute__((no_sanitize("integer"))) void Downsample(
-      unsigned ratio, const T* in, int in_stride, size_t in_len,
-      size_t* in_count, T* out, int out_stride, size_t out_len,
-      size_t* out_count) {
+  __attribute__((no_sanitize("integer"))) void Downsample(unsigned ratio, const T* in,
+                                                          int in_stride, size_t in_len,
+                                                          size_t* in_count, T* out, int out_stride,
+                                                          size_t out_len, size_t* out_count) {
     size_t nin = in_len, nout = out_len;
 
     while (nin > 0 && nout > 0) {
@@ -325,7 +310,7 @@ class SourceAudioHalAsrc::Resampler {
     *out_count = out_len - nout;
   }
 
- public:
+public:
   Resampler(int bit_depth)
       : h_(asrc::resampler_tables.h),
         d_(asrc::resampler_tables.d),
@@ -341,14 +326,11 @@ class SourceAudioHalAsrc::Resampler {
   // the input stream, in Q26 format.
 
   template <typename T>
-  void Resample(unsigned ratio_q26, const T* in, int in_stride, size_t in_len,
-                size_t* in_count, T* out, int out_stride, size_t out_len,
-                size_t* out_count, unsigned* in_sub_q26) {
-    auto fn = ratio_q26 < (1u << 26) ? &Resampler::Upsample<T>
-                                     : &Resampler::Downsample<T>;
+  void Resample(unsigned ratio_q26, const T* in, int in_stride, size_t in_len, size_t* in_count,
+                T* out, int out_stride, size_t out_len, size_t* out_count, unsigned* in_sub_q26) {
+    auto fn = ratio_q26 < (1u << 26) ? &Resampler::Upsample<T> : &Resampler::Downsample<T>;
 
-    (this->*fn)(ratio_q26, in, in_stride, in_len, in_count, out, out_stride,
-                out_len, out_count);
+    (this->*fn)(ratio_q26, in, in_stride, in_len, in_count, out, out_stride, out_len, out_count);
 
     *in_sub_q26 = in_pos_ & ((1u << 26) - 1);
   }
@@ -374,10 +356,8 @@ static inline int64x2_t vmlal_low_s32(int64x2_t r, int32x4_t a, int32x4_t b) {
   return vmlal_s32(r, vget_low_s32(a), vget_low_s32(b));
 }
 
-inline int32_t SourceAudioHalAsrc::Resampler::Filter(const int32_t* x,
-                                                     const int32_t* h,
-                                                     int16_t _mu,
-                                                     const int16_t* d) {
+inline int32_t SourceAudioHalAsrc::Resampler::Filter(const int32_t* x, const int32_t* h,
+                                                     int16_t _mu, const int16_t* d) {
   int64x2_t sx;
 
   int16x8_t mu = vdupq_n_s16(_mu);
@@ -418,13 +398,12 @@ inline int32_t SourceAudioHalAsrc::Resampler::Filter(const int32_t* x,
 
 #else
 
-inline int32_t SourceAudioHalAsrc::Resampler::Filter(const int32_t* in,
-                                                     const int32_t* h,
-                                                     int16_t mu,
-                                                     const int16_t* d) {
+inline int32_t SourceAudioHalAsrc::Resampler::Filter(const int32_t* in, const int32_t* h,
+                                                     int16_t mu, const int16_t* d) {
   int64_t s = 0;
-  for (int i = 0; i < 2 * KERNEL_A - 1; i++)
+  for (int i = 0; i < 2 * KERNEL_A - 1; i++) {
     s += int64_t(in[i]) * (h[i] + ((mu * d[i] + (1 << 6)) >> 7));
+  }
 
   s = (s + (1 << 30)) >> 31;
   return std::clamp(s, int64_t(pcm_min_), int64_t(pcm_max_));
@@ -432,9 +411,9 @@ inline int32_t SourceAudioHalAsrc::Resampler::Filter(const int32_t* in,
 
 #endif
 
-SourceAudioHalAsrc::SourceAudioHalAsrc(
-    bluetooth::common::MessageLoopThread* thread, int channels, int sample_rate,
-    int bit_depth, int interval_us, int num_burst_buffers, int burst_delay_ms)
+SourceAudioHalAsrc::SourceAudioHalAsrc(bluetooth::common::MessageLoopThread* thread, int channels,
+                                       int sample_rate, int bit_depth, int interval_us,
+                                       int num_burst_buffers, int burst_delay_ms)
     : sample_rate_(sample_rate),
       bit_depth_(bit_depth),
       interval_us_(interval_us),
@@ -446,21 +425,15 @@ SourceAudioHalAsrc::SourceAudioHalAsrc(
 
   // Check parameters
 
-  auto check_bounds = [](int v, int min, int max) {
-    return v >= min && v <= max;
-  };
+  auto check_bounds = [](int v, int min, int max) { return v >= min && v <= max; };
 
-  if (!check_bounds(channels, 1, 8) ||
-      !check_bounds(sample_rate, 1 * 1000, 100 * 1000) ||
-      !check_bounds(bit_depth, 8, 32) ||
-      !check_bounds(interval_us, 1 * 1000, 100 * 1000) ||
-      !check_bounds(num_burst_buffers, 0, 10) ||
-      !check_bounds(burst_delay_ms, 0, 1000)) {
+  if (!check_bounds(channels, 1, 8) || !check_bounds(sample_rate, 1 * 1000, 100 * 1000) ||
+      !check_bounds(bit_depth, 8, 32) || !check_bounds(interval_us, 1 * 1000, 100 * 1000) ||
+      !check_bounds(num_burst_buffers, 0, 10) || !check_bounds(burst_delay_ms, 0, 1000)) {
     log::error(
-        "Bad parameters: channels: {} sample_rate: {} bit_depth: {} "
-        "interval_us: {} num_burst_buffers: {} burst_delay_ms: {}",
-        channels, sample_rate, bit_depth, interval_us, num_burst_buffers,
-        burst_delay_ms);
+            "Bad parameters: channels: {} sample_rate: {} bit_depth: {} "
+            "interval_us: {} num_burst_buffers: {} burst_delay_ms: {}",
+            channels, sample_rate, bit_depth, interval_us, num_burst_buffers, burst_delay_ms);
 
     return;
   }
@@ -482,12 +455,12 @@ SourceAudioHalAsrc::SourceAudioHalAsrc(
 
   auto& buffers = buffers_;
 
-  int num_interval_samples =
-      channels * (interval_us_ * sample_rate_) / (1000 * 1000);
-  buffers_size_ = num_interval_samples *
-                  (bit_depth_ <= 16 ? sizeof(int16_t) : sizeof(int32_t));
+  int num_interval_samples = channels * (interval_us_ * sample_rate_) / (1000 * 1000);
+  buffers_size_ = num_interval_samples * (bit_depth_ <= 16 ? sizeof(int16_t) : sizeof(int32_t));
 
-  for (auto& b : buffers.pool) b.resize(buffers_size_);
+  for (auto& b : buffers.pool) {
+    b.resize(buffers_size_);
+  }
   buffers.index = 0;
   buffers.offset = 0;
 
@@ -497,7 +470,9 @@ SourceAudioHalAsrc::SourceAudioHalAsrc(
   std::fill(silence_buffer->begin(), silence_buffer->end(), 0);
 
   burst_buffers_.resize(num_burst_buffers);
-  for (auto& b : burst_buffers_) b = silence_buffer;
+  for (auto& b : burst_buffers_) {
+    b = silence_buffer;
+  }
 
   burst_delay_us_ = burst_delay_ms * 1000;
 }
@@ -506,8 +481,8 @@ SourceAudioHalAsrc::~SourceAudioHalAsrc() {}
 
 template <typename T>
 __attribute__((no_sanitize("integer"))) void SourceAudioHalAsrc::Resample(
-    double ratio, const std::vector<uint8_t>& in,
-    std::vector<const std::vector<uint8_t>*>* out, uint32_t* output_us) {
+        double ratio, const std::vector<uint8_t>& in, std::vector<const std::vector<uint8_t>*>* out,
+        uint32_t* output_us) {
   auto& resamplers = *resamplers_;
   auto& buffers = buffers_;
   auto channels = resamplers.size();
@@ -535,9 +510,10 @@ __attribute__((no_sanitize("integer"))) void SourceAudioHalAsrc::Resample(
 
     size_t in_count, out_count;
 
-    for (auto& r : resamplers)
-      r.Resample<T>(ratio_q26, in_data++, channels, in_length, &in_count,
-                    out_data++, channels, out_length, &out_count, &sub_q26);
+    for (auto& r : resamplers) {
+      r.Resample<T>(ratio_q26, in_data++, channels, in_length, &in_count, out_data++, channels,
+                    out_length, &out_count, &sub_q26);
+    }
 
     in_length -= in_count;
     buffers.offset += out_count * channels;
@@ -547,9 +523,9 @@ __attribute__((no_sanitize("integer"))) void SourceAudioHalAsrc::Resample(
     // returned by the resampler, adds the sub-sample information.
 
     resampler_pos_.samples += out_count;
-    for (; resampler_pos_.samples >= sample_rate_;
-         resampler_pos_.samples -= sample_rate_)
+    for (; resampler_pos_.samples >= sample_rate_; resampler_pos_.samples -= sample_rate_) {
       resampler_pos_.seconds++;
+    }
 
     // An output buffer has been fulfilled,
     // select a new buffer in the pool, used as a ring.
@@ -565,12 +541,11 @@ __attribute__((no_sanitize("integer"))) void SourceAudioHalAsrc::Resample(
   // The samples count within a seconds, and sub-sample position, are
   // converted, then add the number of seconds modulo 2^32.
 
-  int64_t output_samples_q26 = (int64_t(resampler_pos_.samples) << 26) -
-                               ((int64_t(sub_q26) << 26) / ratio_q26);
+  int64_t output_samples_q26 =
+          (int64_t(resampler_pos_.samples) << 26) - ((int64_t(sub_q26) << 26) / ratio_q26);
 
   *output_us = resampler_pos_.seconds * (1000 * 1000) +
-               uint32_t((output_samples_q26 * 1000 * 1000) /
-                        (int64_t(sample_rate_) << 26));
+               uint32_t((output_samples_q26 * 1000 * 1000) / (int64_t(sample_rate_) << 26));
 }
 
 __attribute__((no_sanitize("integer"))) std::vector<const std::vector<uint8_t>*>
@@ -578,16 +553,16 @@ SourceAudioHalAsrc::Run(const std::vector<uint8_t>& in) {
   std::vector<const std::vector<uint8_t>*> out;
 
   if (in.size() != buffers_size_) {
-    log::error("Inconsistent input buffer size: {} ({} expected)", in.size(),
-               buffers_size_);
+    log::error("Inconsistent input buffer size: {} ({} expected)", in.size(), buffers_size_);
     return out;
   }
 
   // The burst delay has expired, let's generate the burst.
 
   if (burst_buffers_.size() && stream_us_ >= burst_delay_us_) {
-    for (size_t i = 0; i < burst_buffers_.size(); i++)
+    for (size_t i = 0; i < burst_buffers_.size(); i++) {
       out.push_back(burst_buffers_[(out_counter_ + i) % burst_buffers_.size()]);
+    }
 
     burst_buffers_.clear();
   }
@@ -605,10 +580,11 @@ SourceAudioHalAsrc::Run(const std::vector<uint8_t>& in) {
 
   uint32_t output_us;
 
-  if (bit_depth_ <= 16)
+  if (bit_depth_ <= 16) {
     Resample<int16_t>(ratio, in, &out, &output_us);
-  else
+  } else {
     Resample<int32_t>(ratio, in, &out, &output_us);
+  }
 
   drift_us_ += drift_z0_ * (int(output_us - local_us) - drift_us_);
 
@@ -616,21 +592,21 @@ SourceAudioHalAsrc::Run(const std::vector<uint8_t>& in) {
   // the associated delay has expired.
 
   if (burst_buffers_.size()) {
-    for (size_t i = 0; i < out.size(); i++)
+    for (size_t i = 0; i < out.size(); i++) {
       std::exchange<const std::vector<uint8_t>*>(
-          out[i], burst_buffers_[(out_counter_ + i) % burst_buffers_.size()]);
+              out[i], burst_buffers_[(out_counter_ + i) % burst_buffers_.size()]);
+    }
   }
 
   // Return the output statistics to the clock recovery module
 
   out_counter_ += out.size();
-  clock_recovery_->UpdateOutputStats(ratio * sample_rate_,
-                                     int(output_us - local_us));
+  clock_recovery_->UpdateOutputStats(ratio * sample_rate_, int(output_us - local_us));
 
-  if (0)
-    log::info("[{:6}.{:06}]  Fs: {:.2f} Hz  drift: {} us",
-              output_us / (1000 * 1000), output_us % (1000 * 1000),
-              ratio * sample_rate_, int(output_us - local_us));
+  if (0) {
+    log::info("[{:6}.{:06}]  Fs: {:.2f} Hz  drift: {} us", output_us / (1000 * 1000),
+              output_us % (1000 * 1000), ratio * sample_rate_, int(output_us - local_us));
+  }
 
   return out;
 }

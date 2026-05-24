@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,14 +23,14 @@ namespace bluetooth {
 namespace hci {
 
 constexpr hci::SubeventCode DistanceMeasurementEvents[] = {
-    hci::SubeventCode::LE_CS_TEST_END_COMPLETE,
-    hci::SubeventCode::LE_CS_SUBEVENT_RESULT_CONTINUE,
-    hci::SubeventCode::LE_CS_SUBEVENT_RESULT,
-    hci::SubeventCode::LE_CS_PROCEDURE_ENABLE_COMPLETE,
-    hci::SubeventCode::LE_CS_CONFIG_COMPLETE,
-    hci::SubeventCode::LE_CS_SECURITY_ENABLE_COMPLETE,
-    hci::SubeventCode::LE_CS_READ_REMOTE_FAE_TABLE_COMPLETE,
-    hci::SubeventCode::LE_CS_READ_REMOTE_SUPPORTED_CAPABILITIES_COMPLETE,
+        hci::SubeventCode::LE_CS_TEST_END_COMPLETE,
+        hci::SubeventCode::LE_CS_SUBEVENT_RESULT_CONTINUE,
+        hci::SubeventCode::LE_CS_SUBEVENT_RESULT,
+        hci::SubeventCode::LE_CS_PROCEDURE_ENABLE_COMPLETE,
+        hci::SubeventCode::LE_CS_CONFIG_COMPLETE,
+        hci::SubeventCode::LE_CS_SECURITY_ENABLE_COMPLETE,
+        hci::SubeventCode::LE_CS_READ_REMOTE_FAE_TABLE_COMPLETE,
+        hci::SubeventCode::LE_CS_READ_REMOTE_SUPPORTED_CAPABILITIES_COMPLETE,
 };
 
 typedef CommandInterface<DistanceMeasurementCommandBuilder> DistanceMeasurementInterface;

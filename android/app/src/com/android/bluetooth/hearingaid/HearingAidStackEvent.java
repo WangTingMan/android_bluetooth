@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,18 +22,11 @@ import android.bluetooth.BluetoothDevice;
  * Stack event sent via a callback from JNI to Java, or generated internally by the Hearing Aid
  * State Machine.
  */
-public class HearingAidStackEvent {
+class HearingAidStackEvent {
     // Event types for STACK_EVENT message (coming from native)
     private static final int EVENT_TYPE_NONE = 0;
     public static final int EVENT_TYPE_CONNECTION_STATE_CHANGED = 1;
     public static final int EVENT_TYPE_DEVICE_AVAILABLE = 2;
-
-    // Do not modify without updating the HAL bt_hearing_aid.h files.
-    // Match up with enum class ConnectionState of bt_hearing_aid.h.
-    static final int CONNECTION_STATE_DISCONNECTED = 0;
-    static final int CONNECTION_STATE_CONNECTING = 1;
-    static final int CONNECTION_STATE_CONNECTED = 2;
-    static final int CONNECTION_STATE_DISCONNECTING = 3;
 
     public int type;
     public BluetoothDevice device;
@@ -48,24 +41,20 @@ public class HearingAidStackEvent {
     public String toString() {
         // event dump
         StringBuilder result = new StringBuilder();
-        result.append("HearingAidStackEvent {type:" + eventTypeToString(type));
-        result.append(", device:" + device);
-        result.append(", value1:" + valueInt1);
-        result.append(", value2:" + valueLong2);
+        result.append("HearingAidStackEvent {type:").append(eventTypeToString(type));
+        result.append(", device:").append(device);
+        result.append(", value1:").append(valueInt1);
+        result.append(", value2:").append(valueLong2);
         result.append("}");
         return result.toString();
     }
 
     private static String eventTypeToString(int type) {
-        switch (type) {
-            case EVENT_TYPE_NONE:
-                return "EVENT_TYPE_NONE";
-            case EVENT_TYPE_CONNECTION_STATE_CHANGED:
-                return "EVENT_TYPE_CONNECTION_STATE_CHANGED";
-            case EVENT_TYPE_DEVICE_AVAILABLE:
-                return "EVENT_TYPE_DEVICE_AVAILABLE";
-            default:
-                return "EVENT_TYPE_UNKNOWN:" + type;
-        }
+        return switch (type) {
+            case EVENT_TYPE_NONE -> "EVENT_TYPE_NONE";
+            case EVENT_TYPE_CONNECTION_STATE_CHANGED -> "EVENT_TYPE_CONNECTION_STATE_CHANGED";
+            case EVENT_TYPE_DEVICE_AVAILABLE -> "EVENT_TYPE_DEVICE_AVAILABLE";
+            default -> "EVENT_TYPE_UNKNOWN:" + type;
+        };
     }
 }

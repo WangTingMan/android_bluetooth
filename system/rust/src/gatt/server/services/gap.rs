@@ -5,18 +5,14 @@ use std::rc::Rc;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::{
-    core::uuid::Uuid,
-    gatt::{
-        callbacks::GattDatastore,
-        ffi::AttributeBackingType,
-        ids::{AttHandle, TransportIndex},
-        server::gatt_database::{
-            AttPermissions, GattCharacteristicWithHandle, GattDatabase, GattServiceWithHandle,
-        },
-    },
-    packets::AttErrorCode,
+use crate::core::uuid::Uuid;
+use crate::gatt::callbacks::GattDatastore;
+use crate::gatt::ffi::AttributeBackingType;
+use crate::gatt::ids::{AttHandle, TransportIndex};
+use crate::gatt::server::gatt_database::{
+    AttPermissions, GattCharacteristicWithHandle, GattDatabase, GattServiceWithHandle,
 };
+use crate::packets::att::AttErrorCode;
 
 struct GapService;
 
@@ -44,7 +40,7 @@ impl GattDatastore for GapService {
             DEVICE_NAME_HANDLE => {
                 // for non-bonded peers, don't let them read the device name
                 // TODO(aryarahul): support discoverability, when we make this the main GATT server
-                Err(AttErrorCode::INSUFFICIENT_AUTHENTICATION)
+                Err(AttErrorCode::InsufficientAuthentication)
             }
             // 0x0000 from AssignedNumbers => "Unknown"
             DEVICE_APPEARANCE_HANDLE => Ok(vec![0x00, 0x00]),
@@ -95,23 +91,22 @@ pub fn register_gap_service(database: &mut GattDatabase) -> Result<()> {
 mod test {
     use super::*;
 
-    use crate::{
-        core::shared_box::SharedBox,
-        gatt::server::{
-            att_database::AttDatabase,
-            gatt_database::{GattDatabase, CHARACTERISTIC_UUID, PRIMARY_SERVICE_DECLARATION_UUID},
-        },
-        utils::task::block_on_locally,
+    use crate::core::shared_box::SharedBox;
+    use crate::gatt::server::gatt_database::{
+        GattDatabase, CHARACTERISTIC_UUID, PRIMARY_SERVICE_DECLARATION_UUID,
     };
+    use crate::gatt::server::AttClient;
+    use crate::utils::task::block_on_locally;
 
     const TCB_IDX: TransportIndex = TransportIndex(1);
 
-    fn init_dbs() -> (SharedBox<GattDatabase>, impl AttDatabase) {
+    fn init_dbs() -> (SharedBox<GattDatabase>, SharedBox<AttClient>) {
         let mut gatt_database = GattDatabase::new();
         register_gap_service(&mut gatt_database).unwrap();
         let gatt_database = SharedBox::new(gatt_database);
-        let att_database = gatt_database.get_att_database(TCB_IDX);
-        (gatt_database, att_database)
+        let att_client =
+            AttClient::new_client_and_bearer(TCB_IDX, |_| unreachable!(), &gatt_database);
+        (gatt_database, att_client)
     }
 
     #[test]
@@ -142,22 +137,22 @@ mod test {
     #[test]
     fn test_read_device_name_not_discoverable() {
         // arrange
-        let (_gatt_db, att_db) = init_dbs();
+        let (_gatt_db, client) = init_dbs();
 
         // act: try to read the device name
-        let name = block_on_locally(att_db.read_attribute(DEVICE_NAME_HANDLE));
+        let name = block_on_locally(client.read_attribute(DEVICE_NAME_HANDLE));
 
         // assert: the name is not readable
-        assert_eq!(name, Err(AttErrorCode::INSUFFICIENT_AUTHENTICATION));
+        assert_eq!(name, Err(AttErrorCode::InsufficientAuthentication));
     }
 
     #[test]
     fn test_read_device_appearance() {
         // arrange
-        let (_gatt_db, att_db) = init_dbs();
+        let (_gatt_db, client) = init_dbs();
 
         // act: try to read the device name
-        let name = block_on_locally(att_db.read_attribute(DEVICE_APPEARANCE_HANDLE));
+        let name = block_on_locally(client.read_attribute(DEVICE_APPEARANCE_HANDLE));
 
         // assert: the name is not readable
         assert_eq!(name, Ok(vec![0x00, 0x00]));

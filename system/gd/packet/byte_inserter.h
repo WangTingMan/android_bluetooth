@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ namespace bluetooth {
 namespace packet {
 
 class ByteInserter : public std::back_insert_iterator<std::vector<uint8_t>> {
- public:
+public:
   explicit ByteInserter(std::vector<uint8_t>& vector);
   virtual ~ByteInserter();
 
@@ -37,10 +37,10 @@ class ByteInserter : public std::back_insert_iterator<std::vector<uint8_t>> {
 
   ByteObserver UnregisterObserver();
 
- protected:
+protected:
   void on_byte(uint8_t);
 
- private:
+private:
   std::vector<ByteObserver> registered_observers_;
 };
 

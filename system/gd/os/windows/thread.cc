@@ -20,7 +20,6 @@
 #include <cerrno>
 #include <cstring>
 
-#include "os/log.h"
 #include "bluetooth/log.h"
 
 #include <base/threading/platform_thread.h>
@@ -56,6 +55,11 @@ bool Thread::Stop() {
   reactor_.Stop();
   running_thread_.join();
   return true;
+}
+
+void Thread::Abort() {
+  /* Send SIGABRT, this will cause thread to print it's stacktrace in logcat and crash */
+  //pthread_kill( running_thread_.native_handle(), SIGABRT );
 }
 
 bool Thread::IsSameThread() const {

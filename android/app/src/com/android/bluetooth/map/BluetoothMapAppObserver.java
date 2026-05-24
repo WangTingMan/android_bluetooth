@@ -12,6 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.map;
 
 import android.bluetooth.BluetoothProfile;
@@ -29,7 +30,6 @@ import android.util.Log;
 
 import com.android.bluetooth.BluetoothStatsLog;
 import com.android.bluetooth.content_profiles.ContentProfileErrorReportUtils;
-import com.android.bluetooth.mapapi.BluetoothMapContract;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -40,14 +40,13 @@ import java.util.Objects;
 /** Class to construct content observers for email applications on the system. */
 // Next tag value for ContentProfileErrorReportUtils.report(): 6
 public class BluetoothMapAppObserver {
-
-    private static final String TAG = "BluetoothMapAppObserver";
+    private static final String TAG = BluetoothMapAppObserver.class.getSimpleName();
 
     /*  */
-    private Map<BluetoothMapAccountItem, List<BluetoothMapAccountItem>> mFullList;
-    private Map<String, ContentObserver> mObserverMap = new LinkedHashMap<>();
-    private ContentResolver mResolver;
-    private Context mContext;
+    private final Map<BluetoothMapAccountItem, List<BluetoothMapAccountItem>> mFullList;
+    private final Map<String, ContentObserver> mObserverMap = new LinkedHashMap<>();
+    private final ContentResolver mResolver;
+    private final Context mContext;
     private BroadcastReceiver mReceiver;
     private PackageManager mPackageManager = null;
     BluetoothMapAccountLoader mLoader;
@@ -181,7 +180,7 @@ public class BluetoothMapAppObserver {
                                         + Thread.currentThread().getId()
                                         + " Uri: "
                                         + uri
-                                        + " selfchange: "
+                                        + " selfChange: "
                                         + selfChange);
                         if (uri != null) {
                             handleAccountChanges(uri.getHost());

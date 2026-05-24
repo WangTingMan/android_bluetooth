@@ -23,11 +23,72 @@
 #ifndef BTIF_AV_H
 #define BTIF_AV_H
 
+#include <bluetooth/types/address.h>
+
 #include <cstdint>
 #include <vector>
 
+#include "bta/include/bta_av_api.h"
 #include "include/hardware/bt_av.h"
-#include "types/raw_address.h"
+
+/** Callback for connection state change.
+ *  state will have one of the values from btav_connection_state_t
+ */
+typedef void (*btav_connection_state_callback)(const RawAddress& bd_addr,
+                                               btav_connection_state_t state,
+                                               const btav_error_t& error);
+
+/** Callback for audiopath state change.
+ *  state will have one of the values from btav_audio_state_t
+ */
+typedef void (*btav_audio_state_callback)(const RawAddress& bd_addr, btav_audio_state_t state);
+
+/** Callback for audio configuration change.
+ *  Used only for the A2DP Source interface.
+ */
+typedef void (*btav_audio_source_config_callback)(
+        const RawAddress& bd_addr, btav_a2dp_codec_config_t codec_config,
+        std::vector<btav_a2dp_codec_config_t> codecs_local_capabilities,
+        std::vector<btav_a2dp_codec_config_t> codecs_selectable_capabilities);
+
+/** Callback for audio configuration change.
+ *  Used only for the A2DP Sink interface.
+ *  sample_rate: sample rate in Hz
+ *  channel_count: number of channels (1 for mono, 2 for stereo)
+ */
+typedef void (*btav_audio_sink_config_callback)(const RawAddress& bd_addr, uint32_t sample_rate,
+                                                uint8_t channel_count);
+
+/** Callback for querying whether the mandatory codec is more preferred.
+ *  Used only for the A2DP Source interface.
+ *  Return true if optional codecs are not preferred.
+ */
+typedef bool (*btav_mandatory_codec_preferred_callback)(const RawAddress& bd_addr);
+
+/** Callback for reporting delay report change events.
+ * The delay is measured in 1/10 milliseconds.
+ */
+typedef void (*btav_audio_delay_reported_callback)(const RawAddress& bd_addr, int delay);
+
+/** BT-AV A2DP Source callback structure. */
+typedef struct {
+  /** set to sizeof(btav_source_callbacks_t) */
+  size_t size;
+  btav_connection_state_callback connection_state_cb;
+  btav_audio_state_callback audio_state_cb;
+  btav_audio_source_config_callback audio_config_cb;
+  btav_mandatory_codec_preferred_callback mandatory_codec_preferred_cb;
+  btav_audio_delay_reported_callback audio_delay_reported_cb;
+} btav_source_callbacks_t;
+
+/** BT-AV A2DP Sink callback structure. */
+typedef struct {
+  /** set to sizeof(btav_sink_callbacks_t) */
+  size_t size;
+  btav_connection_state_callback connection_state_cb;
+  btav_audio_state_callback audio_state_cb;
+  btav_audio_sink_config_callback audio_config_cb;
+} btav_sink_callbacks_t;
 
 #ifdef _MSC_VER
 #if defined(LIBBLUETOOTH_IMPLEMENTATION)
@@ -41,25 +102,21 @@
 
 /* Interface methods for the A2DP source stack. */
 
-LIBBLUETOOTH_API bt_status_t btif_av_source_init(
-    btav_source_callbacks_t* callbacks, int max_connected_audio_devices,
-    const std::vector<btav_a2dp_codec_config_t>& codec_priorities,
-    const std::vector<btav_a2dp_codec_config_t>& offloading_preference,
-    std::vector<btav_a2dp_codec_info_t>* supported_codecs);
+LIBBLUETOOTH_API bt_status_t btif_av_source_init(btav_source_callbacks_t* callbacks, int max_connected_audio_devices,
+                                const std::vector<btav_a2dp_codec_config_t>& codec_priorities,
+                                const std::vector<btav_a2dp_codec_config_t>& offloading_preference,
+                                std::vector<btav_a2dp_codec_info_t>* supported_codecs);
 LIBBLUETOOTH_API bt_status_t btif_av_source_connect(const RawAddress& peer_address);
 LIBBLUETOOTH_API bt_status_t btif_av_source_disconnect(const RawAddress& peer_address);
-LIBBLUETOOTH_API bt_status_t btif_av_source_set_silence_device(const RawAddress& peer_address,
-                                              bool silence);
+LIBBLUETOOTH_API bt_status_t btif_av_source_set_silence_device(const RawAddress& peer_address, bool silence);
 LIBBLUETOOTH_API bt_status_t btif_av_source_set_active_device(const RawAddress& peer_address);
 LIBBLUETOOTH_API bt_status_t btif_av_source_set_codec_config_preference(
-    const RawAddress& peer_address,
-    std::vector<btav_a2dp_codec_config_t> codec_preferences);
+        const RawAddress& peer_address, std::vector<btav_a2dp_codec_config_t> codec_preferences);
 LIBBLUETOOTH_API void btif_av_source_cleanup();
 
 /* Interface methods for the A2DP sink stack. */
 
-LIBBLUETOOTH_API bt_status_t btif_av_sink_init(btav_sink_callbacks_t* callbacks,
-                              int max_connected_audio_devices);
+LIBBLUETOOTH_API bt_status_t btif_av_sink_init(btav_sink_callbacks_t* callbacks, int max_connected_audio_devices);
 LIBBLUETOOTH_API bt_status_t btif_av_sink_connect(const RawAddress& peer_address);
 LIBBLUETOOTH_API bt_status_t btif_av_sink_disconnect(const RawAddress& peer_address);
 LIBBLUETOOTH_API void btif_av_sink_cleanup();
@@ -163,8 +220,7 @@ LIBBLUETOOTH_API void btif_av_clear_remote_suspend_flag(const A2dpType local_a2d
  * @param local_a2dp_type type of local a2dp profile.
  * @return true if the remote peer is capable of EDR
  */
-LIBBLUETOOTH_API bool btif_av_is_peer_edr(const RawAddress& peer_address,
-                         const A2dpType local_a2dp_type);
+LIBBLUETOOTH_API bool btif_av_is_peer_edr(const RawAddress& peer_address, const A2dpType local_a2dp_type);
 
 /**
  * Check whether the connected A2DP peer supports 3 Mbps EDR.
@@ -176,8 +232,7 @@ LIBBLUETOOTH_API bool btif_av_is_peer_edr(const RawAddress& peer_address,
  * @param local_a2dp_type type of local a2dp profile.
  * @return true if the remote peer is capable of EDR and supports 3 Mbps
  */
-LIBBLUETOOTH_API bool btif_av_peer_supports_3mbps(const RawAddress& peer_address,
-                                 const A2dpType local_a2dp_type);
+LIBBLUETOOTH_API bool btif_av_peer_supports_3mbps(const RawAddress& peer_address, const A2dpType local_a2dp_type);
 
 /**
  * Check whether the mandatory codec is more preferred for this peer.
@@ -199,11 +254,9 @@ LIBBLUETOOTH_API bool btif_av_peer_prefers_mandatory_codec(const RawAddress& pee
  * to report
  */
 LIBBLUETOOTH_API void btif_av_report_source_codec_state(
-    const RawAddress& peer_address,
-    const btav_a2dp_codec_config_t& codec_config,
-    const std::vector<btav_a2dp_codec_config_t>& codecs_local_capabilities,
-    const std::vector<btav_a2dp_codec_config_t>&
-        codecs_selectable_capabilities);
+        const RawAddress& peer_address, const btav_a2dp_codec_config_t& codec_config,
+        const std::vector<btav_a2dp_codec_config_t>& codecs_local_capabilities,
+        const std::vector<btav_a2dp_codec_config_t>& codecs_selectable_capabilities);
 
 /**
  * Initialize / shut down the A2DP Source service.
@@ -227,8 +280,7 @@ LIBBLUETOOTH_API bt_status_t btif_av_sink_execute_service(bool enable);
  * @param peer_address the disconnected peer address
  * @param local_a2dp_type type of local a2dp profile.
  */
-LIBBLUETOOTH_API void btif_av_acl_disconnected(const RawAddress& peer_address,
-                              const A2dpType local_a2dp_type);
+LIBBLUETOOTH_API void btif_av_acl_disconnected(const RawAddress& peer_address, const A2dpType local_a2dp_type);
 
 /**
  * Dump debug-related information for the BTIF AV module.
@@ -281,8 +333,7 @@ LIBBLUETOOTH_API bool btif_av_is_peer_silenced(const RawAddress& peer_address);
  * @param local_a2dp_type type of local a2dp profile.
  *
  */
-LIBBLUETOOTH_API bool btif_av_is_connected_addr(const RawAddress& peer_address,
-                               const A2dpType local_a2dp_type);
+LIBBLUETOOTH_API bool btif_av_is_connected_addr(const RawAddress& peer_address, const A2dpType local_a2dp_type);
 
 /**
  * Set the dynamic audio buffer size
@@ -303,19 +354,17 @@ LIBBLUETOOTH_API void btif_av_set_low_latency(bool is_low_latency);
  * @param handle bta handle
  * @param peer_addr peer address
  */
-LIBBLUETOOTH_API void btif_av_connect_sink_delayed(uint8_t handle,
-                                  const RawAddress& peer_address);
+LIBBLUETOOTH_API void btif_av_connect_sink_delayed(uint8_t handle, const RawAddress& peer_address);
 
 /**
  * Check whether A2DP Source is enabled.
  */
-LIBBLUETOOTH_API bool btif_av_is_source_enabled(void);
 LIBBLUETOOTH_API bool btif_av_both_enable(void);
 LIBBLUETOOTH_API bool btif_av_src_sink_coexist_enabled(void);
-LIBBLUETOOTH_API bool btif_av_is_sink_enabled(void);
 LIBBLUETOOTH_API bool btif_av_peer_is_connected_sink(const RawAddress& peer_address);
 LIBBLUETOOTH_API bool btif_av_peer_is_connected_source(const RawAddress& peer_address);
 LIBBLUETOOTH_API bool btif_av_peer_is_sink(const RawAddress& peer_address);
 LIBBLUETOOTH_API bool btif_av_peer_is_source(const RawAddress& peer_address);
+LIBBLUETOOTH_API const RawAddress& btif_av_find_by_handle(tBTA_AV_HNDL bta_handle);
 
 #endif /* BTIF_AV_H */

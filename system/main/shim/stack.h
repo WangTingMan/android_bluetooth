@@ -19,74 +19,93 @@
 #include <functional>
 #include <mutex>
 
-#include "module.h"
+#include "hci/acl_manager/acl_manager_classic.h"
+#include "hci/acl_manager/acl_manager_le.h"
+#include "hci/distance_measurement_manager.h"
+#include "hci/hci_interface.h"
+#include "hci/le_advertising_manager.h"
+#include "hci/le_scanning_manager.h"
+#include "hci/remote_name_request.h"
+#include "lpp/lpp_offload_interface.h"
 #include "os/handler.h"
 #include "os/thread.h"
-#include "stack_manager.h"
+
+#ifdef _MSC_VER
+#include "packet/raw_builder.h"
+#endif
 
 // The shim layer implementation on the Gd stack side.
 namespace bluetooth {
+
+namespace hal {
+class SnoopLogger;
+}
+
+namespace hci {
+class MsftExtensionManager;
+}
+
+namespace storage {
+class StorageModule;
+}
+
 namespace shim {
 
-class Btm;
-
-namespace legacy {
 class Acl;
-};  // namespace legacy
 
 // GD shim stack, having modes corresponding to legacy stack
 class Stack {
- public:
+public:
   static Stack* GetInstance();
 
   Stack();
   Stack(const Stack&) = delete;
   Stack& operator=(const Stack&) = delete;
 
-  ~Stack() = default;
+  virtual ~Stack() = default;
 
   // Running mode, everything is up
   void StartEverything();
 
   void Stop();
   bool IsRunning();
-  bool IsDumpsysModuleStarted() const;
 
-  StackManager* GetStackManager();
-  const StackManager* GetStackManager() const;
-
-  legacy::Acl* GetAcl();
-
+  virtual Acl* GetAcl() const;
+  virtual storage::StorageModule* GetStorage() const;
+  virtual hal::SnoopLogger* GetSnoopLogger() const;
+  virtual lpp::LppOffloadInterface* GetLppOffloadInterface() const;
+  virtual hci::HciInterface* GetHciLayer() const;
+  virtual hci::Controller* GetController() const;
+  virtual hci::RemoteNameRequestModule* GetRemoteNameRequest() const;
+  virtual hci::acl_manager::AclManagerClassic* GetAclManagerClassic() const;
+  virtual hci::AclManagerLe* GetAclManagerLe() const;
+  virtual hci::MsftExtensionManager* GetMsftExtensionManager() const;
+  virtual hci::LeScanningManager* GetLeScanningManager() const;
+  virtual hci::LeAdvertisingManager* GetLeAdvertisingManager() const;
+  virtual hci::DistanceMeasurementManager* GetDistanceMeasurementManager() const;
   os::Handler* GetHandler();
 
-  bool LockForDumpsys(std::function<void()> dumpsys_callback);
+  void Dump(int fd, std::promise<void> promise) const;
 
-  // Start the list of modules with the given stack manager thread
-  void StartModuleStack(const ModuleList* modules, const os::Thread* thread);
+#ifdef _MSC_VER
+  void HandleOutgoingClassicAclPacket( uint16_t handle, std::unique_ptr<packet::RawBuilder> packet );
+#endif
 
-  // Run the callable object on the module instance
-  template <typename T>
-  bool CallOnModule(std::function<void(T* mod)> run) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
-    if (is_running_) {
-      run(stack_manager_.GetInstance<T>());
-    }
-    return is_running_;
-  }
-
-  size_t NumModules() const { return num_modules_; }
-
- private:
+private:
   struct impl;
-  std::shared_ptr<impl> pimpl_;
+  std::unique_ptr<impl> pimpl_;
 
   mutable std::recursive_mutex mutex_;
-  StackManager stack_manager_;
   bool is_running_ = false;
   os::Thread* stack_thread_ = nullptr;
   os::Handler* stack_handler_ = nullptr;
-  size_t num_modules_{0};
-  void Start(ModuleList* modules);
+
+  os::Thread* management_thread_ = nullptr;
+  os::Handler* management_handler_ = nullptr;
+
+  void handle_start_up(std::promise<void> promise);
+  void handle_shut_down(std::promise<void> promise);
+  static std::chrono::milliseconds get_gd_stack_timeout_ms(bool is_start);
 };
 
 }  // namespace shim

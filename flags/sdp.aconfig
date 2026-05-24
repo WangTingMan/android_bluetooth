@@ -1,5 +1,5 @@
 package: "com.android.bluetooth.flags"
-container: "com.android.btservices"
+container: "com.android.bt"
 
 flag {
     name: "stack_sdp_detect_nil_property_type"
@@ -9,8 +9,21 @@ flag {
 }
 
 flag {
-    name: "stack_sdp_disconnect_when_cancel_in_pending_state"
+    name: "call_sdp_free_in_main_thread"
     namespace: "bluetooth"
-    description: "Send disconnect when cancel in pending state"
-    bug: "329918955"
+    description: "Free SDP service in main thread instead of management thread"
+    bug: "415917037"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "sdp_reset_transport_status_if_disconnect"
+    namespace: "bluetooth"
+    description: "Reset bta_dm_discovery_cb if disconnect unexpectly"
+    bug: "430467927"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
 }

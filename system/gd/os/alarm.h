@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,12 @@
 
 #pragma once
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
 
 #include "common/callback.h"
-#include "os/handler.h"
 #include "os/thread.h"
 #include "os/utils.h"
 
@@ -33,12 +33,16 @@ namespace bluetooth {
 namespace os {
 
 // A single-shot alarm for reactor-based thread, implemented by Linux timerfd.
-// When it's constructed, it will register a reactable on the specified thread; when it's destroyed, it will unregister
-// itself from the thread.
+// When it's constructed, it will register a reactable on the specified thread; when it's destroyed,
+// it will unregister itself from the thread.
 class Alarm {
- public:
-  // Create and register a single-shot alarm on a given handler
-  explicit Alarm(Handler* handler);
+public:
+  // Create and register a single-shot alarm on a given thread. This creates a wake alarm.
+  explicit Alarm(Thread* thread);
+
+  // Create and register a single-shot alarm on a given thread.
+  // This constructor can specify whether the alarm will be a wake alarm or a non-wake alarm.
+  explicit Alarm(Thread* thread, bool isWakeAlarm);
 
   Alarm(const Alarm&) = delete;
   Alarm& operator=(const Alarm&) = delete;
@@ -52,12 +56,15 @@ class Alarm {
   // Cancel the alarm. No-op if it's not armed.
   void Cancel();
 
- private:
+  std::chrono::system_clock::time_point GetArmedTime() { return armed_time_; }
+
+private:
   common::OnceClosure task_;
-  Handler* handler_;
 #ifdef _MSC_VER
   static void alarm_on_fire_callback( void* data );
   alarm_t* alarm_;
+  std::chrono::system_clock::time_point armed_time_;
+  Thread* thread_;
 #else
   int fd_ = 0;
 #endif

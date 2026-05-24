@@ -32,6 +32,8 @@
 
 package com.android.bluetooth.opp;
 
+import static java.util.Objects.requireNonNull;
+
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothDevicePicker;
@@ -51,7 +53,6 @@ import android.database.Cursor;
 import android.media.MediaScannerConnection;
 import android.media.MediaScannerConnection.MediaScannerConnectionClient;
 import android.net.Uri;
-import android.os.Binder;
 import android.os.Handler;
 import android.os.Message;
 import android.os.Process;
@@ -67,8 +68,6 @@ import com.android.bluetooth.Utils;
 import com.android.bluetooth.btservice.AdapterService;
 import com.android.bluetooth.btservice.ProfileService;
 import com.android.bluetooth.content_profiles.ContentProfileErrorReportUtils;
-import com.android.bluetooth.flags.Flags;
-import com.android.bluetooth.sdp.SdpManagerNativeInterface;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.obex.ObexTransport;
 
@@ -85,6 +84,7 @@ import java.util.Locale;
  */
 // Next tag value for ContentProfileErrorReportUtils.report(): 22
 public class BluetoothOppService extends ProfileService implements IObexConnectionHandler {
+    private static final String TAG = BluetoothOppService.class.getSimpleName();
 
     /** Owned providers and activities */
     private static final String OPP_PROVIDER = BluetoothOppProvider.class.getCanonicalName();
@@ -98,8 +98,6 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
     // Normally we would dynamically define and create these but they need to be manifest receivers
     // because they rely on explicit intents. Explicit intents don't work with dynamic receivers.
     private static final String OPP_RECEIVER = BluetoothOppReceiver.class.getCanonicalName();
-    private static final String OPP_HANDOFF_RECEIVER =
-            BluetoothOppHandoverReceiver.class.getCanonicalName();
 
     private static final byte[] SUPPORTED_OPP_FORMAT = {
         0x01 /* vCard 2.1 */,
@@ -121,7 +119,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
 
             // Since ContentObserver is created with Handler, onChange() can be called
             // even after the observer is unregistered.
-            if (Flags.oppIgnoreContentObserverAfterServiceStop() && mObserver != this) {
+            if (mObserver != this) {
                 Log.d(TAG, "onChange() called after stop() is called.");
                 return;
             }
@@ -129,13 +127,11 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
         }
     }
 
-    private static final String TAG = "BtOppService";
-
     /** Observer to get notified when the content observer's data changes */
     private BluetoothShareContentObserver mObserver;
 
     /** Class to handle Notification Manager updates */
-    private BluetoothOppNotification mNotifier;
+    @VisibleForTesting final BluetoothOppNotification mNotifier;
 
     private boolean mPendingUpdate;
 
@@ -169,8 +165,6 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
     private int mOppSdpHandle = -1;
 
     boolean mAcceptNewConnections;
-
-    private final AdapterService mAdapterService;
 
     private static final String INVISIBLE =
             BluetoothShare.VISIBILITY + "=" + BluetoothShare.VISIBILITY_HIDDEN;
@@ -207,8 +201,6 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                     + WHERE_CONFIRM_PENDING_INBOUND
                     + ")";
 
-    private static BluetoothOppService sBluetoothOppService;
-
     /*
      * TODO No support for queue incoming from multiple devices.
      * Make an array list of server session to support receiving queue from
@@ -217,54 +209,24 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
     private BluetoothOppObexServerSession mServerSession;
 
     public BluetoothOppService(AdapterService adapterService) {
-        super(adapterService);
+        this(adapterService, BluetoothOppPreference.getInstance(adapterService));
+    }
 
-        mAdapterService = adapterService;
+    @VisibleForTesting
+    BluetoothOppService(AdapterService adapterService, BluetoothOppPreference oppPreference) {
+        super(BluetoothProfile.OPP, requireNonNull(adapterService));
 
         IntentFilter filter = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
         filter.setPriority(IntentFilter.SYSTEM_HIGH_PRIORITY);
         registerReceiver(mBluetoothReceiver, filter);
 
-        BluetoothOppPreference preference = BluetoothOppPreference.getInstance(this);
-        if (preference != null) {
-            preference.dump();
-        } else {
-            Log.w(TAG, "BluetoothOppPreference.getInstance returned null.");
-            ContentProfileErrorReportUtils.report(
-                    BluetoothProfile.OPP,
-                    BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
-                    BluetoothStatsLog.BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_WARN,
-                    0);
-        }
-    }
-
-    public static boolean isEnabled() {
-        return BluetoothProperties.isProfileOppEnabled().orElse(false);
-    }
-
-    @Override
-    protected IProfileServiceBinder initBinder() {
-        return new OppBinder(this);
-    }
-
-    private static class OppBinder extends Binder implements IProfileServiceBinder {
-
-        OppBinder(BluetoothOppService service) {}
-
-        @Override
-        public void cleanup() {}
-    }
-
-    @Override
-    public void start() {
-        Log.v(TAG, "start()");
+        oppPreference.dump();
 
         setComponentAvailable(OPP_PROVIDER, true);
         setComponentAvailable(INCOMING_FILE_CONFIRM_ACTIVITY, true);
         setComponentAvailable(TRANSFER_ACTIVITY, true);
         setComponentAvailable(TRANSFER_HISTORY_ACTIVITY, true);
         setComponentAvailable(OPP_RECEIVER, true);
-        setComponentAvailable(OPP_HANDOFF_RECEIVER, true);
 
         final ContentResolver contentResolver = getContentResolver();
         new Thread("trimDatabase") {
@@ -276,23 +238,23 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
 
         mObserver = new BluetoothShareContentObserver();
         getContentResolver().registerContentObserver(BluetoothShare.CONTENT_URI, true, mObserver);
-        mNotifier = new BluetoothOppNotification(this);
+        mNotifier = new BluetoothOppNotification(mAdapterService);
         mNotifier.cancelOppNotifications();
         updateFromProvider();
-        setBluetoothOppService(this);
+    }
+
+    public static boolean isEnabled() {
+        return BluetoothProperties.isProfileOppEnabled().orElse(false);
     }
 
     @Override
-    public void stop() {
-        if (sBluetoothOppService == null) {
-            Log.w(TAG, "stop() called before start()");
-            ContentProfileErrorReportUtils.report(
-                    BluetoothProfile.OPP,
-                    BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
-                    BluetoothStatsLog.BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_WARN,
-                    1);
-        }
-        setBluetoothOppService(null);
+    protected IProfileServiceBinder initBinder() {
+        return null;
+    }
+
+    @Override
+    public void cleanup() {
+        Log.i(TAG, "cleanup()");
         stopInternal();
 
         setComponentAvailable(OPP_PROVIDER, false);
@@ -300,7 +262,10 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
         setComponentAvailable(TRANSFER_ACTIVITY, false);
         setComponentAvailable(TRANSFER_HISTORY_ACTIVITY, false);
         setComponentAvailable(OPP_RECEIVER, false);
-        setComponentAvailable(OPP_HANDOFF_RECEIVER, false);
+
+        mBatches.clear();
+        mShares.clear();
+        mHandler.removeCallbacksAndMessages(null);
     }
 
     private void startListener() {
@@ -314,6 +279,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
     }
 
     @Override
+    @SuppressWarnings("JavaUtilDate") // TODO: b/365629730 -- prefer Instant or LocalDate
     public void dump(StringBuilder sb) {
         super.dump(sb);
         if (mShares.size() > 0) {
@@ -334,39 +300,6 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
         }
     }
 
-    /**
-     * Get the current instance of {@link BluetoothOppService}
-     *
-     * @return current instance of {@link BluetoothOppService}
-     */
-    @VisibleForTesting
-    public static synchronized BluetoothOppService getBluetoothOppService() {
-        if (sBluetoothOppService == null) {
-            Log.w(TAG, "getBluetoothOppService(): service is null");
-            ContentProfileErrorReportUtils.report(
-                    BluetoothProfile.OPP,
-                    BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
-                    BluetoothStatsLog.BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_WARN,
-                    2);
-            return null;
-        }
-        if (!sBluetoothOppService.isAvailable()) {
-            Log.w(TAG, "getBluetoothOppService(): service is not available");
-            ContentProfileErrorReportUtils.report(
-                    BluetoothProfile.OPP,
-                    BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
-                    BluetoothStatsLog.BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_WARN,
-                    3);
-            return null;
-        }
-        return sBluetoothOppService;
-    }
-
-    private static synchronized void setBluetoothOppService(BluetoothOppService instance) {
-        Log.d(TAG, "setBluetoothOppService(): set to: " + instance);
-        sBluetoothOppService = instance;
-    }
-
     private static final int START_LISTENER = 1;
 
     private static final int MEDIA_SCANNED = 2;
@@ -379,20 +312,18 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
 
     private static final int STOP_LISTENER = 200;
 
-    private Handler mHandler =
+    private final Handler mHandler =
             new Handler() {
                 @Override
                 public void handleMessage(Message msg) {
                     switch (msg.what) {
-                        case STOP_LISTENER:
-                            stopInternal();
-                            break;
-                        case START_LISTENER:
+                        case STOP_LISTENER -> stopInternal();
+                        case START_LISTENER -> {
                             if (mAdapterService.isEnabled()) {
                                 startSocketListener();
                             }
-                            break;
-                        case MEDIA_SCANNED:
+                        }
+                        case MEDIA_SCANNED -> {
                             Log.v(
                                     TAG,
                                     "Update mInfo.id "
@@ -411,8 +342,8 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                             synchronized (BluetoothOppService.this) {
                                 mMediaScanInProgress = false;
                             }
-                            break;
-                        case MEDIA_SCANNED_FAILED:
+                        }
+                        case MEDIA_SCANNED_FAILED -> {
                             Log.v(TAG, "Update mInfo.id " + msg.arg1 + " for MEDIA_SCANNED_FAILED");
                             ContentValues updateValues1 = new ContentValues();
                             Uri contentUri1 =
@@ -424,8 +355,8 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                             synchronized (BluetoothOppService.this) {
                                 mMediaScanInProgress = false;
                             }
-                            break;
-                        case MSG_INCOMING_BTOPP_CONNECTION:
+                        }
+                        case MSG_INCOMING_BTOPP_CONNECTION -> {
                             Log.d(TAG, "Get incoming connection");
                             ObexTransport transport = (ObexTransport) msg.obj;
 
@@ -442,7 +373,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                                 if (mPendingConnection != null) {
                                     Log.w(TAG, "OPP busy! Reject connection");
                                     ContentProfileErrorReportUtils.report(
-                                            BluetoothProfile.OPP,
+                                            mProfileId,
                                             BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
                                             BluetoothStatsLog
                                                     .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_WARN,
@@ -451,12 +382,12 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                                         transport.close();
                                     } catch (IOException e) {
                                         ContentProfileErrorReportUtils.report(
-                                                BluetoothProfile.OPP,
+                                                mProfileId,
                                                 BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
                                                 BluetoothStatsLog
                                                         .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__EXCEPTION,
                                                 7);
-                                        Log.e(TAG, "close tranport error");
+                                        Log.e(TAG, "close transport error");
                                     }
                                 } else {
                                     Log.i(TAG, "OPP busy! Retry after 1 second");
@@ -467,8 +398,8 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                                     mHandler.sendMessageDelayed(msg1, 1000);
                                 }
                             }
-                            break;
-                        case MSG_INCOMING_CONNECTION_RETRY:
+                        }
+                        case MSG_INCOMING_CONNECTION_RETRY -> {
                             if (mBatches.size() == 0) {
                                 Log.i(TAG, "Start Obex Server");
                                 createServerSession(mPendingConnection);
@@ -478,7 +409,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                                 if (mIncomingRetries == 20) {
                                     Log.w(TAG, "Retried 20 seconds, reject connection");
                                     ContentProfileErrorReportUtils.report(
-                                            BluetoothProfile.OPP,
+                                            mProfileId,
                                             BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
                                             BluetoothStatsLog
                                                     .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_WARN,
@@ -487,12 +418,12 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                                         mPendingConnection.close();
                                     } catch (IOException e) {
                                         ContentProfileErrorReportUtils.report(
-                                                BluetoothProfile.OPP,
+                                                mProfileId,
                                                 BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
                                                 BluetoothStatsLog
                                                         .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__EXCEPTION,
                                                 9);
-                                        Log.e(TAG, "close tranport error");
+                                        Log.e(TAG, "close transport error");
                                     }
                                     if (mServerSocket != null) {
                                         acceptNewConnections();
@@ -507,7 +438,8 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                                     mHandler.sendMessageDelayed(msg2, 1000);
                                 }
                             }
-                            break;
+                        }
+                        default -> {} // Nothing to do
                     }
                 }
             };
@@ -517,44 +449,37 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
     private void startSocketListener() {
         Log.d(TAG, "start Socket Listeners");
         stopListeners();
-        mServerSocket = ObexServerSockets.createInsecure(this);
+        mServerSocket = ObexServerSockets.createInsecure(mAdapterService, this);
         acceptNewConnections();
-        SdpManagerNativeInterface nativeInterface = SdpManagerNativeInterface.getInstance();
-        if (!nativeInterface.isAvailable()) {
-            Log.e(TAG, "ERROR:serversocket: SdpManagerNativeInterface is not available");
+        final var nativeInterface = mAdapterService.getSdpManagerNativeInterface();
+        if (nativeInterface.isEmpty()) {
+            Log.e(TAG, "ERROR:serverSocket: SdpManagerNativeInterface is not available");
             ContentProfileErrorReportUtils.report(
-                    BluetoothProfile.OPP,
+                    mProfileId,
                     BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
                     BluetoothStatsLog.BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_ERROR,
                     10);
             return;
         }
         if (mServerSocket == null) {
-            Log.e(TAG, "ERROR:serversocket: mServerSocket is null");
+            Log.e(TAG, "ERROR:serverSocket: mServerSocket is null");
             ContentProfileErrorReportUtils.report(
-                    BluetoothProfile.OPP,
+                    mProfileId,
                     BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
                     BluetoothStatsLog.BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_ERROR,
                     11);
             return;
         }
         mOppSdpHandle =
-                nativeInterface.createOppOpsRecord(
-                        "OBEX Object Push",
-                        mServerSocket.getRfcommChannel(),
-                        mServerSocket.getL2capPsm(),
-                        0x0102,
-                        SUPPORTED_OPP_FORMAT);
+                nativeInterface
+                        .get()
+                        .createOppOpsRecord(
+                                "OBEX Object Push",
+                                mServerSocket.getRfcommChannel(),
+                                mServerSocket.getL2capPsm(),
+                                0x0102,
+                                SUPPORTED_OPP_FORMAT);
         Log.d(TAG, "mOppSdpHandle :" + mOppSdpHandle);
-    }
-
-    @Override
-    public void cleanup() {
-        Log.v(TAG, "onDestroy");
-
-        mBatches.clear();
-        mShares.clear();
-        mHandler.removeCallbacksAndMessages(null);
     }
 
     private void unregisterReceivers() {
@@ -566,7 +491,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
             unregisterReceiver(mBluetoothReceiver);
         } catch (IllegalArgumentException e) {
             ContentProfileErrorReportUtils.report(
-                    BluetoothProfile.OPP,
+                    mProfileId,
                     BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
                     BluetoothStatsLog.BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__EXCEPTION,
                     12);
@@ -598,7 +523,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                 Thread.sleep(50);
             } catch (Exception e) {
                 ContentProfileErrorReportUtils.report(
-                        BluetoothProfile.OPP,
+                        mProfileId,
                         BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
                         BluetoothStatsLog.BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__EXCEPTION,
                         4);
@@ -611,7 +536,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                     mUpdateThread.join();
                 } catch (InterruptedException e) {
                     ContentProfileErrorReportUtils.report(
-                            BluetoothProfile.OPP,
+                            mProfileId,
                             BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
                             BluetoothStatsLog
                                     .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__EXCEPTION,
@@ -622,14 +547,12 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
             }
         }
 
-        if (mNotifier != null) {
-            mNotifier.cancelOppNotifications();
-        }
+        mNotifier.cancelOppNotifications();
     }
 
     /* suppose we auto accept an incoming OPUSH connection */
     private void createServerSession(ObexTransport transport) {
-        mServerSession = new BluetoothOppObexServerSession(this, transport, this);
+        mServerSession = new BluetoothOppObexServerSession(mAdapterService, transport, this);
         mServerSession.preStart();
         Log.d(
                 TAG,
@@ -648,7 +571,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                     if (action.equals(BluetoothAdapter.ACTION_STATE_CHANGED)) {
                         switch (intent.getIntExtra(
                                 BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
-                            case BluetoothAdapter.STATE_ON:
+                            case BluetoothAdapter.STATE_ON -> {
                                 Log.v(TAG, "Bluetooth state changed: STATE_ON");
                                 startListener();
                                 // If this is within a sending process, continue the handle
@@ -676,11 +599,8 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                                         context.startActivity(in1);
                                     }
                                 }
-
-                                break;
-                            case BluetoothAdapter.STATE_TURNING_OFF:
-                                Log.v(TAG, "Bluetooth state changed: STATE_TURNING_OFF");
-                                break;
+                            }
+                            default -> {} // Nothing to do
                         }
                     }
                 }
@@ -739,8 +659,9 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                     mPendingUpdate = false;
                 }
                 Cursor cursor =
-                        getContentResolver()
-                                .query(
+                        BluetoothMethodProxy.getInstance()
+                                .contentResolverQuery(
+                                        getContentResolver(),
                                         BluetoothShare.CONTENT_URI,
                                         null,
                                         null,
@@ -774,7 +695,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                  * contains an entry that's not in the array, insert a new entry
                  * in the array, move to next cursor row and next array entry.
                  */
-                while (!isAfterLast || arrayPos < mShares.size() && mListenStarted) {
+                while (!isAfterLast || (arrayPos < mShares.size() && mListenStarted)) {
                     if (isAfterLast) {
                         // We're beyond the end of the cursor but there's still some
                         // stuff in the local array, which can only be junk
@@ -846,7 +767,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
             uri = null;
             Log.e(TAG, "insertShare found null URI at cursor!");
             ContentProfileErrorReportUtils.report(
-                    BluetoothProfile.OPP,
+                    mProfileId,
                     BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
                     BluetoothStatsLog.BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_ERROR,
                     13);
@@ -912,7 +833,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                 if (sendFileInfo == null || sendFileInfo.mInputStream == null) {
                     Log.e(TAG, "Can't open file for OUTBOUND info " + info.mId);
                     ContentProfileErrorReportUtils.report(
-                            BluetoothProfile.OPP,
+                            mProfileId,
                             BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
                             BluetoothStatsLog
                                     .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_ERROR,
@@ -923,7 +844,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                 }
             }
             if (mBatches.size() == 0) {
-                BluetoothOppBatch newBatch = new BluetoothOppBatch(this, info);
+                BluetoothOppBatch newBatch = new BluetoothOppBatch(mAdapterService, info);
                 newBatch.mId = mBatchId;
                 mBatchId++;
                 mBatches.add(newBatch);
@@ -977,7 +898,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                     mBatches.get(i).addShare(info);
                 } else {
                     // There is ongoing batch
-                    BluetoothOppBatch newBatch = new BluetoothOppBatch(this, info);
+                    BluetoothOppBatch newBatch = new BluetoothOppBatch(mAdapterService, info);
                     newBatch.mId = mBatchId;
                     mBatchId++;
                     mBatches.add(newBatch);
@@ -1000,7 +921,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
         } else {
             Log.w(TAG, "updateShare() called for ID " + info.mId + " with null URI");
             ContentProfileErrorReportUtils.report(
-                    BluetoothProfile.OPP,
+                    mProfileId,
                     BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
                     BluetoothStatsLog.BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_WARN,
                     15);
@@ -1067,7 +988,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                     if (mTransfer == null) {
                         Log.e(TAG, "Unexpected error! mTransfer is null");
                         ContentProfileErrorReportUtils.report(
-                                BluetoothProfile.OPP,
+                                mProfileId,
                                 BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
                                 BluetoothStatsLog
                                         .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_ERROR,
@@ -1082,7 +1003,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                                         + " doesn't match mTransfer id "
                                         + mTransfer.getBatchId());
                         ContentProfileErrorReportUtils.report(
-                                BluetoothProfile.OPP,
+                                mProfileId,
                                 BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
                                 BluetoothStatsLog
                                         .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_ERROR,
@@ -1093,7 +1014,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                     if (mServerTransfer == null) {
                         Log.e(TAG, "Unexpected error! mServerTransfer is null");
                         ContentProfileErrorReportUtils.report(
-                                BluetoothProfile.OPP,
+                                mProfileId,
                                 BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
                                 BluetoothStatsLog
                                         .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_ERROR,
@@ -1108,7 +1029,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                                         + " doesn't match mServerTransfer id "
                                         + mServerTransfer.getBatchId());
                         ContentProfileErrorReportUtils.report(
-                                BluetoothProfile.OPP,
+                                mProfileId,
                                 BluetoothProtoEnums.BLUETOOTH_OPP_SERVICE,
                                 BluetoothStatsLog
                                         .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_ERROR,
@@ -1243,7 +1164,7 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
     static void trimDatabase(ContentResolver contentResolver) {
         // Try-catch is important because trimDatabase can run even when the OPP_PROVIDER is
         // disabled (by OPP service, shell command, etc.).
-        // At the sametime, it's ok to retry trimDatabase later when the service restart
+        // At the same time, it's ok to retry trimDatabase later when the service restart
         try {
             // remove the invisible/unconfirmed inbound shares
             int delNum =
@@ -1297,14 +1218,10 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
     }
 
     private static class MediaScannerNotifier implements MediaScannerConnectionClient {
-
-        private MediaScannerConnection mConnection;
-
-        private BluetoothOppShareInfo mInfo;
-
-        private Context mContext;
-
-        private Handler mCallback;
+        private final MediaScannerConnection mConnection;
+        private final BluetoothOppShareInfo mInfo;
+        private final Context mContext;
+        private final Handler mCallback;
 
         MediaScannerNotifier(Context context, BluetoothOppShareInfo info, Handler handler) {
             mContext = context;
@@ -1356,11 +1273,11 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
     }
 
     private void stopListeners() {
-        SdpManagerNativeInterface nativeInterface = SdpManagerNativeInterface.getInstance();
-        if (mOppSdpHandle >= 0 && nativeInterface.isAvailable()) {
+        final var nativeInterface = mAdapterService.getSdpManagerNativeInterface();
+        if (mOppSdpHandle >= 0 && nativeInterface.isPresent()) {
             Log.d(TAG, "Removing SDP record mOppSdpHandle :" + mOppSdpHandle);
-            boolean status = nativeInterface.removeSdpRecord(mOppSdpHandle);
-            Log.d(TAG, "RemoveSDPrecord returns " + status);
+            boolean status = nativeInterface.get().removeSdpRecord(mOppSdpHandle);
+            Log.d(TAG, "RemoveSDPRecord returns " + status);
             mOppSdpHandle = -1;
         }
         if (mServerSocket != null) {
@@ -1378,14 +1295,12 @@ public class BluetoothOppService extends ProfileService implements IObexConnecti
                         + socket
                         + " \n :device :"
                         + BluetoothUtils.toAnonymizedAddress(
-                                Flags.identityAddressNullIfUnknown()
-                                        ? Utils.getBrEdrAddress(device)
-                                        : device.getIdentityAddress()));
+                                Utils.getBrEdrAddress(device, mAdapterService)));
         if (!mAcceptNewConnections) {
             Log.d(TAG, " onConnect BluetoothSocket :" + socket + " rejected");
             return false;
         }
-        BluetoothObexTransport transport = new BluetoothObexTransport(socket);
+        BluetoothObexTransport transport = new BluetoothObexTransport(mAdapterService, socket);
         Message msg = mHandler.obtainMessage(MSG_INCOMING_BTOPP_CONNECTION);
         msg.obj = transport;
         msg.sendToTarget();

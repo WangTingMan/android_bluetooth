@@ -25,12 +25,17 @@
 #include <unistd.h>
 #endif
 
+#include <chrono>
 #include <future>
+#include <mutex>
+#include <ostream>
 #include <string>
 #include <thread>
 
 #include "abstract_message_loop.h"
 #include "common/postable_context.h"
+#include "os/handler.h"
+#include "os/thread.h"
 
 #ifdef _MSC_VER
 #ifndef pid_t
@@ -46,7 +51,7 @@ namespace common {
  * An interface to various thread related functionality
  */
 class MessageLoopThread final : public PostableContext {
- public:
+public:
   /**
    * Create a message loop thread with name. Thread won't be running until
    * StartUp is called.
@@ -54,6 +59,8 @@ class MessageLoopThread final : public PostableContext {
    * @param thread_name name of this worker thread
    */
   explicit MessageLoopThread(const std::string& thread_name);
+  explicit MessageLoopThread(const std::string& thread_name,
+                             os::Thread::Priority handler_thread_priority);
 
   MessageLoopThread(const MessageLoopThread&) = delete;
   MessageLoopThread& operator=(const MessageLoopThread&) = delete;
@@ -75,12 +82,11 @@ class MessageLoopThread final : public PostableContext {
   /**
    * Post a task to run on this thread
    *
-   * @param from_here location where this task is originated
    * @param task task created through base::Bind()
    * @return true if task is successfully scheduled, false if task cannot be
    * scheduled
    */
-  bool DoInThread(const base::Location& from_here, base::OnceClosure task);
+  bool DoInThread(base::OnceClosure task);
 
   /**
    * Shutdown the current thread as if it is never started. IsRunning() and
@@ -104,6 +110,14 @@ class MessageLoopThread final : public PostableContext {
    * @return this thread's ID
    */
   base::PlatformThreadId GetThreadId() const;
+
+  /**
+   * Check if the current thread in use is same as this thread.
+   * Note: This is only valid when flag replace_message_loop_thread_with_gd_handler is enabled.
+   *
+   * @return true if the current thread in use is same as this thread.
+   */
+  bool IsRunningOnSameThread() const;
 
   /**
    * Get this thread's name set in constructor
@@ -155,27 +169,22 @@ class MessageLoopThread final : public PostableContext {
    * <code>
    * base::CancelableClosure cancelable_task;
    * cancelable_task.Reset(base::Bind(...)); // bind the task
-   * same_thread->DoInThreadDelayed(FROM_HERE,
-   *                                cancelable_task.callback(), delay);
+   * same_thread->DoInThreadDelayed(cancelable_task.callback(), delay);
    * ...
    * // Cancel the task closure
-   * same_thread->DoInThread(FROM_HERE,
-   *                         base::Bind(&base::CancelableClosure::Cancel,
-   *                                    base::Unretained(&cancelable_task)));
+   * same_thread->DoInThread(base::Bind(&base::CancelableClosure::Cancel,
+   *                         base::Unretained(&cancelable_task)));
    * </code>
    *
    * Warning: base::CancelableClosure objects must be created on, posted to,
    * cancelled on, and destroyed on the same thread.
    *
-   * @param from_here location where this task is originated
    * @param task task created through base::Bind()
    * @param delay delay for the task to be executed
    * @return true if task is successfully scheduled, false if task cannot be
    * scheduled
    */
-  bool DoInThreadDelayed(const base::Location& from_here,
-                         base::OnceClosure task,
-                         std::chrono::microseconds delay);
+  bool DoInThreadDelayed(base::OnceClosure task, std::chrono::microseconds delay);
   /**
    * Wrapper around DoInThread without a location.
    */
@@ -186,7 +195,7 @@ class MessageLoopThread final : public PostableContext {
    */
   PostableContext* Postable();
 
- private:
+private:
   /**
    * Static method to run the thread
    *
@@ -196,8 +205,7 @@ class MessageLoopThread final : public PostableContext {
    * @param start_up_promise a std::promise that is used to notify calling
    * thread the completion of message loop start-up
    */
-  static void RunThread(MessageLoopThread* context,
-                        std::promise<void> start_up_promise);
+  static void RunThread(MessageLoopThread* context, std::promise<void> start_up_promise);
 
   /**
    * Actual method to run the thread, blocking until ShutDown() is called
@@ -217,10 +225,13 @@ class MessageLoopThread final : public PostableContext {
   pid_t linux_tid_;
   base::WeakPtrFactory<MessageLoopThread> weak_ptr_factory_;
   bool shutting_down_;
+
+  os::Thread* handler_thread_;
+  os::Handler* handler_;
+  os::Thread::Priority handler_thread_priority_;
 };
 
-inline std::ostream& operator<<(std::ostream& os,
-                                const bluetooth::common::MessageLoopThread& a) {
+inline std::ostream& operator<<(std::ostream& os, const bluetooth::common::MessageLoopThread& a) {
   os << a.ToString();
   return os;
 }
@@ -228,7 +239,7 @@ inline std::ostream& operator<<(std::ostream& os,
 }  // namespace common
 }  // namespace bluetooth
 
-namespace fmt {
+namespace std {
 template <>
 struct formatter<bluetooth::common::MessageLoopThread> : ostream_formatter {};
-}  // namespace fmt
+}  // namespace std

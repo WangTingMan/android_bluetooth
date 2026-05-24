@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,17 @@
 
 #include "common/audit_log.h"
 
+#include <format>
+
+#ifdef __ANDROID__
+#include <log/log_event_list.h>
+#endif  // __ANDROID__
+
 #include "common/strings.h"
-#include "hci/hci_packets.h"
-#include "os/log.h"
+#include "hci/hci_status.h"
 
 namespace {
-#if defined(__ANDROID__) && !defined (FUZZ_TARGET)
+#if defined(__ANDROID__) && !defined(FUZZ_TARGET)
 
 // Tags for security logging, should be in sync with
 // frameworks/base/core/java/android/app/admin/SecurityLogTags.logtags
@@ -33,15 +38,14 @@ constexpr int SEC_TAG_BLUETOOTH_CONNECTION = 210039;
 namespace bluetooth {
 namespace common {
 
-void LogConnectionAdminAuditEvent(
-    [[maybe_unused]] const char* action,
-    [[maybe_unused]] const hci::Address& address,
-    [[maybe_unused]] hci::ErrorCode status) {
-#if defined(__ANDROID__) && !defined (FUZZ_TARGET)
+void LogConnectionAdminAuditEvent([[maybe_unused]] const char* action,
+                                  [[maybe_unused]] const hci::Address& address,
+                                  [[maybe_unused]] BtStatus status) {
+#if defined(__ANDROID__) && !defined(FUZZ_TARGET)
 
   android_log_event_list(SEC_TAG_BLUETOOTH_CONNECTION)
-      << ADDRESS_TO_LOGGABLE_CSTR(address) << /* success */ int32_t(status == hci::ErrorCode::SUCCESS)
-      << common::StringFormat("%s: %s", action, ErrorCodeText(status).c_str()).c_str() << LOG_ID_SECURITY;
+          << address.ToRedactedStringForLogging() << /* success */ int32_t(status.isSuccess())
+          << std::format("{}: {}", action, status.toString()) << LOG_ID_SECURITY;
 
 #endif /* defined(__ANDROID__) && !defined (FUZZ_TARGET) */
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ namespace hci {
 namespace acl_manager {
 
 class ConnectionCallbacks {
- public:
+public:
   virtual ~ConnectionCallbacks() = default;
   // Invoked when controller sends Connection Complete event with Success error code
   virtual void OnConnectSuccess(std::unique_ptr<ClassicAclConnection>) = 0;

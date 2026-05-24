@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,12 +46,12 @@ final class AvrcpCoverArtStorage {
         }
         mMaxImages = maxSize;
 
-        mImageHandles = new HashMap<String, String>();
+        mImageHandles = new HashMap<>();
 
         // Using a LinkedHashMap allows us to having items ordered LRU -> MRU (true param does this)
         // This way, if we need run out of space we can remove from the front to remove the least
         // recently accessed items
-        mImages = new LinkedHashMap<String, CoverArt>(0, 0.75f /* default load factor */, true);
+        mImages = new LinkedHashMap<>(0, 0.75f /* default load factor */, true);
     }
 
     /** Store an image and get the image handle it's been associated with. */
@@ -158,8 +158,8 @@ final class AvrcpCoverArtStorage {
 
     public void dump(StringBuilder sb) {
         int bytes = 0;
-        sb.append("\n\timages (" + mImageHandles.size());
-        if (mMaxImages > 0) sb.append(" / " + mMaxImages);
+        sb.append("\n\timages (").append(mImageHandles.size());
+        if (mMaxImages > 0) sb.append(" / ").append(mMaxImages);
         sb.append("):");
         sb.append("\n\t\tHandle   : Hash                              : CoverArt");
         synchronized (mImagesLock) {
@@ -178,16 +178,16 @@ final class AvrcpCoverArtStorage {
                 bytes += coverArt.size();
             }
         }
-        sb.append("\n\tImage bytes: " + bytes);
+        sb.append("\n\tImage bytes: ").append(bytes);
     }
 
     /** Print a message to DEBUG if debug output is enabled */
-    private void debug(String msg) {
+    private static void debug(String msg) {
         Log.d(TAG, msg);
     }
 
     /** Print a message to ERROR */
-    private void error(String msg) {
+    private static void error(String msg) {
         Log.e(TAG, msg);
     }
 }

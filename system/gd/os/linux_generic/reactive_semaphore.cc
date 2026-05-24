@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,12 +24,12 @@
 #include <functional>
 
 #include "os/linux_generic/linux.h"
-#include "os/log.h"
 
 namespace bluetooth {
 namespace os {
 
-ReactiveSemaphore::ReactiveSemaphore(unsigned int value) : fd_(eventfd(value, EFD_SEMAPHORE | EFD_NONBLOCK)) {
+ReactiveSemaphore::ReactiveSemaphore(unsigned int value)
+    : fd_(eventfd(value, EFD_SEMAPHORE | EFD_NONBLOCK)) {
   log::assert_that(fd_ != -1, "assert failed: fd_ != -1");
 }
 
@@ -51,9 +51,7 @@ void ReactiveSemaphore::Increase() {
   log::assert_that(write_result != -1, "increase failed: {}", strerror(errno));
 }
 
-int ReactiveSemaphore::GetFd() {
-  return fd_;
-}
+int ReactiveSemaphore::GetFd() { return fd_; }
 
 }  // namespace os
 }  // namespace bluetooth

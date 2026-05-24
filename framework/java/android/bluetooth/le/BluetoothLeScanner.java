@@ -16,6 +16,11 @@
 
 package android.bluetooth.le;
 
+import static android.Manifest.permission.BLUETOOTH_SCAN;
+import static android.Manifest.permission.UPDATE_DEVICE_STATS;
+
+import static java.util.Objects.requireNonNull;
+
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.RequiresNoPermission;
@@ -26,7 +31,6 @@ import android.app.PendingIntent;
 import android.bluetooth.Attributable;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothGatt;
-import android.bluetooth.IBluetoothGatt;
 import android.bluetooth.IBluetoothScan;
 import android.bluetooth.annotations.RequiresBluetoothLocationPermission;
 import android.bluetooth.annotations.RequiresBluetoothScanPermission;
@@ -40,11 +44,9 @@ import android.util.Log;
 
 import com.android.bluetooth.flags.Flags;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 /**
  * This class provides methods to perform scan related operations for Bluetooth LE devices. An
@@ -57,10 +59,9 @@ import java.util.Objects;
  * @see ScanFilter
  */
 public final class BluetoothLeScanner {
+    private static final String TAG = BluetoothLeScanner.class.getSimpleName();
 
-    private static final String TAG = "BluetoothLeScanner";
-    private static final boolean DBG = true;
-    private static final boolean VDBG = false;
+    private static final boolean VDBG = Log.isLoggable("bluetooth", Log.VERBOSE);
 
     /**
      * Extra containing a list of ScanResults. It can have one or more results if there was no
@@ -86,7 +87,6 @@ public final class BluetoothLeScanner {
 
     private final BluetoothAdapter mBluetoothAdapter;
     private final AttributionSource mAttributionSource;
-
     private final Handler mHandler;
     private final Map<ScanCallback, BleScanCallbackWrapper> mLeScanClients;
 
@@ -96,7 +96,7 @@ public final class BluetoothLeScanner {
      * @hide
      */
     public BluetoothLeScanner(BluetoothAdapter bluetoothAdapter) {
-        mBluetoothAdapter = Objects.requireNonNull(bluetoothAdapter);
+        mBluetoothAdapter = requireNonNull(bluetoothAdapter);
         mAttributionSource = mBluetoothAdapter.getAttributionSource();
         mHandler = new Handler(Looper.getMainLooper());
         mLeScanClients = new HashMap<ScanCallback, BleScanCallbackWrapper>();
@@ -119,7 +119,7 @@ public final class BluetoothLeScanner {
     @RequiresLegacyBluetoothAdminPermission
     @RequiresBluetoothScanPermission
     @RequiresBluetoothLocationPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_SCAN)
+    @RequiresPermission(BLUETOOTH_SCAN)
     public void startScan(final ScanCallback callback) {
         startScan(null, new ScanSettings.Builder().build(), callback);
     }
@@ -143,7 +143,7 @@ public final class BluetoothLeScanner {
     @RequiresLegacyBluetoothAdminPermission
     @RequiresBluetoothScanPermission
     @RequiresBluetoothLocationPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_SCAN)
+    @RequiresPermission(BLUETOOTH_SCAN)
     public void startScan(
             List<ScanFilter> filters, ScanSettings settings, final ScanCallback callback) {
         startScan(filters, settings, null, callback, /* callbackIntent= */ null);
@@ -173,7 +173,7 @@ public final class BluetoothLeScanner {
     @RequiresLegacyBluetoothAdminPermission
     @RequiresBluetoothScanPermission
     @RequiresBluetoothLocationPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_SCAN)
+    @RequiresPermission(BLUETOOTH_SCAN)
     public int startScan(
             @Nullable List<ScanFilter> filters,
             @Nullable ScanSettings settings,
@@ -199,11 +199,7 @@ public final class BluetoothLeScanner {
     @RequiresLegacyBluetoothAdminPermission
     @RequiresBluetoothScanPermission
     @RequiresBluetoothLocationPermission
-    @RequiresPermission(
-            allOf = {
-                android.Manifest.permission.BLUETOOTH_SCAN,
-                android.Manifest.permission.UPDATE_DEVICE_STATS
-            })
+    @RequiresPermission(allOf = {BLUETOOTH_SCAN, UPDATE_DEVICE_STATS})
     public void startScanFromSource(final WorkSource workSource, final ScanCallback callback) {
         startScanFromSource(null, new ScanSettings.Builder().build(), workSource, callback);
     }
@@ -223,11 +219,7 @@ public final class BluetoothLeScanner {
     @RequiresLegacyBluetoothAdminPermission
     @RequiresBluetoothScanPermission
     @RequiresBluetoothLocationPermission
-    @RequiresPermission(
-            allOf = {
-                android.Manifest.permission.BLUETOOTH_SCAN,
-                android.Manifest.permission.UPDATE_DEVICE_STATS
-            })
+    @RequiresPermission(allOf = {BLUETOOTH_SCAN, UPDATE_DEVICE_STATS})
     @SuppressLint("AndroidFrameworkRequiresPermission")
     public void startScanFromSource(
             List<ScanFilter> filters,
@@ -237,39 +229,31 @@ public final class BluetoothLeScanner {
         startScan(filters, settings, workSource, callback, null);
     }
 
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_SCAN)
+    @RequiresPermission(BLUETOOTH_SCAN)
     private int startScan(
             List<ScanFilter> filters,
             ScanSettings settings,
             final WorkSource workSource,
             final ScanCallback callback,
             final PendingIntent callbackIntent) {
-        BluetoothLeUtils.checkAdapterStateOn(mBluetoothAdapter);
         if (callback == null && callbackIntent == null) {
             throw new IllegalArgumentException("callback is null");
         }
         if (settings == null) {
             throw new IllegalArgumentException("settings is null");
         }
+        if (!BluetoothLeUtils.checkAdapterStateOn(mBluetoothAdapter)) {
+            Log.w(TAG, "BLE is not available");
+            return postCallbackErrorOrReturn(callback, ScanCallback.SCAN_FAILED_INTERNAL_ERROR);
+        }
         synchronized (mLeScanClients) {
             if (callback != null && mLeScanClients.containsKey(callback)) {
                 return postCallbackErrorOrReturn(
                         callback, ScanCallback.SCAN_FAILED_ALREADY_STARTED);
             }
-            IBluetoothScan scan = null;
-            IBluetoothGatt gatt = null;
-            if (Flags.scanManagerRefactor()) {
-                scan = mBluetoothAdapter.getBluetoothScan();
-                if (scan == null) {
-                    return postCallbackErrorOrReturn(
-                            callback, ScanCallback.SCAN_FAILED_INTERNAL_ERROR);
-                }
-            } else {
-                gatt = mBluetoothAdapter.getBluetoothGatt();
-                if (gatt == null) {
-                    return postCallbackErrorOrReturn(
-                            callback, ScanCallback.SCAN_FAILED_INTERNAL_ERROR);
-                }
+            IBluetoothScan scan = mBluetoothAdapter.getBluetoothScan();
+            if (scan == null) {
+                return postCallbackErrorOrReturn(callback, ScanCallback.SCAN_FAILED_INTERNAL_ERROR);
             }
             if (!isSettingsConfigAllowedForScan(settings)) {
                 return postCallbackErrorOrReturn(
@@ -283,20 +267,22 @@ public final class BluetoothLeScanner {
                 return postCallbackErrorOrReturn(
                         callback, ScanCallback.SCAN_FAILED_FEATURE_UNSUPPORTED);
             }
+            if (Flags.batchScanSupportCheck()) {
+                if (!mBluetoothAdapter.isOffloadedScanBatchingSupported()
+                        && settings.getReportDelayMillis() > 0) {
+                    Log.w(TAG, "Batch scan requested but not supported");
+                    return postCallbackErrorOrReturn(
+                            callback, ScanCallback.SCAN_FAILED_FEATURE_UNSUPPORTED);
+                }
+            }
             if (callback != null) {
                 BleScanCallbackWrapper wrapper =
-                        new BleScanCallbackWrapper(
-                                gatt, scan, filters, settings, workSource, callback);
+                        new BleScanCallbackWrapper(scan, filters, settings, workSource, callback);
                 wrapper.startRegistration();
             } else {
                 try {
-                    if (Flags.scanManagerRefactor()) {
-                        scan.startScanForIntent(
-                                callbackIntent, settings, filters, mAttributionSource);
-                    } else {
-                        gatt.startScanForIntent(
-                                callbackIntent, settings, filters, mAttributionSource);
-                    }
+                    scan.registerPiAndStartScan(
+                            callbackIntent, settings, filters, mAttributionSource);
                 } catch (RemoteException e) {
                     return ScanCallback.SCAN_FAILED_INTERNAL_ERROR;
                 }
@@ -308,13 +294,16 @@ public final class BluetoothLeScanner {
     /** Stops an ongoing Bluetooth LE scan. */
     @RequiresLegacyBluetoothAdminPermission
     @RequiresBluetoothScanPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_SCAN)
+    @RequiresPermission(BLUETOOTH_SCAN)
     public void stopScan(ScanCallback callback) {
-        BluetoothLeUtils.checkAdapterStateOn(mBluetoothAdapter);
+        if (!BluetoothLeUtils.checkAdapterStateOn(mBluetoothAdapter)) {
+            Log.w(TAG, "BLE is not available");
+            return;
+        }
         synchronized (mLeScanClients) {
             BleScanCallbackWrapper wrapper = mLeScanClients.remove(callback);
             if (wrapper == null) {
-                if (DBG) Log.d(TAG, "could not find callback wrapper");
+                Log.d(TAG, "could not find callback wrapper");
                 return;
             }
             wrapper.stopLeScan();
@@ -331,25 +320,19 @@ public final class BluetoothLeScanner {
      */
     @RequiresLegacyBluetoothAdminPermission
     @RequiresBluetoothScanPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_SCAN)
+    @RequiresPermission(BLUETOOTH_SCAN)
     public void stopScan(PendingIntent callbackIntent) {
-        BluetoothLeUtils.checkAdapterStateOn(mBluetoothAdapter);
+        if (!BluetoothLeUtils.checkAdapterStateOn(mBluetoothAdapter)) {
+            Log.w(TAG, "BLE is not available");
+            return;
+        }
         try {
-            if (Flags.scanManagerRefactor()) {
-                IBluetoothScan scan = mBluetoothAdapter.getBluetoothScan();
-                if (scan == null) {
-                    Log.w(TAG, "stopScan called after bluetooth has been turned off");
-                    return;
-                }
-                scan.stopScanForIntent(callbackIntent, mAttributionSource);
-            } else {
-                IBluetoothGatt gatt = mBluetoothAdapter.getBluetoothGatt();
-                if (gatt == null) {
-                    Log.w(TAG, "stopScan called after bluetooth has been turned off");
-                    return;
-                }
-                gatt.stopScanForIntent(callbackIntent, mAttributionSource);
+            IBluetoothScan scan = mBluetoothAdapter.getBluetoothScan();
+            if (scan == null) {
+                Log.w(TAG, "stopScan called after bluetooth has been turned off");
+                return;
             }
+            scan.stopScanForIntent(callbackIntent, mAttributionSource);
         } catch (RemoteException e) {
             Log.e(TAG, "Failed to stop scan", e);
         }
@@ -365,9 +348,12 @@ public final class BluetoothLeScanner {
      */
     @RequiresLegacyBluetoothAdminPermission
     @RequiresBluetoothScanPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_SCAN)
+    @RequiresPermission(BLUETOOTH_SCAN)
     public void flushPendingScanResults(ScanCallback callback) {
-        BluetoothLeUtils.checkAdapterStateOn(mBluetoothAdapter);
+        if (!BluetoothLeUtils.checkAdapterStateOn(mBluetoothAdapter)) {
+            Log.w(TAG, "BLE is not available");
+            return;
+        }
         if (callback == null) {
             throw new IllegalArgumentException("callback cannot be null!");
         }
@@ -383,23 +369,19 @@ public final class BluetoothLeScanner {
     /**
      * Start truncated scan.
      *
-     * @deprecated this is not used anywhere
+     * @removed this is not used anywhere
      * @hide
      */
     @Deprecated
     @SystemApi
     @RequiresBluetoothScanPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_SCAN)
+    @RequiresPermission(BLUETOOTH_SCAN)
+    @SuppressLint("AndroidFrameworkRequiresPermission")
     public void startTruncatedScan(
             List<TruncatedFilter> truncatedFilters,
             ScanSettings settings,
             final ScanCallback callback) {
-        int filterSize = truncatedFilters.size();
-        List<ScanFilter> scanFilters = new ArrayList<ScanFilter>(filterSize);
-        for (TruncatedFilter filter : truncatedFilters) {
-            scanFilters.add(filter.getFilter());
-        }
-        startScan(scanFilters, settings, null, callback, null);
+        Log.wtf(TAG, "startTruncatedScan is deprecated and not supported; Will be removed soon");
     }
 
     /**
@@ -414,15 +396,14 @@ public final class BluetoothLeScanner {
 
     /** Bluetooth GATT interface callbacks */
     @SuppressLint("AndroidFrameworkRequiresPermission")
-    private class BleScanCallbackWrapper extends IScannerCallback.Stub {
+    private final class BleScanCallbackWrapper extends IScannerCallback.Stub {
         private static final int REGISTRATION_CALLBACK_TIMEOUT_MILLIS = 2000;
 
         private final ScanCallback mScanCallback;
         private final List<ScanFilter> mFilters;
         private final WorkSource mWorkSource;
-        private ScanSettings mSettings;
-        private IBluetoothGatt mBluetoothGatt;
-        private IBluetoothScan mBluetoothScan;
+        private final ScanSettings mSettings;
+        private final IBluetoothScan mBluetoothScan;
 
         // mLeHandle 0: not registered
         // -2: registration failed because app is scanning to frequently
@@ -430,14 +411,12 @@ public final class BluetoothLeScanner {
         // > 0: registered and scan started
         private int mScannerId;
 
-        public BleScanCallbackWrapper(
-                IBluetoothGatt bluetoothGatt,
+        BleScanCallbackWrapper(
                 IBluetoothScan bluetoothScan,
                 List<ScanFilter> filters,
                 ScanSettings settings,
                 WorkSource workSource,
                 ScanCallback scanCallback) {
-            mBluetoothGatt = bluetoothGatt;
             mBluetoothScan = bluetoothScan;
             mFilters = filters;
             mSettings = settings;
@@ -447,16 +426,12 @@ public final class BluetoothLeScanner {
         }
 
         @SuppressWarnings("WaitNotInLoop") // TODO(b/314811467)
-        public void startRegistration() {
+        void startRegistration() {
             synchronized (this) {
                 // Scan stopped.
                 if (mScannerId == -1 || mScannerId == -2) return;
                 try {
-                    if (Flags.scanManagerRefactor()) {
-                        mBluetoothScan.registerScanner(this, mWorkSource, mAttributionSource);
-                    } else {
-                        mBluetoothGatt.registerScanner(this, mWorkSource, mAttributionSource);
-                    }
+                    mBluetoothScan.registerScanner(this, mWorkSource, mAttributionSource);
                     wait(REGISTRATION_CALLBACK_TIMEOUT_MILLIS);
                 } catch (InterruptedException | RemoteException e) {
                     Log.e(TAG, "application registration exception", e);
@@ -482,23 +457,16 @@ public final class BluetoothLeScanner {
             }
         }
 
-        @RequiresPermission(android.Manifest.permission.BLUETOOTH_SCAN)
-        public void stopLeScan() {
+        @RequiresPermission(BLUETOOTH_SCAN)
+        void stopLeScan() {
             synchronized (this) {
                 if (mScannerId <= 0) {
                     Log.e(TAG, "Error state, mLeHandle: " + mScannerId);
                     return;
                 }
                 try {
-                    if (Flags.scanManagerRefactor()) {
-                        mBluetoothScan.stopScan(mScannerId, mAttributionSource);
-
-                        mBluetoothScan.unregisterScanner(mScannerId, mAttributionSource);
-                    } else {
-                        mBluetoothGatt.stopScan(mScannerId, mAttributionSource);
-
-                        mBluetoothGatt.unregisterScanner(mScannerId, mAttributionSource);
-                    }
+                    mBluetoothScan.stopScan(mScannerId, mAttributionSource);
+                    mBluetoothScan.unregisterScanner(mScannerId, mAttributionSource);
                 } catch (RemoteException e) {
                     Log.e(TAG, "Failed to stop scan and unregister", e);
                 }
@@ -506,7 +474,7 @@ public final class BluetoothLeScanner {
             }
         }
 
-        @RequiresPermission(android.Manifest.permission.BLUETOOTH_SCAN)
+        @RequiresPermission(BLUETOOTH_SCAN)
         void flushPendingBatchResults() {
             synchronized (this) {
                 if (mScannerId <= 0) {
@@ -514,11 +482,7 @@ public final class BluetoothLeScanner {
                     return;
                 }
                 try {
-                    if (Flags.scanManagerRefactor()) {
-                        mBluetoothScan.flushPendingBatchResults(mScannerId, mAttributionSource);
-                    } else {
-                        mBluetoothGatt.flushPendingBatchResults(mScannerId, mAttributionSource);
-                    }
+                    mBluetoothScan.flushPendingBatchResults(mScannerId, mAttributionSource);
                 } catch (RemoteException e) {
                     Log.e(TAG, "Failed to get pending scan results", e);
                 }
@@ -541,20 +505,11 @@ public final class BluetoothLeScanner {
                     try {
                         if (mScannerId == -1) {
                             // Registration succeeds after timeout, unregister scanner.
-                            if (Flags.scanManagerRefactor()) {
-                                mBluetoothScan.unregisterScanner(scannerId, mAttributionSource);
-                            } else {
-                                mBluetoothGatt.unregisterScanner(scannerId, mAttributionSource);
-                            }
+                            mBluetoothScan.unregisterScanner(scannerId, mAttributionSource);
                         } else {
                             mScannerId = scannerId;
-                            if (Flags.scanManagerRefactor()) {
-                                mBluetoothScan.startScan(
-                                        mScannerId, mSettings, mFilters, mAttributionSource);
-                            } else {
-                                mBluetoothGatt.startScan(
-                                        mScannerId, mSettings, mFilters, mAttributionSource);
-                            }
+                            mBluetoothScan.startScan(
+                                    mScannerId, mSettings, mFilters, mAttributionSource);
                         }
                     } catch (RemoteException e) {
                         Log.e(TAG, "fail to start le scan: " + e);
@@ -579,10 +534,11 @@ public final class BluetoothLeScanner {
         @Override
         public void onScanResult(final ScanResult scanResult) {
             Attributable.setAttributionSource(scanResult, mAttributionSource);
-            if (Log.isLoggable(TAG, Log.DEBUG)) {
+            if (VDBG) {
+                Log.d(TAG, "onScanResult() - " + scanResult.toString());
+            } else if (Log.isLoggable(TAG, Log.DEBUG)) {
                 Log.d(TAG, "onScanResult() - mScannerId=" + mScannerId);
             }
-            if (VDBG) Log.d(TAG, "onScanResult() - " + scanResult.toString());
 
             // Check null in case the scan has been stopped
             synchronized (this) {
@@ -594,31 +550,20 @@ public final class BluetoothLeScanner {
                 }
                 ;
             }
-            Handler handler = new Handler(Looper.getMainLooper());
-            handler.post(
-                    new Runnable() {
-                        @Override
-                        public void run() {
-                            if (Log.isLoggable(TAG, Log.DEBUG)) {
-                                Log.d(TAG, "onScanResult() - handler run");
-                            }
-                            mScanCallback.onScanResult(
-                                    ScanSettings.CALLBACK_TYPE_ALL_MATCHES, scanResult);
+            mHandler.post(
+                    () -> {
+                        if (Log.isLoggable(TAG, Log.DEBUG)) {
+                            Log.d(TAG, "onScanResult() - handler run");
                         }
+                        mScanCallback.onScanResult(
+                                ScanSettings.CALLBACK_TYPE_ALL_MATCHES, scanResult);
                     });
         }
 
         @Override
         public void onBatchScanResults(final List<ScanResult> results) {
             Attributable.setAttributionSource(results, mAttributionSource);
-            Handler handler = new Handler(Looper.getMainLooper());
-            handler.post(
-                    new Runnable() {
-                        @Override
-                        public void run() {
-                            mScanCallback.onBatchScanResults(results);
-                        }
-                    });
+            mHandler.post(() -> mScanCallback.onBatchScanResults(results));
         }
 
         @Override
@@ -634,20 +579,11 @@ public final class BluetoothLeScanner {
                     return;
                 }
             }
-            Handler handler = new Handler(Looper.getMainLooper());
-            handler.post(
-                    new Runnable() {
-                        @Override
-                        public void run() {
-                            if (onFound) {
-                                mScanCallback.onScanResult(
-                                        ScanSettings.CALLBACK_TYPE_FIRST_MATCH, scanResult);
-                            } else {
-                                mScanCallback.onScanResult(
-                                        ScanSettings.CALLBACK_TYPE_MATCH_LOST, scanResult);
-                            }
-                        }
-                    });
+            int callbackType =
+                    onFound
+                            ? ScanSettings.CALLBACK_TYPE_FIRST_MATCH
+                            : ScanSettings.CALLBACK_TYPE_MATCH_LOST;
+            mHandler.post(() -> mScanCallback.onScanResult(callbackType, scanResult));
         }
 
         @Override
@@ -673,15 +609,8 @@ public final class BluetoothLeScanner {
         }
     }
 
-    @SuppressLint("AndroidFrameworkBluetoothPermission")
     private void postCallbackError(final ScanCallback callback, final int errorCode) {
-        mHandler.post(
-                new Runnable() {
-                    @Override
-                    public void run() {
-                        callback.onScanFailed(errorCode);
-                    }
-                });
+        mHandler.post(() -> callback.onScanFailed(errorCode));
     }
 
     private boolean isSettingsConfigAllowedForScan(ScanSettings settings) {
@@ -697,7 +626,7 @@ public final class BluetoothLeScanner {
         return false;
     }
 
-    private boolean isSettingsAndFilterComboAllowed(
+    private static boolean isSettingsAndFilterComboAllowed(
             ScanSettings settings, List<ScanFilter> filterList) {
         final int callbackType = settings.getCallbackType();
         // If onlost/onfound is requested, a non-empty filter is expected
@@ -717,7 +646,7 @@ public final class BluetoothLeScanner {
         return true;
     }
 
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_SCAN)
     private boolean isHardwareResourcesAvailableForScan(ScanSettings settings) {
         final int callbackType = settings.getCallbackType();
         if ((callbackType & ScanSettings.CALLBACK_TYPE_FIRST_MATCH) != 0

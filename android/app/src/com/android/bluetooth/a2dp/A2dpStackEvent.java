@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 The Android Open Source Project
+ * Copyright (C) 2017 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package com.android.bluetooth.a2dp;
 
+import static android.bluetooth.BluetoothProfile.getConnectionStateName;
+
 import android.bluetooth.BluetoothCodecStatus;
 import android.bluetooth.BluetoothDevice;
 
@@ -29,13 +31,8 @@ public class A2dpStackEvent {
     public static final int EVENT_TYPE_CONNECTION_STATE_CHANGED = 1;
     public static final int EVENT_TYPE_AUDIO_STATE_CHANGED = 2;
     public static final int EVENT_TYPE_CODEC_CONFIG_CHANGED = 3;
+    public static final int EVENT_TYPE_AUDIO_DELAY_REPORTED = 4;
 
-    // Do not modify without updating the HAL bt_av.h files.
-    // Match up with btav_connection_state_t enum of bt_av.h
-    static final int CONNECTION_STATE_DISCONNECTED = 0;
-    static final int CONNECTION_STATE_CONNECTING = 1;
-    static final int CONNECTION_STATE_CONNECTED = 2;
-    static final int CONNECTION_STATE_DISCONNECTING = 3;
     // Match up with btav_audio_state_t enum of bt_av.h
     static final int AUDIO_STATE_REMOTE_SUSPEND = 0;
     static final int AUDIO_STATE_STOPPED = 1;
@@ -44,6 +41,7 @@ public class A2dpStackEvent {
     public int type = EVENT_TYPE_NONE;
     public BluetoothDevice device;
     public int valueInt = 0;
+    public int reason = 0;
     public BluetoothCodecStatus codecStatus;
 
     A2dpStackEvent(int type) {
@@ -54,62 +52,38 @@ public class A2dpStackEvent {
     public String toString() {
         // event dump
         StringBuilder result = new StringBuilder();
-        result.append("A2dpStackEvent {type:" + eventTypeToString(type));
-        result.append(", device:" + device);
-        result.append(", value1:" + eventTypeValueIntToString(type, valueInt));
+        result.append("A2dpStackEvent {type:").append(eventTypeToString(type));
+        result.append(", device:").append(device);
+        result.append(", value1:").append(eventTypeValueIntToString(type, valueInt));
         if (codecStatus != null) {
-            result.append(", codecStatus:" + codecStatus);
+            result.append(", codecStatus:").append(codecStatus);
         }
         result.append("}");
         return result.toString();
     }
 
     private static String eventTypeToString(int type) {
-        switch (type) {
-            case EVENT_TYPE_NONE:
-                return "EVENT_TYPE_NONE";
-            case EVENT_TYPE_CONNECTION_STATE_CHANGED:
-                return "EVENT_TYPE_CONNECTION_STATE_CHANGED";
-            case EVENT_TYPE_AUDIO_STATE_CHANGED:
-                return "EVENT_TYPE_AUDIO_STATE_CHANGED";
-            case EVENT_TYPE_CODEC_CONFIG_CHANGED:
-                return "EVENT_TYPE_CODEC_CONFIG_CHANGED";
-            default:
-                return "EVENT_TYPE_UNKNOWN:" + type;
-        }
+        return switch (type) {
+            case EVENT_TYPE_NONE -> "EVENT_TYPE_NONE";
+            case EVENT_TYPE_CONNECTION_STATE_CHANGED -> "EVENT_TYPE_CONNECTION_STATE_CHANGED";
+            case EVENT_TYPE_AUDIO_STATE_CHANGED -> "EVENT_TYPE_AUDIO_STATE_CHANGED";
+            case EVENT_TYPE_CODEC_CONFIG_CHANGED -> "EVENT_TYPE_CODEC_CONFIG_CHANGED";
+            case EVENT_TYPE_AUDIO_DELAY_REPORTED -> "EVENT_TYPE_AUDIO_DELAY_REPORTED";
+            default -> "EVENT_TYPE_UNKNOWN:" + type;
+        };
     }
 
     private static String eventTypeValueIntToString(int type, int value) {
-        switch (type) {
-            case EVENT_TYPE_CONNECTION_STATE_CHANGED:
-                switch (value) {
-                    case CONNECTION_STATE_DISCONNECTED:
-                        return "DISCONNECTED";
-                    case CONNECTION_STATE_CONNECTING:
-                        return "CONNECTING";
-                    case CONNECTION_STATE_CONNECTED:
-                        return "CONNECTED";
-                    case CONNECTION_STATE_DISCONNECTING:
-                        return "DISCONNECTING";
-                    default:
-                        break;
-                }
-                break;
-            case EVENT_TYPE_AUDIO_STATE_CHANGED:
-                switch (value) {
-                    case AUDIO_STATE_REMOTE_SUSPEND:
-                        return "REMOTE_SUSPEND";
-                    case AUDIO_STATE_STOPPED:
-                        return "STOPPED";
-                    case AUDIO_STATE_STARTED:
-                        return "STARTED";
-                    default:
-                        break;
-                }
-                break;
-            default:
-                break;
-        }
-        return Integer.toString(value);
+        return switch (type) {
+            case EVENT_TYPE_CONNECTION_STATE_CHANGED -> getConnectionStateName(value);
+            case EVENT_TYPE_AUDIO_STATE_CHANGED ->
+                    switch (value) {
+                        case AUDIO_STATE_REMOTE_SUSPEND -> "REMOTE_SUSPEND";
+                        case AUDIO_STATE_STOPPED -> "STOPPED";
+                        case AUDIO_STATE_STARTED -> "STARTED";
+                        default -> Integer.toString(value);
+                    };
+            default -> Integer.toString(value);
+        };
     }
 }

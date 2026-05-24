@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package android.bluetooth.test_utils
 
 import android.Manifest.permission.BLUETOOTH_CONNECT
@@ -49,7 +50,7 @@ import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 
-private const val TAG: String = "BlockingBluetoothAdapter"
+private const val TAG = "BlockingBluetoothAdapter"
 // There is no access to the module only API Settings.Global.BLE_SCAN_ALWAYS_AVAILABLE
 private const val BLE_SCAN_ALWAYS_AVAILABLE = "ble_scan_always_enabled"
 
@@ -75,12 +76,12 @@ object BlockingBluetoothAdapter {
         if (toggleScanSetting) {
             Log.d(TAG, "Allowing the scan to be perform while Bluetooth is OFF")
             Settings.Global.putInt(context.contentResolver, BLE_SCAN_ALWAYS_AVAILABLE, 1)
-            for (i in 1..5) {
+            for (i in 1..10) {
                 if (adapter.isBleScanAlwaysAvailable()) {
                     break
                 }
-                Log.d(TAG, "Ble scan not yet available… Sleeping 20 ms $i/5")
-                Thread.sleep(20)
+                Log.d(TAG, "Ble scan not yet available... Sleeping 50 ms $i/10")
+                Thread.sleep(50)
             }
             if (!adapter.isBleScanAlwaysAvailable()) {
                 throw IllegalStateException("Could not enable BLE scan")
@@ -145,21 +146,13 @@ object BlockingBluetoothAdapter {
             Log.e(TAG, "disable: Failed")
             return false
         }
-        // Notify that disable was call.
-        state.wasDisabled = true
         return state.waitForStateWithTimeout(stateChangeTimeout, STATE_OFF)
     }
 }
 
 private class AdapterStateListener(context: Context, private val adapter: BluetoothAdapter) {
-    private val STATE_UNKNOWN = -42
     private val STATE_BLE_TURNING_ON = 14 // BluetoothAdapter.STATE_BLE_TURNING_ON
     private val STATE_BLE_TURNING_OFF = 16 // BluetoothAdapter.STATE_BLE_TURNING_OFF
-
-    // Set to true once a call to disable is made, in order to force the differentiation between the
-    // various state hidden within STATE_OFF (OFF, BLE_TURNING_ON, BLE_TURNING_OFF)
-    // Once true, getter will return STATE_OFF when there has not been any callback sent to it
-    var wasDisabled = false
 
     val adapterStateFlow =
         callbackFlow<Intent> {
@@ -184,10 +177,8 @@ private class AdapterStateListener(context: Context, private val adapter: Blueto
                 state
             } else if (adapter.isLeEnabled()) {
                 STATE_BLE_ON
-            } else if (wasDisabled) {
-                STATE_OFF
             } else {
-                STATE_UNKNOWN
+                STATE_OFF
             }
         }
 
@@ -200,7 +191,6 @@ private class AdapterStateListener(context: Context, private val adapter: Blueto
     // Cts cannot use BluetoothAdapter.nameForState prior to T, some module test on R
     private fun nameForState(state: Int): String {
         return when (state) {
-            STATE_UNKNOWN -> "UNKNOWN: State is oneOf(OFF, BLE_TURNING_ON, BLE_TURNING_OFF)"
             STATE_OFF -> "OFF"
             STATE_TURNING_ON -> "TURNING_ON"
             STATE_ON -> "ON"

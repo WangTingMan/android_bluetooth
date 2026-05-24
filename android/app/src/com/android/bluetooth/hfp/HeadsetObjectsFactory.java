@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.hfp;
 
 import android.bluetooth.BluetoothDevice;
@@ -25,6 +26,7 @@ import com.android.bluetooth.btservice.AdapterService;
 /** Factory class for object initialization to help with unit testing */
 public class HeadsetObjectsFactory {
     private static final String TAG = HeadsetObjectsFactory.class.getSimpleName();
+
     private static HeadsetObjectsFactory sInstance;
     private static final Object INSTANCE_LOCK = new Object();
 
@@ -75,7 +77,7 @@ public class HeadsetObjectsFactory {
             AdapterService adapterService,
             HeadsetNativeInterface nativeInterface,
             HeadsetSystemInterface systemInterface) {
-        return HeadsetStateMachine.make(
+        return new HeadsetStateMachine(
                 device, looper, headsetService, adapterService, nativeInterface, systemInterface);
     }
 
@@ -86,15 +88,5 @@ public class HeadsetObjectsFactory {
      */
     public void destroyStateMachine(HeadsetStateMachine stateMachine) {
         HeadsetStateMachine.destroy(stateMachine);
-    }
-
-    /**
-     * Get a system interface
-     *
-     * @param service headset service
-     * @return a system interface
-     */
-    public HeadsetSystemInterface makeSystemInterface(HeadsetService service) {
-        return new HeadsetSystemInterface(service);
     }
 }

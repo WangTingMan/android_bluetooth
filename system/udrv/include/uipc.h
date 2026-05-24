@@ -56,12 +56,11 @@ typedef enum {
 #define UIPC_REG_REMOVE_ACTIVE_READSET 3
 #define UIPC_SET_READ_POLL_TMO 4
 
-typedef void(tUIPC_RCV_CBACK)(
-    tUIPC_CH_ID ch_id,
-    tUIPC_EVENT event); /* points to BT_HDR which describes event type and
-                           length of data; len contains the number of bytes of
-                           entire message (sizeof(BT_HDR) + offset + size of
-                           data) */
+typedef void(tUIPC_RCV_CBACK)(tUIPC_CH_ID ch_id,
+                              tUIPC_EVENT event); /* points to BT_HDR which describes event type and
+                                                     length of data; len contains the number of
+                                                     bytes of entire message (sizeof(BT_HDR) +
+                                                     offset + size of data) */
 
 const char* dump_uipc_event(tUIPC_EVENT event);
 
@@ -124,8 +123,8 @@ void UIPC_Close(tUIPC_STATE& uipc, tUIPC_CH_ID ch_id);
  * @param msglen Message length
  * @return true on success, otherwise false
  */
-bool UIPC_Send(tUIPC_STATE& uipc, tUIPC_CH_ID ch_id, uint16_t msg_evt,
-               const uint8_t* p_buf, uint16_t msglen);
+bool UIPC_Send(tUIPC_STATE& uipc, tUIPC_CH_ID ch_id, uint16_t msg_evt, const uint8_t* p_buf,
+               uint16_t msglen);
 
 /**
  * Read a message from UIPC
@@ -136,8 +135,7 @@ bool UIPC_Send(tUIPC_STATE& uipc, tUIPC_CH_ID ch_id, uint16_t msg_evt,
  * @param len Bytes to read
  * @return true on success, otherwise false
  */
-uint32_t UIPC_Read(tUIPC_STATE& uipc, tUIPC_CH_ID ch_id, uint8_t* p_buf,
-                   uint32_t len);
+uint32_t UIPC_Read(tUIPC_STATE& uipc, tUIPC_CH_ID ch_id, uint8_t* p_buf, uint32_t len);
 
 /**
  * Control the UIPC parameter
@@ -147,7 +145,6 @@ uint32_t UIPC_Read(tUIPC_STATE& uipc, tUIPC_CH_ID ch_id, uint8_t* p_buf,
  * @param param Optional parameters
  * @return true on success, otherwise false
  */
-bool UIPC_Ioctl(tUIPC_STATE& uipc, tUIPC_CH_ID ch_id, uint32_t request,
-                void* param);
+bool UIPC_Ioctl(tUIPC_STATE& uipc, tUIPC_CH_ID ch_id, uint32_t request, void* param);
 
 #endif /* UIPC_H */

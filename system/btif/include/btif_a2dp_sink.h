@@ -21,13 +21,13 @@
 #define BTIF_A2DP_SINK_H
 
 #include <bluetooth/log.h>
+#include <bluetooth/types/address.h>
 
 #include <cstdint>
 #include <future>
 
 #include "bta/include/bta_av_api.h"
 #include "stack/include/bt_hdr.h"
-#include "types/raw_address.h"
 
 //
 // Audio focus state for audio track.
@@ -86,7 +86,7 @@ void btif_a2dp_sink_cleanup(void);
 
 // Update the decoder for the A2DP Sink module.
 // |p_codec_info| contains the new codec information.
-void btif_a2dp_sink_update_decoder(const uint8_t* p_codec_info);
+void btif_a2dp_sink_update_decoder(const RawAddress& peer_address, const uint8_t* p_codec_info);
 
 // Process 'idle' request from the BTIF state machine during initialization.
 void btif_a2dp_sink_on_idle(void);
@@ -131,12 +131,11 @@ void btif_a2dp_sink_set_focus_state_req(btif_a2dp_sink_focus_state_t state);
 void btif_a2dp_sink_set_audio_track_gain(float gain);
 
 // Get audio track handle
-void * btif_a2dp_sink_get_audio_track(void);
+void* btif_a2dp_sink_get_audio_track(void);
 
-namespace fmt {
+namespace std {
 template <>
-struct formatter<btif_a2dp_sink_focus_state_t>
-    : enum_formatter<btif_a2dp_sink_focus_state_t> {};
-}  // namespace fmt
+struct formatter<btif_a2dp_sink_focus_state_t> : enum_formatter<btif_a2dp_sink_focus_state_t> {};
+}  // namespace std
 
 #endif /* BTIF_A2DP_SINK_H */

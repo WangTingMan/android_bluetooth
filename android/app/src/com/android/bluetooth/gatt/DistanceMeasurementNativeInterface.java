@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,20 +18,10 @@ package com.android.bluetooth.gatt;
 
 import android.bluetooth.BluetoothStatusCodes;
 
-import com.android.internal.annotations.GuardedBy;
-import com.android.internal.annotations.VisibleForTesting;
-
 /** Distance Measurement Native Interface to/from JNI. */
-@VisibleForTesting(visibility = VisibleForTesting.Visibility.PACKAGE)
 public class DistanceMeasurementNativeInterface {
-    private static final String TAG = DistanceMeasurementNativeInterface.class.getSimpleName();
-
-    @GuardedBy("INSTANCE_LOCK")
-    private static DistanceMeasurementNativeInterface sInstance;
-
-    private static final Object INSTANCE_LOCK = new Object();
-
-    private DistanceMeasurementManager mDistanceMeasurementManager;
+    private static final String TAG =
+            GattUtil.TAG_PREFIX + DistanceMeasurementNativeInterface.class.getSimpleName();
 
     /**
      * Do not modify without updating distance_measurement_manager.h match up with
@@ -47,32 +37,15 @@ public class DistanceMeasurementNativeInterface {
     private static final int REASON_INVALID_PARAMETERS = 6;
     private static final int REASON_INTERNAL_ERROR = 7;
 
-    private DistanceMeasurementNativeInterface() {}
+    private static final Object INSTANCE_LOCK = new Object();
 
-    /**
-     * This class is a singleton because native library should only be loaded once
-     *
-     * @return default instance
-     */
-    public static DistanceMeasurementNativeInterface getInstance() {
-        synchronized (INSTANCE_LOCK) {
-            if (sInstance == null) {
-                sInstance = new DistanceMeasurementNativeInterface();
-            }
-            return sInstance;
-        }
+    private final DistanceMeasurementManager mManager;
+
+    DistanceMeasurementNativeInterface(DistanceMeasurementManager manager) {
+        mManager = manager;
     }
 
-    /** Set singleton instance. */
-    @VisibleForTesting
-    public static void setInstance(DistanceMeasurementNativeInterface instance) {
-        synchronized (INSTANCE_LOCK) {
-            sInstance = instance;
-        }
-    }
-
-    void init(DistanceMeasurementManager manager) {
-        mDistanceMeasurementManager = manager;
+    void init() {
         initializeNative();
     }
 
@@ -80,8 +53,9 @@ public class DistanceMeasurementNativeInterface {
         cleanupNative();
     }
 
-    void startDistanceMeasurement(String address, int interval, int method) {
-        startDistanceMeasurementNative(address, interval, method);
+    void startDistanceMeasurement(
+            int appUid, String address, int interval, int method, int sightType, int locationType) {
+        startDistanceMeasurementNative(appUid, address, interval, method, sightType, locationType);
     }
 
     void stopDistanceMeasurement(String address, int method) {
@@ -89,17 +63,15 @@ public class DistanceMeasurementNativeInterface {
     }
 
     void onDistanceMeasurementStarted(String address, int method) {
-        mDistanceMeasurementManager.onDistanceMeasurementStarted(address, method);
-    }
-
-    void onDistanceMeasurementStartFail(String address, int reason, int method) {
-        mDistanceMeasurementManager.onDistanceMeasurementStartFail(
-                address, convertErrorCode(reason), method);
+        mManager.postOnDistanceMeasurementThread(
+                () -> mManager.onDistanceMeasurementStarted(address, method));
     }
 
     void onDistanceMeasurementStopped(String address, int reason, int method) {
-        mDistanceMeasurementManager.onDistanceMeasurementStopped(
-                address, convertErrorCode(reason), method);
+        mManager.postOnDistanceMeasurementThread(
+                () ->
+                        mManager.onDistanceMeasurementStopped(
+                                address, convertErrorCode(reason), method));
     }
 
     void onDistanceMeasurementResult(
@@ -110,39 +82,43 @@ public class DistanceMeasurementNativeInterface {
             int errorAzimuthAngle,
             int altitudeAngle,
             int errorAltitudeAngle,
+            long elapsedRealtimeNanos,
+            int confidenceLevel,
+            double delayedSpreadMeters,
+            int detectedAttackLevel,
+            double velocityMetersPerSecond,
             int method) {
-        mDistanceMeasurementManager.onDistanceMeasurementResult(
-                address,
-                centimeter,
-                errorCentimeter,
-                azimuthAngle,
-                errorAzimuthAngle,
-                altitudeAngle,
-                errorAltitudeAngle,
-                method);
+        mManager.postOnDistanceMeasurementThread(
+                () ->
+                        mManager.onDistanceMeasurementResult(
+                                address,
+                                centimeter,
+                                errorCentimeter,
+                                azimuthAngle,
+                                errorAzimuthAngle,
+                                altitudeAngle,
+                                errorAltitudeAngle,
+                                elapsedRealtimeNanos,
+                                confidenceLevel,
+                                delayedSpreadMeters,
+                                detectedAttackLevel,
+                                velocityMetersPerSecond,
+                                method));
     }
 
-    private int convertErrorCode(int errorCode) {
-        switch (errorCode) {
-            case REASON_FEATURE_NOT_SUPPORTED_LOCAL:
-                return BluetoothStatusCodes.FEATURE_NOT_SUPPORTED;
-            case REASON_FEATURE_NOT_SUPPORTED_REMOTE:
-                return BluetoothStatusCodes.ERROR_REMOTE_OPERATION_NOT_SUPPORTED;
-            case REASON_LOCAL_REQUEST:
-                return BluetoothStatusCodes.REASON_LOCAL_STACK_REQUEST;
-            case REASON_REMOTE_REQUEST:
-                return BluetoothStatusCodes.REASON_REMOTE_REQUEST;
-            case REASON_DURATION_TIMEOUT:
-                return BluetoothStatusCodes.ERROR_TIMEOUT;
-            case REASON_NO_LE_CONNECTION:
-                return BluetoothStatusCodes.ERROR_NO_LE_CONNECTION;
-            case REASON_INVALID_PARAMETERS:
-                return BluetoothStatusCodes.ERROR_BAD_PARAMETERS;
-            case REASON_INTERNAL_ERROR:
-                return BluetoothStatusCodes.ERROR_DISTANCE_MEASUREMENT_INTERNAL;
-            default:
-                return BluetoothStatusCodes.ERROR_UNKNOWN;
-        }
+    private static int convertErrorCode(int errorCode) {
+        return switch (errorCode) {
+            case REASON_FEATURE_NOT_SUPPORTED_LOCAL -> BluetoothStatusCodes.FEATURE_NOT_SUPPORTED;
+            case REASON_FEATURE_NOT_SUPPORTED_REMOTE ->
+                    BluetoothStatusCodes.ERROR_REMOTE_OPERATION_NOT_SUPPORTED;
+            case REASON_LOCAL_REQUEST -> BluetoothStatusCodes.REASON_LOCAL_STACK_REQUEST;
+            case REASON_REMOTE_REQUEST -> BluetoothStatusCodes.REASON_REMOTE_REQUEST;
+            case REASON_DURATION_TIMEOUT -> BluetoothStatusCodes.ERROR_TIMEOUT;
+            case REASON_NO_LE_CONNECTION -> BluetoothStatusCodes.ERROR_NO_LE_CONNECTION;
+            case REASON_INVALID_PARAMETERS -> BluetoothStatusCodes.ERROR_BAD_PARAMETERS;
+            case REASON_INTERNAL_ERROR -> BluetoothStatusCodes.ERROR_DISTANCE_MEASUREMENT_INTERNAL;
+            default -> BluetoothStatusCodes.ERROR_UNKNOWN;
+        };
     }
 
     /**********************************************************************************************/
@@ -153,7 +129,8 @@ public class DistanceMeasurementNativeInterface {
 
     private native void cleanupNative();
 
-    private native void startDistanceMeasurementNative(String address, int interval, int method);
+    private native void startDistanceMeasurementNative(
+            int appUid, String address, int interval, int method, int sightType, int locationType);
 
     private native void stopDistanceMeasurementNative(String address, int method);
 }

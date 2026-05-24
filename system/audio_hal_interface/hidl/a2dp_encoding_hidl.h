@@ -28,7 +28,7 @@ namespace hidl {
 namespace a2dp {
 
 bool update_codec_offloading_capabilities(
-    const std::vector<btav_a2dp_codec_config_t>& framework_preference);
+        const std::vector<btav_a2dp_codec_config_t>& framework_preference);
 
 // Check if new bluetooth_audio is enabled
 bool is_hal_2_0_enabled();
@@ -37,20 +37,21 @@ bool is_hal_2_0_enabled();
 bool is_hal_2_0_offloading();
 
 // Initialize BluetoothAudio HAL: openProvider
-bool init(bluetooth::common::MessageLoopThread* message_loop);
+bool init(bluetooth::common::MessageLoopThread* message_loop,
+          bluetooth::audio::a2dp::StreamCallbacks const* stream_callbacks, bool offload_enabled);
 
 // Clean up BluetoothAudio HAL
 void cleanup();
 
 // Set up the codec into BluetoothAudio HAL
-bool setup_codec();
+bool setup_codec(const ::bluetooth::audio::a2dp::ahal_codec_configuration& config);
 
 // Send command to the BluetoothAudio HAL: StartSession, EndSession,
 // StreamStarted, StreamSuspended
 void start_session();
 void end_session();
-void ack_stream_started(::bluetooth::audio::a2dp::BluetoothAudioStatus status);
-void ack_stream_suspended(::bluetooth::audio::a2dp::BluetoothAudioStatus status);
+void ack_stream_started(::bluetooth::audio::a2dp::Status status);
+void ack_stream_suspended(::bluetooth::audio::a2dp::Status status);
 
 // Read from the FMQ of BluetoothAudio HAL
 size_t read(uint8_t* p_buf, uint32_t len);

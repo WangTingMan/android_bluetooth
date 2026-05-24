@@ -1,5 +1,5 @@
 /*
- * Copyright 2012 The Android Open Source Project
+ * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package android.bluetooth;
 /**
  * Callback for Bluetooth Pan Tethering
  *
- * {@hide}
+ * @hide
  */
 oneway interface IBluetoothPanCallback {
     void onAvailable(in String iface);

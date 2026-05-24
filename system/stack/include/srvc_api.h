@@ -19,13 +19,14 @@
 #ifndef SRVC_DIS_API_H
 #define SRVC_DIS_API_H
 
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/bt_transport.h>
+
 #include <cstdint>
 
 #include "gatt_api.h"
 #include "gattdefs.h"
 #include "internal_include/bt_target.h"
-#include "types/bt_transport.h"
-#include "types/raw_address.h"
 
 #define DIS_SUCCESS GATT_SUCCESS
 #define DIS_ILLEGAL_PARAM GATT_ILLEGAL_PARAMETER
@@ -59,7 +60,6 @@ typedef struct {
   uint16_t product_id;
   uint16_t product_version;
   uint8_t vendor_id_src;
-
 } tDIS_PNP_ID;
 
 typedef union {
@@ -106,7 +106,6 @@ typedef struct {
   tBA_LEVEL_DESCR ba_level_descr;
   tBT_TRANSPORT transport;
   tBA_CBACK* p_cback;
-
 } tBA_REG_INFO;
 
 typedef union {
@@ -133,26 +132,6 @@ typedef union {
 tGATT_STATUS srvc_eng_init(void);
 
 /*****************************************************************************
- *  DIS Server Function
- ****************************************************************************/
-
-/*******************************************************************************
- *
- * Function         DIS_SrInit
- *
- * Description      Initializa the Device Information Service Server.
- *
- ******************************************************************************/
-tDIS_STATUS DIS_SrInit(tDIS_ATTR_MASK dis_attr_mask);
-/*******************************************************************************
- *
- * Function         DIS_SrUpdate
- *
- * Description      Update the DIS server attribute values
- *
- ******************************************************************************/
-tDIS_STATUS DIS_SrUpdate(tDIS_ATTR_BIT dis_attr_bit, tDIS_ATTR* p_info);
-/*****************************************************************************
  *  DIS Client Function
  ****************************************************************************/
 /*******************************************************************************
@@ -164,7 +143,6 @@ tDIS_STATUS DIS_SrUpdate(tDIS_ATTR_BIT dis_attr_bit, tDIS_ATTR* p_info);
  * Returns          void
  *
  ******************************************************************************/
-bool DIS_ReadDISInfo(const RawAddress& peer_bda, tDIS_READ_CBACK* p_cback,
-                     tDIS_ATTR_MASK mask);
+bool DIS_ReadDISInfo(const RawAddress& peer_bda, tDIS_READ_CBACK* p_cback, tDIS_ATTR_MASK mask);
 
 #endif

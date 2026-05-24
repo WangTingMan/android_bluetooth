@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.android.bluetooth.sap;
 
 import static com.android.bluetooth.sap.SapMessage.CON_STATUS_OK;
-import static com.android.bluetooth.sap.SapMessage.DISC_GRACEFULL;
+import static com.android.bluetooth.sap.SapMessage.DISC_GRACEFUL;
 import static com.android.bluetooth.sap.SapMessage.ID_CONNECT_RESP;
 import static com.android.bluetooth.sap.SapMessage.ID_DISCONNECT_RESP;
 import static com.android.bluetooth.sap.SapMessage.ID_POWER_SIM_OFF_REQ;
@@ -43,20 +43,21 @@ import static com.android.bluetooth.sap.SapServer.SAP_RIL_SOCK_CLOSED;
 
 import static com.google.common.truth.Truth.assertThat;
 
-import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.argThat;
-import static org.mockito.Mockito.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
+import android.hardware.radio.V1_0.ISap;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Message;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.LargeTest;
-import androidx.test.runner.AndroidJUnit4;
 
-import com.android.bluetooth.jarjar.android.hardware.radio.V1_0.ISap;
+import com.android.tests.bluetooth.MockitoRule;
 
 import org.junit.After;
 import org.junit.Before;
@@ -66,12 +67,11 @@ import org.junit.runner.RunWith;
 import org.mockito.ArgumentMatcher;
 import org.mockito.Mock;
 import org.mockito.Spy;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 
+/** Test cases for {@link SapRilReceiverHidl}. */
 @LargeTest
 @RunWith(AndroidJUnit4.class)
 public class SapRilReceiverHidlTest {
@@ -83,7 +83,7 @@ public class SapRilReceiverHidlTest {
 
     @Spy private TestHandlerCallback mCallback = new TestHandlerCallback();
 
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
 
     @Mock private Handler mServiceHandler;
 
@@ -93,7 +93,6 @@ public class SapRilReceiverHidlTest {
 
     @Before
     public void setUp() throws Exception {
-
         mHandlerThread = new HandlerThread("SapRilReceiverTest");
         mHandlerThread.start();
 
@@ -194,7 +193,7 @@ public class SapRilReceiverHidlTest {
     @Test
     public void callback_disconnectIndication() throws Exception {
         int token = 1;
-        int disconnectType = DISC_GRACEFULL;
+        int disconnectType = DISC_GRACEFUL;
         mReceiver.mSapCallback.disconnectIndication(token, disconnectType);
 
         verify(mCallback, timeout(TIMEOUT_MS))

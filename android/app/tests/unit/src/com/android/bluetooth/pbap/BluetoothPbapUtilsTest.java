@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,12 @@
 
 package com.android.bluetooth.pbap;
 
-import static android.provider.ContactsContract.Data.CONTACT_ID;
-import static android.provider.ContactsContract.Data.DATA1;
-import static android.provider.ContactsContract.Data.MIMETYPE;
-
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
 
-import static org.mockito.Mockito.any;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.when;
 
 import android.content.Context;
@@ -40,10 +36,12 @@ import android.provider.ContactsContract.CommonDataKinds.StructuredPostal;
 import android.provider.ContactsContract.Contacts;
 import android.provider.ContactsContract.Data;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.SmallTest;
-import androidx.test.runner.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
 
 import com.android.bluetooth.BluetoothMethodProxy;
+import com.android.tests.bluetooth.MockitoRule;
 import com.android.vcard.VCardConfig;
 
 import org.junit.After;
@@ -53,18 +51,17 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.Spy;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 
+/** Test cases for {@link BluetoothPbapUtils}. */
 @SmallTest
 @RunWith(AndroidJUnit4.class)
 public class BluetoothPbapUtilsTest {
 
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
 
     @Mock Context mContext;
 
@@ -160,12 +157,14 @@ public class BluetoothPbapUtilsTest {
     public void setContactFields() {
         String contactId = "1358923";
 
-        BluetoothPbapUtils.setContactFields(BluetoothPbapUtils.TYPE_NAME, contactId, "test_name");
-        BluetoothPbapUtils.setContactFields(BluetoothPbapUtils.TYPE_PHONE, contactId, "0123456789");
         BluetoothPbapUtils.setContactFields(
-                BluetoothPbapUtils.TYPE_EMAIL, contactId, "android@android.com");
+                BluetoothPbapUtils.ContactFieldType.NAME, contactId, "test_name");
         BluetoothPbapUtils.setContactFields(
-                BluetoothPbapUtils.TYPE_ADDRESS, contactId, "SomeAddress");
+                BluetoothPbapUtils.ContactFieldType.PHONE, contactId, "0123456789");
+        BluetoothPbapUtils.setContactFields(
+                BluetoothPbapUtils.ContactFieldType.EMAIL, contactId, "android@android.com");
+        BluetoothPbapUtils.setContactFields(
+                BluetoothPbapUtils.ContactFieldType.ADDRESS, contactId, "SomeAddress");
 
         assertThat(BluetoothPbapUtils.sContactDataset.get(contactId)).isNotNull();
     }
@@ -189,7 +188,8 @@ public class BluetoothPbapUtilsTest {
 
     @Test
     public void fetchAndSetContacts_whenIsLoadTrue_returnsContactsSetSize() {
-        MatrixCursor cursor = new MatrixCursor(new String[] {CONTACT_ID, MIMETYPE, DATA1});
+        MatrixCursor cursor =
+                new MatrixCursor(new String[] {Data.CONTACT_ID, Data.MIMETYPE, Data.DATA1});
         cursor.addRow(new Object[] {"id1", Phone.CONTENT_ITEM_TYPE, "01234567"});
         cursor.addRow(new Object[] {"id1", Email.CONTENT_ITEM_TYPE, "android@android.com"});
         cursor.addRow(new Object[] {"id1", StructuredPostal.CONTENT_ITEM_TYPE, "01234"});
@@ -216,7 +216,8 @@ public class BluetoothPbapUtilsTest {
 
     @Test
     public void fetchAndSetContacts_whenIsLoadFalse_returnsContactsSetSize() {
-        MatrixCursor cursor = new MatrixCursor(new String[] {CONTACT_ID, MIMETYPE, DATA1});
+        MatrixCursor cursor =
+                new MatrixCursor(new String[] {Data.CONTACT_ID, Data.MIMETYPE, Data.DATA1});
         cursor.addRow(new Object[] {"id1", Phone.CONTENT_ITEM_TYPE, "01234567"});
         cursor.addRow(new Object[] {"id1", Email.CONTENT_ITEM_TYPE, "android@android.com"});
         cursor.addRow(new Object[] {"id1", StructuredPostal.CONTENT_ITEM_TYPE, "01234"});
@@ -272,7 +273,8 @@ public class BluetoothPbapUtilsTest {
                 .when(mProxy)
                 .contentResolverQuery(any(), eq(Contacts.CONTENT_URI), any(), any(), any(), any());
 
-        MatrixCursor dataCursor = new MatrixCursor(new String[] {CONTACT_ID, MIMETYPE, DATA1});
+        MatrixCursor dataCursor =
+                new MatrixCursor(new String[] {Data.CONTACT_ID, Data.MIMETYPE, Data.DATA1});
         dataCursor.addRow(new Object[] {"id1", Phone.CONTENT_ITEM_TYPE, "01234567"});
         dataCursor.addRow(new Object[] {"id1", Email.CONTENT_ITEM_TYPE, "android@android.com"});
         dataCursor.addRow(new Object[] {"id1", StructuredPostal.CONTENT_ITEM_TYPE, "01234"});
@@ -303,7 +305,8 @@ public class BluetoothPbapUtilsTest {
                 .when(mProxy)
                 .contentResolverQuery(any(), eq(Contacts.CONTENT_URI), any(), any(), any(), any());
 
-        MatrixCursor dataCursor = new MatrixCursor(new String[] {CONTACT_ID, MIMETYPE, DATA1});
+        MatrixCursor dataCursor =
+                new MatrixCursor(new String[] {Data.CONTACT_ID, Data.MIMETYPE, Data.DATA1});
         doReturn(dataCursor)
                 .when(mProxy)
                 .contentResolverQuery(any(), eq(Data.CONTENT_URI), any(), any(), any(), any());
@@ -335,7 +338,8 @@ public class BluetoothPbapUtilsTest {
                 .when(mProxy)
                 .contentResolverQuery(any(), eq(Contacts.CONTENT_URI), any(), any(), any(), any());
 
-        MatrixCursor dataCursor = new MatrixCursor(new String[] {CONTACT_ID, MIMETYPE, DATA1});
+        MatrixCursor dataCursor =
+                new MatrixCursor(new String[] {Data.CONTACT_ID, Data.MIMETYPE, Data.DATA1});
         dataCursor.addRow(new Object[] {"id1", Phone.CONTENT_ITEM_TYPE, "01234567"});
         dataCursor.addRow(new Object[] {"id1", Email.CONTENT_ITEM_TYPE, "android@android.com"});
         dataCursor.addRow(new Object[] {"id1", StructuredPostal.CONTENT_ITEM_TYPE, "01234"});
@@ -347,11 +351,43 @@ public class BluetoothPbapUtilsTest {
 
         BluetoothPbapUtils.sTotalContacts = 1;
         BluetoothPbapUtils.setContactFields(
-                BluetoothPbapUtils.TYPE_NAME, "id1", "test_previous_name_before_update");
+                BluetoothPbapUtils.ContactFieldType.NAME,
+                "id1",
+                "test_previous_name_before_update");
 
         BluetoothPbapUtils.updateSecondaryVersionCounter(mContext, null);
 
         assertThat(BluetoothPbapUtils.sSecondaryVersionCounter).isEqualTo(1);
+    }
+
+    @Test
+    public void fetchPbapParams_equals_savePbapParams() {
+        long primaryVersionCounter = 1;
+        long secondaryVersionCounter = 2;
+        long totalContacts = 3;
+        long totalFields = 4;
+        long totalSvcFields = 5;
+        Context context = InstrumentationRegistry.getInstrumentation().getContext();
+        try {
+            BluetoothPbapUtils.sPrimaryVersionCounter = primaryVersionCounter;
+            BluetoothPbapUtils.sSecondaryVersionCounter = secondaryVersionCounter;
+            BluetoothPbapUtils.sTotalContacts = totalContacts;
+            BluetoothPbapUtils.sTotalFields = totalFields;
+            BluetoothPbapUtils.sTotalSvcFields = totalSvcFields;
+
+            BluetoothPbapUtils.savePbapParams(context);
+            clearStaticFields();
+            BluetoothPbapUtils.fetchPbapParams(context);
+
+            assertThat(BluetoothPbapUtils.sPrimaryVersionCounter).isEqualTo(primaryVersionCounter);
+            assertThat(BluetoothPbapUtils.sSecondaryVersionCounter)
+                    .isEqualTo(secondaryVersionCounter);
+            assertThat(BluetoothPbapUtils.sTotalContacts).isEqualTo(totalContacts);
+            assertThat(BluetoothPbapUtils.sTotalFields).isEqualTo(totalFields);
+            assertThat(BluetoothPbapUtils.sTotalSvcFields).isEqualTo(totalSvcFields);
+        } finally {
+
+        }
     }
 
     private static void clearStaticFields() {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 The Android Open Source Project
+ * Copyright (C) 2024 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.android.bluetooth.gatt;
 
 import static com.google.common.truth.Truth.assertThat;
 
-import static org.mockito.Mockito.anyInt;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
@@ -26,23 +26,21 @@ import static org.mockito.Mockito.verify;
 import android.bluetooth.le.AdvertiseData;
 import android.bluetooth.le.AdvertisingSetParameters;
 import android.bluetooth.le.PeriodicAdvertisingParameters;
+import android.content.AttributionSource;
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Binder;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.SmallTest;
-import androidx.test.runner.AndroidJUnit4;
 
-import com.android.bluetooth.TestUtils;
-import com.android.bluetooth.btservice.AdapterService;
+import com.android.tests.bluetooth.MockitoRule;
 
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
 /** Test cases for {@link AdvertiserMap}. */
 @SmallTest
@@ -50,22 +48,16 @@ import org.mockito.junit.MockitoRule;
 public class AdvertiserMapTest {
     private static final String APP_NAME = "com.android.what.a.name";
 
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
 
-    @Mock private AdapterService mAdapterService;
+    @Mock private Context mContext;
     @Mock private PackageManager mMockPackageManager;
+    @Mock private AttributionSource mAttributionSource;
 
     @Before
     public void setUp() throws Exception {
-        TestUtils.setAdapterService(mAdapterService);
-
-        doReturn(mMockPackageManager).when(mAdapterService).getPackageManager();
+        doReturn(mMockPackageManager).when(mContext).getPackageManager();
         doReturn(APP_NAME).when(mMockPackageManager).getNameForUid(anyInt());
-    }
-
-    @After
-    public void tearDown() throws Exception {
-        TestUtils.clearAdapterService(mAdapterService);
     }
 
     @Test
@@ -73,7 +65,7 @@ public class AdvertiserMapTest {
         AdvertiserMap advertiserMap = new AdvertiserMap();
 
         int id = 12345;
-        advertiserMap.addAppAdvertiseStats(id, mAdapterService);
+        advertiserMap.addAppAdvertiseStats(id, mContext, mAttributionSource);
 
         AppAdvertiseStats stats = advertiserMap.getAppAdvertiseStatsById(id);
         assertThat(stats.mAppName).isEqualTo(APP_NAME);
@@ -84,7 +76,7 @@ public class AdvertiserMapTest {
         AdvertiserMap advertiserMap = new AdvertiserMap();
 
         int id = 12345;
-        advertiserMap.addAppAdvertiseStats(id, mAdapterService);
+        advertiserMap.addAppAdvertiseStats(id, mContext, mAttributionSource);
 
         AppAdvertiseStats stats = advertiserMap.getAppAdvertiseStatsById(id);
         assertThat(stats.mAppName).isEqualTo(APP_NAME);
@@ -98,7 +90,9 @@ public class AdvertiserMapTest {
         AdvertiserMap advertiserMap = new AdvertiserMap();
         int id = 12345;
         AppAdvertiseStats appAdvertiseStats =
-                spy(new AppAdvertiseStats(Binder.getCallingUid(), id, APP_NAME));
+                spy(
+                        new AppAdvertiseStats(
+                                Binder.getCallingUid(), id, APP_NAME, mAttributionSource));
         advertiserMap.addAppAdvertiseStats(id, appAdvertiseStats);
 
         int duration = 60;
@@ -155,11 +149,11 @@ public class AdvertiserMapTest {
         AdvertiserMap advertiserMap = new AdvertiserMap();
 
         int id = 12345;
-        advertiserMap.addAppAdvertiseStats(id, mAdapterService);
+        advertiserMap.addAppAdvertiseStats(id, mContext, mAttributionSource);
         advertiserMap.recordAdvertiseStop(id);
 
         int idSecond = 54321;
-        advertiserMap.addAppAdvertiseStats(idSecond, mAdapterService);
+        advertiserMap.addAppAdvertiseStats(idSecond, mContext, mAttributionSource);
         advertiserMap.dump(sb);
     }
 }

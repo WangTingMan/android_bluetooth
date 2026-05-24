@@ -24,11 +24,12 @@
 #ifndef SMP_API_H
 #define SMP_API_H
 
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/ble_address_with_type.h>
+
 #include <cstdint>
 
 #include "smp_api_types.h"
-#include "types/ble_address_with_type.h"
-#include "types/raw_address.h"
 
 /*****************************************************************************
  *  External Function Declarations
@@ -150,8 +151,7 @@ void SMP_ConfirmReply(const RawAddress& bd_addr, uint8_t res);
  *                  p_data      - SM Randomizer  C.
  *
  ******************************************************************************/
-void SMP_OobDataReply(const RawAddress& bd_addr, tSMP_STATUS res, uint8_t len,
-                      uint8_t* p_data);
+void SMP_OobDataReply(const RawAddress& bd_addr, tSMP_STATUS res, uint8_t len, uint8_t* p_data);
 
 /*******************************************************************************
  *
@@ -201,11 +201,22 @@ void SMP_ClearLocScOobData();
  ******************************************************************************/
 void SMP_SirkConfirmDeviceReply(const RawAddress& bd_addr, uint8_t res);
 
+/*******************************************************************************
+ *
+ * Function         SMP_SirkConfirmDeviceReply
+ *
+ * Description      Returns the key size of peinding LE pairing
+ *
+ ******************************************************************************/
+uint16_t SMP_GetPendingPairingKeySize();
+
 // Called when LTK request is received from controller.
 bool smp_proc_ltk_request(const RawAddress& bda);
 
 // Called when link is encrypted and notified to peripheral device.
 // Proceed to send LTK, DIV and ER to central if bonding the devices.
 void smp_link_encrypted(const RawAddress& bda, uint8_t encr_enable);
+
+void smp_cancel_start_encryption_attempt(const RawAddress& bda);
 
 #endif /* SMP_API_H */

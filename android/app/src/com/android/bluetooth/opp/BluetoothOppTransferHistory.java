@@ -35,9 +35,9 @@ package com.android.bluetooth.opp;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.BluetoothProtoEnums;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.database.Cursor;
 import android.database.StaleDataException;
@@ -54,11 +54,14 @@ import android.widget.AdapterView;
 import android.widget.AdapterView.OnItemClickListener;
 import android.widget.ListView;
 
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+
 import com.android.bluetooth.BluetoothMethodProxy;
 import com.android.bluetooth.BluetoothStatsLog;
 import com.android.bluetooth.R;
 import com.android.bluetooth.content_profiles.ContentProfileErrorReportUtils;
-import com.android.bluetooth.flags.Flags;
 
 /**
  * View showing the user's finished bluetooth opp transfers that the user does not confirm.
@@ -67,7 +70,7 @@ import com.android.bluetooth.flags.Flags;
 // Next tag value for ContentProfileErrorReportUtils.report(): 2
 public class BluetoothOppTransferHistory extends Activity
         implements View.OnCreateContextMenuListener, OnItemClickListener {
-    private static final String TAG = "BluetoothOppTransferHistory";
+    private static final String TAG = BluetoothOppTransferHistory.class.getSimpleName();
 
     private ListView mListView;
 
@@ -87,22 +90,26 @@ public class BluetoothOppTransferHistory extends Activity
     @Override
     public void onCreate(Bundle icicle) {
         super.onCreate(icicle);
+
+        ViewCompat.setOnApplyWindowInsetsListener(
+                findViewById(android.R.id.content),
+                (v, windowInsets) -> {
+                    Insets insets =
+                            windowInsets.getInsets(
+                                    WindowInsetsCompat.Type.systemBars()
+                                            | WindowInsetsCompat.Type.ime()
+                                            | WindowInsetsCompat.Type.displayCutout());
+                    v.setPadding(insets.left, insets.top, insets.right, insets.bottom);
+                    return WindowInsetsCompat.CONSUMED;
+                });
         setContentView(R.layout.bluetooth_transfers_page);
         mListView = (ListView) findViewById(R.id.list);
         mListView.setEmptyView(findViewById(R.id.empty));
 
+        boolean isOutbound =
+                Constants.ACTION_OPEN_OUTBOUND_TRANSFER.equals(getIntent().getAction());
+
         String direction;
-
-        boolean isOutbound = false;
-
-        if (Flags.oppStartActivityDirectlyFromNotification()) {
-            String action = getIntent().getAction();
-            isOutbound = Constants.ACTION_OPEN_OUTBOUND_TRANSFER.equals(action);
-        } else {
-            int dir = getIntent().getIntExtra(Constants.EXTRA_DIRECTION, 0);
-            isOutbound = (dir == BluetoothShare.DIRECTION_OUTBOUND);
-        }
-
         if (isOutbound) {
             setTitle(getText(R.string.outbound_history_title));
             direction =
@@ -189,10 +196,9 @@ public class BluetoothOppTransferHistory extends Activity
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.transfer_menu_clear_all:
-                promptClearList();
-                return true;
+        if (item.getItemId() == R.id.transfer_menu_clear_all) {
+            promptClearList();
+            return true;
         }
         return false;
     }
@@ -204,18 +210,18 @@ public class BluetoothOppTransferHistory extends Activity
             return true;
         }
         mTransferCursor.moveToPosition(mContextMenuPosition);
-        switch (item.getItemId()) {
-            case R.id.transfer_menu_open:
-                openCompleteTransfer();
-                updateNotificationWhenBtDisabled();
-                return true;
+        if (item.getItemId() == R.id.transfer_menu_open) {
+            openCompleteTransfer();
+            updateNotificationWhenBtDisabled();
+            return true;
+        }
 
-            case R.id.transfer_menu_clear:
-                int sessionId = mTransferCursor.getInt(mIdColumnId);
-                Uri contentUri = Uri.parse(BluetoothShare.CONTENT_URI + "/" + sessionId);
-                BluetoothOppUtility.updateVisibilityToHidden(this, contentUri);
-                updateNotificationWhenBtDisabled();
-                return true;
+        if (item.getItemId() == R.id.transfer_menu_clear) {
+            int sessionId = mTransferCursor.getInt(mIdColumnId);
+            Uri contentUri = Uri.parse(BluetoothShare.CONTENT_URI + "/" + sessionId);
+            BluetoothOppUtility.updateVisibilityToHidden(this, contentUri);
+            updateNotificationWhenBtDisabled();
+            return true;
         }
         return false;
     }
@@ -253,13 +259,7 @@ public class BluetoothOppTransferHistory extends Activity
                 .setTitle(R.string.transfer_clear_dlg_title)
                 .setMessage(R.string.transfer_clear_dlg_msg)
                 .setPositiveButton(
-                        android.R.string.ok,
-                        new DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(DialogInterface dialog, int whichButton) {
-                                clearAllDownloads();
-                            }
-                        })
+                        android.R.string.ok, (dialog, whichButton) -> clearAllDownloads())
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
@@ -307,7 +307,7 @@ public class BluetoothOppTransferHistory extends Activity
 
     /*
      * (non-Javadoc)
-     * @see
+     * see
      * android.widget.AdapterView.OnItemClickListener#onItemClick(android.widget
      * .AdapterView, android.view.View, int, long)
      */
@@ -353,7 +353,7 @@ public class BluetoothOppTransferHistory extends Activity
         } else {
             Intent in = new Intent(this, BluetoothOppTransferActivity.class);
             in.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            in.setDataAndNormalize(contentUri);
+            in.setData(contentUri.normalizeScheme());
             this.startActivity(in);
         }
     }
@@ -363,7 +363,7 @@ public class BluetoothOppTransferHistory extends Activity
      * so need update manually.
      */
     private void updateNotificationWhenBtDisabled() {
-        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        BluetoothAdapter adapter = getSystemService(BluetoothManager.class).getAdapter();
         if (!adapter.isEnabled()) {
             Log.v(TAG, "Bluetooth is not enabled, update notification manually.");
             mNotifier.updateNotification();

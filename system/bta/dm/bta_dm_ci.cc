@@ -21,13 +21,15 @@
  *  This is the API implementation file for the BTA device manager.
  *
  ******************************************************************************/
+#include "bta/include/bta_dm_ci.h"
+
 #include <base/functional/bind.h>
+#include <bluetooth/types/address.h>
 
 #include <memory>
 
 #include "bta/dm/bta_dm_sec_int.h"
 #include "stack/include/main_thread.h"
-#include "types/raw_address.h"
 
 /*******************************************************************************
  *
@@ -40,17 +42,13 @@
  * Returns          void
  *
  ******************************************************************************/
-void bta_dm_ci_rmt_oob(bool accept, const RawAddress& bd_addr, const Octet16& c,
-                       const Octet16& r) {
-  std::unique_ptr<tBTA_DM_CI_RMT_OOB> msg =
-      std::make_unique<tBTA_DM_CI_RMT_OOB>();
+void bta_dm_ci_rmt_oob(bool accept, const RawAddress& bd_addr, const Octet16& c, const Octet16& r) {
+  std::unique_ptr<tBTA_DM_CI_RMT_OOB> msg = std::make_unique<tBTA_DM_CI_RMT_OOB>();
 
   msg->bd_addr = bd_addr;
   msg->accept = accept;
   msg->c = c;
   msg->r = r;
 
-  do_in_main_thread(FROM_HERE,
-                    base::Bind(bta_dm_ci_rmt_oob_act, base::Passed(&msg)));
+  do_in_main_thread(base::Bind(bta_dm_ci_rmt_oob_act, base::Passed(&msg)));
 }
-

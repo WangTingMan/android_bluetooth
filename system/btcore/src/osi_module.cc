@@ -21,17 +21,14 @@
 #include "btcore/include/osi_module.h"
 
 #include "btcore/include/module.h"
-#include "os/log.h"
 #include "osi/include/alarm.h"
 #include "osi/include/future.h"
 #include "osi/include/osi.h"
 #include "osi/include/wakelock.h"
 
-future_t* osi_init(void) {
-  return future_new_immediate(FUTURE_SUCCESS);
-}
+static future_t* osi_init(void) { return future_new_immediate(FUTURE_SUCCESS); }
 
-future_t* osi_clean_up(void) {
+static future_t* osi_clean_up(void) {
   alarm_cleanup();
   wakelock_cleanup();
   return future_new_immediate(FUTURE_SUCCESS);

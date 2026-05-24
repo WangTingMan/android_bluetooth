@@ -1,79 +1,11 @@
 package: "com.android.bluetooth.flags"
-container: "com.android.btservices"
+container: "com.android.bt"
 
 flag {
-    name: "auto_connect_on_multiple_hfp_when_no_a2dp_device"
+    name: "sco_managed_by_audio_remove_hfp_hal"
     namespace: "bluetooth"
-    description: "Auto connect to hfp device is there is no a2dp device to connect to"
-    bug: "305867804"
-}
-
-flag {
-    name: "hfp_codec_aptx_voice"
-    namespace: "bluetooth"
-    description: "AptX Voice codec support for HFP calls"
-    bug: "308497929"
-}
-
-flag {
-    name: "is_sco_managed_by_audio"
-    namespace: "bluetooth"
-    description: "start and stop of the SCO is managed by Audio instead of Bluetooth"
-    bug: "315234036"
-}
-
-flag {
-    name: "retry_esco_with_zero_retransmission_effort"
-    namespace: "bluetooth"
-    description: "retry eSCO connection based on retransmission_effort"
-    bug: "316498257"
-}
-
-flag {
-    name: "pretend_network_service"
-    namespace: "bluetooth"
-    description: "during ongoing call, pretend network service in +CIND when network is unavailable"
-    bug: "317307596"
-}
-
-flag {
-    name: "bta_ag_cmd_brsf_allow_uint32"
-    namespace: "bluetooth"
-    description: "Allow and ignore the RFU bits set to 0b1 rather than responding ERROR"
-    bug: "331129986"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-}
-
-flag {
-    name: "reset_after_collision"
-    namespace: "bluetooth"
-    description: "Reset p_scb when collision occured and rfcomm is not opened yet"
-    bug: "332324315"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-}
-
-flag {
-    name: "sink_audio_policy_handover"
-    namespace: "bluetooth"
-    description: "If sink audio policy makes device active for call, then resume past active device"
-    bug: "333562819"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-}
-
-flag {
-    name: "keep_hfp_active_during_leaudio_handover"
-    namespace: "bluetooth"
-    description: "During LE audio to HFP handover, keep HFP active throughout SCO retry"
-    bug: "339528451"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
+    description: "Deprecate the btm_sco_hfp_hal and migrate to IBluetoothAudio"
+    bug: "417621867"
 }
 
 flag {
@@ -81,26 +13,6 @@ flag {
     namespace: "bluetooth"
     description: "Fix multiple issues in CVSD fallback logics, which are blocking PTS HFP Qualification 1.9"
     bug: "332650199"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-}
-
-flag {
-    name: "reset_ag_state_on_collision"
-    namespace: "bluetooth"
-    description: "Reset AG instance state as well when outgoing connection attempt is discarded on collision detection"
-    bug: "341376713"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-}
-
-flag {
-    name: "headset_client_am_hf_volume_symmetric"
-    namespace: "bluetooth"
-    description: "Fix AM/HF volume conversion to be symmetric"
-    bug: "340482648"
     metadata {
         purpose: PURPOSE_BUGFIX
     }
@@ -117,20 +29,198 @@ flag {
 }
 
 flag {
-    name: "ignore_notify_when_already_connected"
+    name: "sco_state_machine_cleanup"
     namespace: "bluetooth"
-    description: "Flag to ignore connect state notification from Native to Java layer when already connected"
-    bug: "346679106"
+    description: "Cleanup SCO SM if headset disconnected during opening."
+    bug: "391090332"
     metadata {
         purpose: PURPOSE_BUGFIX
     }
 }
 
 flag {
-    name: "update_sco_state_correctly_on_rfcomm_disconnect_during_codec_nego"
+    name: "non_conference_call_hangup"
     namespace: "bluetooth"
-    description: "Flag to set the SCO state correctly on RFCOMM disconnection during Codec Negotiation"
-    bug: "351778741"
+    description: "Active call hangup when conference call is in holding state "
+    bug: "388159341"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "check_peer_hf_indicator"
+    namespace: "bluetooth"
+    description: "Flag to check the peer HF indicator before setting feature mask"
+    bug: "383933502"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "enable_battery_level_update_only_through_hf_indicator"
+    namespace: "bluetooth"
+    description: "Flag to ignore vendor specific battery level update when HF indicator support is enabled."
+    bug: "385870861"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "qc_prioritize_lc3_codec"
+    namespace: "bluetooth"
+    description: "QC patch to prioritize lc3 codec over aptx"
+    bug: "409604300"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "qc_send_error_at_bcc_ibr_disabled"
+    namespace: "bluetooth"
+    description: "QC patch to send an error when HF sends AT+BCC when IBR is disabled"
+    bug: "409845355"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "fix_hfp_rfcomm_collision_state_machine_error"
+    namespace: "bluetooth"
+    description: "fix hfp state machine error when both side initiate rfcomm connection"
+    bug: "409798631"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "qc_aptx_codec_negotiation"
+    namespace: "bluetooth"
+    description: "QC patch to not do codec negotiation with aptx"
+    bug: "410921017"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "voice_recognition_fixes"
+    namespace: "bluetooth"
+    description: "Fix issues with starting/stopping voice recognition"
+    bug: "415376528"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "support_zoomed_in_icon_metadata"
+    namespace: "bluetooth"
+    is_exported: true
+    description: "Add api support for a zoomed in icon metadata"
+    bug: "417245933"
+}
+
+flag {
+    name: "send_ok_clcc_before_slc"
+    namespace: "bluetooth"
+    description: "Send clcc response ok before slc is completed to avoid remote issues"
+    bug: "421323693"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "merge_call_with_held_conference"
+    namespace: "bluetooth"
+    description: "Merge the active call with held conference call"
+    bug: "397374535"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "hold_conference_call_from_remote"
+    namespace: "bluetooth"
+    description: "hold conference call from remote"
+    bug: "422315662"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "send_ok_on_no_action_on_chld"
+    namespace: "bluetooth"
+    description: "Send OK on no action perfomed on CHLD instead of ERROR"
+    bug: "424860125"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "hfp_sco_state_reset_when_profile_restart"
+    namespace: "bluetooth"
+    description: "Reset sco state when BT profile restart without BT stack shutdown"
+    bug: "424125580"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "microphone_mute_status_sync"
+    namespace: "bluetooth"
+    description: "Synchronize microphone Mute status of phone with peripheral"
+    bug: "391258154"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "sco_state_machine_update_in_codec_state"
+    namespace: "bluetooth"
+    description: "sco state machine update when other HFP device disconnected during codec negotiation"
+    bug: "416436313"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "mode_change_before_sco_unpark"
+    namespace: "bluetooth"
+    description: "Do mode change before SCO unpark"
+    bug: "419189913"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "end_outgoing_call_on_chld"
+    namespace: "bluetooth"
+    description: "End outgoing call on CHLD"
+    bug: "426374659"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "check_call_state_atd"
+    namespace: "bluetooth"
+    description: "End outgoing call on CHLD"
+    bug: "441983109"
     metadata {
         purpose: PURPOSE_BUGFIX
     }

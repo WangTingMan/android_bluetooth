@@ -30,6 +30,7 @@ namespace os {
 
 namespace {
 std::mutex parameter_mutex;
+std::string hci_instance_name;
 std::string config_file_path;
 std::string snoop_log_file_path;
 std::string snooz_log_file_path;
@@ -57,11 +58,6 @@ std::string ParameterProvider::ConfigFilePath() {
   return "D:/bluetooth/bt_config.conf";
 }
 
-void ParameterProvider::OverrideConfigFilePath(const std::string& path) {
-  std::lock_guard<std::mutex> lock(parameter_mutex);
-  config_file_path = path;
-}
-
 std::string ParameterProvider::SnoopLogFilePath() {
   {
     std::lock_guard<std::mutex> lock(parameter_mutex);
@@ -79,11 +75,6 @@ std::string ParameterProvider::SnoopLogFilePath() {
 #endif
   }
   return "D:/bluetooth/btsnoop_hci.log";
-}
-
-void ParameterProvider::OverrideSnoopLogFilePath(const std::string& path) {
-  std::lock_guard<std::mutex> lock(parameter_mutex);
-  snoop_log_file_path = path;
 }
 
 // Return the path to the default snooz log file location
@@ -104,11 +95,6 @@ std::string ParameterProvider::SnoozLogFilePath() {
 #endif
   }
   return "D:/bluetooth/btsnooz_hci.log";
-}
-
-void ParameterProvider::OverrideSnoozLogFilePath(const std::string& path) {
-  std::lock_guard<std::mutex> lock(parameter_mutex);
-  snooz_log_file_path = path;
 }
 
 // Android doesn't have a need for the sysprops module
@@ -144,6 +130,16 @@ int ParameterProvider::GetCommonCriteriaConfigCompareResult() {
 void ParameterProvider::SetCommonCriteriaConfigCompareResult(int result) {
   std::lock_guard<std::mutex> lock(parameter_mutex);
   common_criteria_config_compare_result = result;
+}
+
+void ParameterProvider::SetHciInstanceName( const std::string& name ) {
+  std::lock_guard<std::mutex> lock( parameter_mutex );
+  hci_instance_name = name;
+}
+
+std::string ParameterProvider::GetHciInstanceName() {
+  std::lock_guard<std::mutex> lock( parameter_mutex );
+  return hci_instance_name;
 }
 
 }  // namespace os

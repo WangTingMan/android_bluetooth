@@ -16,6 +16,9 @@
 
 package com.android.bluetooth.mapclient;
 
+import static java.util.Objects.requireNonNull;
+
+import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
 import android.bluetooth.SdpMasRecord;
@@ -27,6 +30,7 @@ import android.util.Log;
 
 import com.android.bluetooth.BluetoothObexTransport;
 import com.android.bluetooth.ObexAppParameters;
+import com.android.bluetooth.btservice.AdapterService;
 import com.android.internal.util.StateMachine;
 import com.android.obex.ClientSession;
 import com.android.obex.HeaderSet;
@@ -78,21 +82,25 @@ public class MasClient {
                     | MAP_FEATURE_EXTENDED_EVENT_REPORT_1_1;
 
     private final StateMachine mCallback;
-    private Handler mHandler;
+    private final Handler mHandler;
+    private final BluetoothDevice mDevice;
+    private final AdapterService mAdapterService;
+    private final HandlerThread mThread;
+
+    private ClientSession mSession;
     private BluetoothSocket mSocket;
     private BluetoothObexTransport mTransport;
-    private BluetoothDevice mRemoteDevice;
-    private ClientSession mSession;
-    private HandlerThread mThread;
     private boolean mConnected = false;
+
     SdpMasRecord mSdpMasRecord;
 
     public MasClient(
-            BluetoothDevice remoteDevice, StateMachine callback, SdpMasRecord sdpMasRecord) {
-        if (remoteDevice == null) {
-            throw new NullPointerException("Obex transport is null");
-        }
-        mRemoteDevice = remoteDevice;
+            AdapterService adapterService,
+            BluetoothDevice device,
+            StateMachine callback,
+            SdpMasRecord sdpMasRecord) {
+        mAdapterService = requireNonNull(adapterService);
+        mDevice = requireNonNull(device);
         mCallback = callback;
         mSdpMasRecord = sdpMasRecord;
         mThread = new HandlerThread("Client");
@@ -105,23 +113,24 @@ public class MasClient {
         mHandler.obtainMessage(CONNECT).sendToTarget();
     }
 
+    @SuppressLint("AndroidFrameworkRequiresPermission") // TODO: b/350563786
     private void connect() {
         try {
             int l2capSocket = mSdpMasRecord.getL2capPsm();
 
             if (l2capSocket != L2CAP_INVALID_PSM) {
                 Log.d(TAG, "Connecting to OBEX on L2CAP channel " + l2capSocket);
-                mSocket = mRemoteDevice.createL2capSocket(l2capSocket);
+                mSocket = mDevice.createL2capSocket(l2capSocket);
             } else {
                 Log.d(
                         TAG,
-                        "Connecting to OBEX on RFCOM channel "
+                        "Connecting to OBEX on RFCOMM channel "
                                 + mSdpMasRecord.getRfcommCannelNumber());
-                mSocket = mRemoteDevice.createRfcommSocket(mSdpMasRecord.getRfcommCannelNumber());
+                mSocket = mDevice.createRfcommSocket(mSdpMasRecord.getRfcommCannelNumber());
             }
-            Log.d(TAG, mRemoteDevice.toString() + "Socket: " + mSocket.toString());
+            Log.d(TAG, mDevice.toString() + " Socket: " + mSocket.toString());
             mSocket.connect();
-            mTransport = new BluetoothObexTransport(mSocket);
+            mTransport = new BluetoothObexTransport(mAdapterService, mSocket);
 
             mSession = new ClientSession(mTransport);
             HeaderSet headerset = new HeaderSet();
@@ -217,7 +226,7 @@ public class MasClient {
     }
 
     private static class MasClientHandler extends Handler {
-        WeakReference<MasClient> mInst;
+        final WeakReference<MasClient> mInst;
 
         MasClientHandler(Looper looper, MasClient inst) {
             super(looper);
@@ -228,23 +237,22 @@ public class MasClient {
         public void handleMessage(Message msg) {
             MasClient inst = mInst.get();
             switch (msg.what) {
-                case CONNECT:
+                case CONNECT -> {
                     if (!inst.mConnected) {
                         inst.connect();
                     }
-                    break;
-
-                case DISCONNECT:
+                }
+                case DISCONNECT -> {
                     if (inst.mConnected) {
                         inst.disconnect();
                     }
-                    break;
-
-                case REQUEST:
+                }
+                case REQUEST -> {
                     if (inst.mConnected) {
                         inst.executeRequest((Request) msg.obj);
                     }
-                    break;
+                }
+                default -> {} // Nothing to do
             }
         }
     }

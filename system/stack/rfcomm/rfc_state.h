@@ -20,9 +20,7 @@
 
 #include "macros.h"
 
-/*
- * Define states and events for the RFC multiplexer state machine
- */
+// Multiplexer states
 typedef enum : uint16_t {
   RFC_MX_STATE_IDLE = 0,
   RFC_MX_STATE_WAIT_CONN_CNF = 1,
@@ -33,9 +31,7 @@ typedef enum : uint16_t {
   RFC_MX_STATE_DISC_WAIT_UA = 6,
 } tRFC_MX_STATE;
 
-/*
- * Define port states
- */
+// Port states
 typedef enum : uint8_t {
   RFC_STATE_CLOSED = 0,
   RFC_STATE_SABME_WAIT_UA = 1,
@@ -72,10 +68,10 @@ inline std::string rfcomm_port_state_text(const tRFC_PORT_STATE& state) {
   }
 }
 
-namespace fmt {
+namespace std {
 template <>
 struct formatter<tRFC_MX_STATE> : enum_formatter<tRFC_MX_STATE> {};
 template <>
 struct formatter<tRFC_PORT_STATE> : enum_formatter<tRFC_PORT_STATE> {};
 
-}  // namespace fmt
+}  // namespace std

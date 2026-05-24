@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,12 +23,9 @@ namespace bluetooth {
 namespace hci {
 
 constexpr hci::SubeventCode LeIsoEvents[] = {
-    hci::SubeventCode::CIS_ESTABLISHED,
-    hci::SubeventCode::CIS_REQUEST,
-    hci::SubeventCode::CREATE_BIG_COMPLETE,
-    hci::SubeventCode::TERMINATE_BIG_COMPLETE,
-    hci::SubeventCode::BIG_SYNC_ESTABLISHED,
-    hci::SubeventCode::BIG_SYNC_LOST,
+        hci::SubeventCode::CIS_ESTABLISHED,      hci::SubeventCode::CIS_REQUEST,
+        hci::SubeventCode::CREATE_BIG_COMPLETE,  hci::SubeventCode::TERMINATE_BIG_COMPLETE,
+        hci::SubeventCode::BIG_SYNC_ESTABLISHED, hci::SubeventCode::BIG_SYNC_LOST,
 };
 
 typedef CommandInterface<LeIsoCommandBuilder> LeIsoInterface;

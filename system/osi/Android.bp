@@ -29,7 +29,6 @@ filegroup {
 cc_library_static {
     name: "libosi",
     visibility: [
-        "//packages/apps/Test/connectivity/sl4n",
         "//packages/modules/Bluetooth:__subpackages__",
     ],
     export_include_dirs: [
@@ -41,9 +40,6 @@ cc_library_static {
     defaults: [
         "fluoride_defaults",
         "fluoride_osi_defaults",
-    ],
-    whole_static_libs: [
-        "bluetooth_flags_c_lib",
     ],
     // TODO(mcchou): Remove socket_utils sources after platform specific
     // dependencies are abstracted.
@@ -59,13 +55,11 @@ cc_library_static {
         "src/mutex.cc",
         "src/properties.cc",
         "src/reactor.cc",
-        "src/ringbuffer.cc",
         "src/socket.cc",
         "src/socket_utils/socket_local_client.cc",
         "src/socket_utils/socket_local_server.cc",
         "src/stack_power_telemetry.cc",
         "src/thread.cc",
-        "src/thread_scheduler.cc",
         "src/wakelock.cc",
 
         // internal source that should not be used outside of libosi
@@ -85,16 +79,16 @@ cc_library_static {
     cflags: [
         "-DLIB_OSI_INTERNAL",
     ],
-    min_sdk_version: "Tiramisu",
-    apex_available: [
-        "com.android.btservices",
-    ],
+    min_sdk_version: "36",
+    apex_available: ["com.android.bt"],
     header_libs: ["libbluetooth_headers"],
     static_libs: [
+        "bluetooth_flags_c_lib",
         "libaconfig_storage_read_api_cc",
+        "libbluetooth_hci_pdl",
         "libbluetooth_log",
-        "libbt-platform-protos-lite",
-        "libbt_shim_bridge",
+        "libbluetooth_types",
+        "libcom.android.sysprop.bluetooth.wrapped",
         "server_configurable_flags",
     ],
 }
@@ -107,6 +101,9 @@ cc_test {
         "fluoride_osi_defaults",
         "mts_defaults",
     ],
+    cflags: [
+        "-DLIB_OSI_INTERNAL",
+    ],
     host_supported: true,
     srcs: [
         "test/alarm_test.cc",
@@ -118,7 +115,6 @@ cc_test {
         "test/list_test.cc",
         "test/properties_test.cc",
         "test/reactor_test.cc",
-        "test/ringbuffer_test.cc",
         "test/stack_power_telemetry_test.cc",
         "test/thread_test.cc",
         "test/wakelock_test.cc", // test internal sources only used inside the libosi
@@ -138,19 +134,18 @@ cc_test {
         "test",
     ],
     static_libs: [
-        "libbluetooth-types",
+        "bluetooth_flags_c_lib_for_test",
         "libbluetooth_crypto_toolbox",
         "libbluetooth_gd",
         "libbluetooth_log",
+        "libbluetooth_types",
         "libbt-common",
-        "libbt_shim_bridge",
-        "libbt_shim_ffi",
         "libchrome",
+        "libcom.android.sysprop.bluetooth.wrapped",
         "libevent",
         "libgmock",
         "libosi",
         "libprotobuf-cpp-lite",
-        "libstatslog_bt",
     ],
     target: {
         android: {
@@ -159,10 +154,6 @@ cc_test {
             ],
         },
     },
-    cflags: [
-        "-DLIB_OSI_INTERNAL",
-        "-Wno-unused-parameter",
-    ],
     sanitize: {
         address: true,
         cfi: false,

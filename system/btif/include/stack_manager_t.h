@@ -20,6 +20,8 @@
 
 #include <stdbool.h>
 
+#include <future>
+
 #include "core_callbacks.h"
 #include "osi/include/future.h"
 
@@ -28,12 +30,10 @@ using ProfileStopCallback = void();
 
 typedef struct {
   void (*init_stack)(bluetooth::core::CoreInterface*);
-  void (*start_up_stack_async)(bluetooth::core::CoreInterface*,
-                               ProfileStartCallback, ProfileStopCallback);
+  void (*start_up_stack_async)(bluetooth::core::CoreInterface*, ProfileStartCallback,
+                               ProfileStopCallback);
   void (*shut_down_stack_async)(ProfileStopCallback);
   void (*clean_up_stack)(ProfileStopCallback);
-  void (*start_up_rust_module_async)();
-  void (*shut_down_rust_module_async)();
 
   bool (*get_stack_is_running)(void);
 } stack_manager_t;
@@ -45,3 +45,7 @@ const stack_manager_t* stack_manager_get_interface();
 future_t* stack_manager_get_hack_future();
 
 bluetooth::core::CoreInterface* GetInterfaceToProfiles();
+
+namespace bluetooth::legacy::testing {
+void set_interface_to_profiles(bluetooth::core::CoreInterface* interfaceToProfiles);
+}  // namespace bluetooth::legacy::testing

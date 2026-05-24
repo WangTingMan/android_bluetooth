@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright 2025 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 
 package com.android.bluetooth.telephony;
+
+import static com.android.bluetooth.TestUtils.mockGetSystemService;
 
 import static com.google.common.truth.Truth.assertThat;
 
@@ -33,47 +35,45 @@ import android.telecom.PhoneAccount;
 import android.telecom.PhoneAccountHandle;
 import android.telecom.TelecomManager;
 
-import androidx.test.core.app.ApplicationProvider;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.SmallTest;
-import androidx.test.runner.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
 
-import com.android.bluetooth.TestUtils;
+import com.android.tests.bluetooth.MockitoRule;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
+import org.mockito.Mock;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
 
+/** Test cases for {@link CallInfo}. */
 @SmallTest
 @RunWith(AndroidJUnit4.class)
 public class CallInfoTest {
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
+
+    @Mock private TelecomManager mTelecomManager;
 
     private static final String TEST_ACCOUNT_ADDRESS = "https://foo.com/";
     private static final int TEST_ACCOUNT_INDEX = 0;
-
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
-
-    private TelecomManager mMockTelecomManager;
 
     private BluetoothInCallService mBluetoothInCallService;
     private BluetoothInCallService.CallInfo mMockCallInfo;
 
     @Before
     public void setUp() throws Exception {
-        Context spiedContext = spy(new ContextWrapper(ApplicationProvider.getApplicationContext()));
-        mMockTelecomManager =
-                TestUtils.mockGetSystemService(
-                        spiedContext, Context.TELECOM_SERVICE, TelecomManager.class);
+        final var context = InstrumentationRegistry.getInstrumentation().getContext();
+        Context spiedContext = spy(new ContextWrapper(context));
+        mockGetSystemService(spiedContext, TelecomManager.class, mTelecomManager);
 
-        mBluetoothInCallService = new BluetoothInCallService(spiedContext, null, null, null);
+        mBluetoothInCallService = new BluetoothInCallService(spiedContext, null);
         mBluetoothInCallService.onCreate();
 
         mMockCallInfo = spy(mBluetoothInCallService.new CallInfo());
@@ -278,11 +278,11 @@ public class CallInfoTest {
         List<PhoneAccountHandle> handles = new ArrayList<>();
         PhoneAccountHandle testHandle = makeQuickAccountHandle(testId);
         handles.add(testHandle);
-        when(mMockTelecomManager.getPhoneAccountsSupportingScheme(PhoneAccount.SCHEME_TEL))
+        when(mTelecomManager.getPhoneAccountsSupportingScheme(PhoneAccount.SCHEME_TEL))
                 .thenReturn(handles);
 
         PhoneAccount fakePhoneAccount = makeQuickAccount(testId, TEST_ACCOUNT_INDEX);
-        when(mMockTelecomManager.getPhoneAccount(testHandle)).thenReturn(fakePhoneAccount);
+        when(mTelecomManager.getPhoneAccount(testHandle)).thenReturn(fakePhoneAccount);
 
         assertThat(mMockCallInfo.getBestPhoneAccount()).isEqualTo(fakePhoneAccount);
     }
@@ -298,21 +298,20 @@ public class CallInfoTest {
                 makeQuickConnectionServiceComponentName(), id, Process.myUserHandle());
     }
 
-    private PhoneAccount.Builder makeQuickAccountBuilder(String id, int idx) {
+    private static PhoneAccount.Builder makeQuickAccountBuilder(String id, int idx) {
         return new PhoneAccount.Builder(makeQuickAccountHandle(id), "label" + idx);
     }
 
-    private PhoneAccount makeQuickAccount(String id, int idx) {
+    private static PhoneAccount makeQuickAccount(String id, int idx) {
         return makeQuickAccountBuilder(id, idx)
                 .setAddress(Uri.parse(TEST_ACCOUNT_ADDRESS + idx))
                 .setSubscriptionAddress(Uri.parse("tel:555-000" + idx))
                 .setCapabilities(idx)
                 .setShortDescription("desc" + idx)
-                .setIsEnabled(true)
                 .build();
     }
 
-    private BluetoothCall getMockCall() {
+    private static BluetoothCall getMockCall() {
         return mock(BluetoothCall.class);
     }
 }

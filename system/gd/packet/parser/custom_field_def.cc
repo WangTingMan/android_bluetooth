@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,8 @@
 
 #include "util.h"
 
-CustomFieldDef::CustomFieldDef(std::string name, std::string include) : TypeDef(name), include_(include) {}
+CustomFieldDef::CustomFieldDef(std::string name, std::string include)
+    : TypeDef(name), include_(include) {}
 
 CustomFieldDef::CustomFieldDef(std::string name, std::string include, int size)
     : TypeDef(name, size), include_(include) {
@@ -35,12 +36,36 @@ PacketField* CustomFieldDef::GetNewField(const std::string& name, ParseLocation 
   }
 }
 
-TypeDef::Type CustomFieldDef::GetDefinitionType() const {
-  return TypeDef::Type::CUSTOM;
-}
+TypeDef::Type CustomFieldDef::GetDefinitionType() const { return TypeDef::Type::CUSTOM; }
 
 void CustomFieldDef::GenInclude(std::ostream& s) const {
   s << "#include \"" << include_ << util::CamelCaseToUnderScore(GetTypeName()) << ".h\"\n";
+
+  // Address benefits from ad-hoc parsing support in order to detach the type
+  // commonly used in the stack from PDL runtime definitions.
+  if (name_ == "Address") {
+    s << R"(
+  namespace bluetooth::packet {
+  namespace {
+    hci::Address extractAddress(Iterator<true>& it) {
+      hci::Address extracted_value{};
+      for (size_t i = 0; i < hci::Address::kLength; i++) {
+        extracted_value.data()[i] = *it;
+        ++it;
+      }
+      return extracted_value;
+    }
+
+    void insertAddress(const hci::Address& value, BitInserter& it) {
+      auto* raw_bytes = value.data();
+      for (size_t i = 0; i < hci::Address::kLength; i++) {
+        it.insert_byte(raw_bytes[i]);
+      }
+    }
+  }
+  }
+)";
+  }
 }
 
 void CustomFieldDef::GenUsing(std::ostream& s) const {
@@ -58,11 +83,19 @@ void CustomFieldDef::GenUsing(std::ostream& s) const {
 }
 
 void CustomFieldDef::GenFixedSizeCustomFieldCheck(std::ostream& s) const {
-  s << "static_assert(std::is_base_of_v<CustomFieldFixedSizeInterface<" << name_ << ">, " << name_ << ">,\n    \"";
-  s << name_ << " is not a valid fixed size custom field type. Please see README for more details.\");\n\n";
+  // Address benefits from ad-hoc parsing support in order to detach the type
+  // commonly used in the stack from PDL runtime definitions.
+  if (name_ == "Address") {
+    return;
+  }
+
+  s << "static_assert(std::is_base_of_v<CustomFieldFixedSizeInterface<" << name_ << ">, " << name_
+    << ">, \"";
+  s << name_
+    << " is not a valid fixed size custom field type. Please see README for more details.\");";
   s << "static_assert(CustomFieldFixedSizeInterface<" << name_ << ">::length() * 8 == " << size_
-    << ",\n    \"CustomFieldFixedSizeInterface<" << name_ << ">::length * 8 should match PDL defined size (in bits) "
-    << size_ << "\");\n\n";
+    << ", \"CustomFieldFixedSizeInterface<" << name_
+    << ">::length * 8 should match PDL defined size (in bits) " << size_ << "\");";
 }
 
 void CustomFieldDef::GenCustomFieldCheck(std::ostream& s, bool little_endian) const {

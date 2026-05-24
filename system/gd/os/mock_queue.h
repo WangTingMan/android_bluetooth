@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 The Android Open Source Project
+ * Copyright (C) 2021 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@
 #include "common/bind.h"
 #include "common/callback.h"
 #include "os/handler.h"
-#include "os/log.h"
 #include "os/queue.h"
 
 namespace bluetooth {
@@ -34,7 +33,7 @@ namespace os {
 
 template <typename T>
 class MockIQueueEnqueue : public IQueueEnqueue<T> {
- public:
+public:
   using EnqueueCallback = common::Callback<std::unique_ptr<T>()>;
 
   virtual void RegisterEnqueue(Handler* handler, EnqueueCallback callback) {
@@ -63,7 +62,7 @@ class MockIQueueEnqueue : public IQueueEnqueue<T> {
 
 template <typename T>
 class MockIQueueDequeue : public IQueueDequeue<T> {
- public:
+public:
   using DequeueCallback = common::Callback<void()>;
 
   virtual void RegisterDequeue(Handler* handler, DequeueCallback callback) {

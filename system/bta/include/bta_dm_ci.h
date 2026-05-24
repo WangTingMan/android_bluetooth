@@ -24,10 +24,11 @@
 #ifndef BTA_DM_CI_H
 #define BTA_DM_CI_H
 
+#include <bluetooth/types/address.h>
+
 #include <cstdint>
 
 #include "stack/include/bt_octets.h"
-#include "types/raw_address.h"
 
 /*****************************************************************************
  *  Function Declarations
@@ -44,8 +45,7 @@
  * Returns          void
  *
  ******************************************************************************/
-void bta_dm_ci_rmt_oob(bool accept, const RawAddress& bd_addr, const Octet16& c,
-                       const Octet16& r);
+void bta_dm_ci_rmt_oob(bool accept, const RawAddress& bd_addr, const Octet16& c, const Octet16& r);
 /*******************************************************************************
  *
  * Function         bta_dm_sco_ci_data_ready

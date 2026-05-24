@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,12 @@
 
 #include <bluetooth/log.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
 #include <cerrno>
 #include <cstring>
-
-#include "os/log.h"
 
 namespace bluetooth {
 namespace os {
@@ -37,6 +36,7 @@ Thread::Thread(const std::string& name, const Priority priority)
     : name_(name), reactor_(), running_thread_(&Thread::run, this, priority) {}
 
 void Thread::run(Priority priority) {
+  pthread_setname_np(pthread_self(), name_.c_str());
   if (priority == Priority::REAL_TIME) {
     struct sched_param rt_params = {.sched_priority = kRealTimeFifoSchedulingPriority};
     auto linux_tid = static_cast<pid_t>(syscall(SYS_gettid));
@@ -49,15 +49,12 @@ void Thread::run(Priority priority) {
   reactor_.Run();
 }
 
-Thread::~Thread() {
-  Stop();
-}
+Thread::~Thread() { Stop(); }
 
 bool Thread::Stop() {
   std::lock_guard<std::mutex> lock(mutex_);
-  log::assert_that(
-      std::this_thread::get_id() != running_thread_.get_id(),
-      "assert failed: std::this_thread::get_id() != running_thread_.get_id()");
+  log::assert_that(std::this_thread::get_id() != running_thread_.get_id(),
+                   "assert failed: std::this_thread::get_id() != running_thread_.get_id()");
 
   if (!running_thread_.joinable()) {
     return false;
@@ -67,21 +64,18 @@ bool Thread::Stop() {
   return true;
 }
 
-bool Thread::IsSameThread() const {
-  return std::this_thread::get_id() == running_thread_.get_id();
+void Thread::Abort() {
+  /* Send SIGABRT, this will cause thread to print it's stacktrace in logcat and crash */
+  pthread_kill(running_thread_.native_handle(), SIGABRT);
 }
 
-Reactor* Thread::GetReactor() const {
-  return &reactor_;
-}
+bool Thread::IsSameThread() const { return std::this_thread::get_id() == running_thread_.get_id(); }
 
-std::string Thread::GetThreadName() const {
-  return name_;
-}
+Reactor* Thread::GetReactor() const { return &reactor_; }
 
-std::string Thread::ToString() const {
-  return "Thread " + name_;
-}
+std::string Thread::GetThreadName() const { return name_; }
+
+std::string Thread::ToString() const { return "Thread " + name_; }
 
 }  // namespace os
 }  // namespace bluetooth

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@
 #include "parse_location.h"
 
 class ScalarField : public PacketField {
- public:
+public:
   ScalarField(std::string name, int size, ParseLocation loc);
 
   static const std::string kFieldType;
@@ -31,7 +31,8 @@ class ScalarField : public PacketField {
 
   virtual std::string GetDataType() const override;
 
-  virtual int GenBounds(std::ostream& s, Size start_offset, Size end_offset, Size size) const override;
+  virtual int GenBounds(std::ostream& s, Size start_offset, Size end_offset,
+                        Size size) const override;
 
   virtual void GenExtractor(std::ostream& s, int num_leading_bits, bool for_struct) const override;
 
@@ -51,10 +52,8 @@ class ScalarField : public PacketField {
 
   virtual void GenStringRepresentation(std::ostream& s, std::string accessor) const override;
 
-  virtual bool GetterIsByRef() const override {
-    return false;
-  }
+  virtual bool GetterIsByRef() const override { return false; }
 
- private:
+private:
   const int size_;
 };

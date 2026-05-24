@@ -20,6 +20,7 @@
 #include <memory>
 
 #include "bta/include/bta_sec_api.h"
+#include "stack/btm/btm_sec_int_types.h"
 #include "stack/include/bt_hdr.h"
 #include "stack/include/btm_sec_api_types.h"
 
@@ -48,7 +49,8 @@ typedef struct {
 typedef struct {
   tBTA_DM_SEC_CBACK* p_sec_cback;
   tBTA_DM_SEC_CBACK* p_sec_sirk_cback;
-/* Storage for pin code request parameters */
+  tBTA_DM_SEC_CBACK* p_ble_auth_cmpl_cback;
+  /* Storage for pin code request parameters */
   RawAddress pin_bd_addr;
   DEV_CLASS pin_dev_class;
   tBTA_DM_SEC_EVT pin_evt;
@@ -72,23 +74,27 @@ void bta_dm_add_blekey(const RawAddress& bd_addr, tBTA_LE_KEY_VALUE blekey,
                        tBTM_LE_KEY_TYPE key_type);
 void bta_dm_ble_config_local_privacy(bool privacy_enable);
 void bta_dm_ble_confirm_reply(const RawAddress& bd_addr, bool accept);
-void bta_dm_ble_passkey_reply(const RawAddress& bd_addr, bool accept,
-                              uint32_t passkey);
-void bta_dm_ble_sirk_confirm_device_reply(const RawAddress& bd_addr,
-                                          bool accept);
+void bta_dm_ble_passkey_reply(const RawAddress& bd_addr, bool accept, uint32_t passkey);
+void bta_dm_ble_sirk_confirm_device_reply(const RawAddress& bd_addr, bool accept);
 void bta_dm_ble_sirk_sec_cb_register(tBTA_DM_SEC_CBACK* p_cback);
-void bta_dm_bond(const RawAddress& bd_addr, tBLE_ADDR_TYPE addr_type,
-                 tBT_TRANSPORT transport, tBT_DEVICE_TYPE device_type);
+void bta_dm_ble_auth_cmpl_cb_register(tBTA_DM_SEC_CBACK* p_cback);
+void bta_dm_bond(const RawAddress& bd_addr, tBLE_ADDR_TYPE addr_type, tBT_TRANSPORT transport,
+                 tBT_DEVICE_TYPE device_type);
 void bta_dm_bond_cancel(const RawAddress& bd_addr);
 void bta_dm_remove_device(const RawAddress& bd_addr);
 void bta_dm_ci_rmt_oob_act(std::unique_ptr<tBTA_DM_CI_RMT_OOB> msg);
 void bta_dm_confirm(const RawAddress& bd_addr, bool accept);
 void bta_dm_consolidate(const RawAddress& identity_addr, const RawAddress& rpa);
 void bta_dm_enable(tBTA_DM_SEC_CBACK* p_sec_cback);
-void bta_dm_encrypt_cback(const RawAddress* bd_addr, tBT_TRANSPORT transport,
-                          void* /* p_ref_data */, tBTM_STATUS result);
+void bta_dm_encrypt_cback(RawAddress bd_addr, tBT_TRANSPORT transport, void* /* p_ref_data */,
+                          tBTM_STATUS result);
+void bta_dm_on_encryption_change(bt_encryption_change_evt encryption_change);
 void bta_dm_pin_reply(std::unique_ptr<tBTA_DM_API_PIN_REPLY> msg);
 void bta_dm_set_encryption(const RawAddress& bd_addr, tBT_TRANSPORT transport,
-                           tBTA_DM_ENCRYPT_CBACK* p_callback,
-                           tBTM_BLE_SEC_ACT sec_act);
+                           tBTA_DM_ENCRYPT_CBACK* p_callback, tBTM_BLE_SEC_ACT sec_act);
 void btm_dm_sec_init();
+void bta_dm_remote_key_missing(const RawAddress bd_addr, tBTM_KEY_MISSING_REASON reason);
+
+namespace bluetooth::legacy::testing {
+tBTM_STATUS bta_dm_sp_cback(tBTM_SP_EVT event, tBTM_SP_EVT_DATA* p_data);
+}  // namespace bluetooth::legacy::testing

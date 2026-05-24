@@ -32,13 +32,13 @@
 //       for this effort.  This compilation unit may compile as-is, or
 //       may need attention to prune from (or add to ) the inclusion set.
 
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/uuid.h>
+
 #include "stack/include/avrc_api.h"
-#include "types/bluetooth/uuid.h"
-#include "types/raw_address.h"
 
 // Original usings
 using bluetooth::Uuid;
-using namespace bluetooth::legacy::stack::sdp;
 
 // Mocked compile conditionals, if any
 
@@ -55,21 +55,19 @@ namespace stack_avrc_sdp {
 struct AVRC_AddRecord {
   static uint16_t return_value;
   std::function<uint16_t(uint16_t service_uuid, const char* p_service_name,
-                         const char* p_provider_name, uint16_t categories,
-                         uint32_t sdp_handle, bool browse_supported,
-                         uint16_t profile_version, uint16_t cover_art_psm)>
-      body{[](uint16_t /* service_uuid */, const char* /* p_service_name */,
-              const char* /* p_provider_name */, uint16_t /* categories */,
-              uint32_t /* sdp_handle */, bool /* browse_supported */,
-              uint16_t /* profile_version */,
-              uint16_t /* cover_art_psm */) { return return_value; }};
+                         const char* p_provider_name, uint16_t categories, uint32_t sdp_handle,
+                         bool browse_supported, uint16_t profile_version, uint16_t cover_art_psm)>
+          body{[](uint16_t /* service_uuid */, const char* /* p_service_name */,
+                  const char* /* p_provider_name */, uint16_t /* categories */,
+                  uint32_t /* sdp_handle */, bool /* browse_supported */,
+                  uint16_t /* profile_version */,
+                  uint16_t /* cover_art_psm */) { return return_value; }};
   uint16_t operator()(uint16_t service_uuid, const char* p_service_name,
-                      const char* p_provider_name, uint16_t categories,
-                      uint32_t sdp_handle, bool browse_supported,
-                      uint16_t profile_version, uint16_t cover_art_psm) {
-    return body(service_uuid, p_service_name, p_provider_name, categories,
-                sdp_handle, browse_supported, profile_version, cover_art_psm);
-  };
+                      const char* p_provider_name, uint16_t categories, uint32_t sdp_handle,
+                      bool browse_supported, uint16_t profile_version, uint16_t cover_art_psm) {
+    return body(service_uuid, p_service_name, p_provider_name, categories, sdp_handle,
+                browse_supported, profile_version, cover_art_psm);
+  }
 };
 extern struct AVRC_AddRecord AVRC_AddRecord;
 
@@ -80,18 +78,14 @@ extern struct AVRC_AddRecord AVRC_AddRecord;
 struct AVRC_FindService {
   static uint16_t return_value;
   std::function<uint16_t(uint16_t service_uuid, const RawAddress& bd_addr,
-                         tAVRC_SDP_DB_PARAMS* p_db,
-                         const tAVRC_FIND_CBACK& find_cback)>
-      body{[](uint16_t /* service_uuid */, const RawAddress& /* bd_addr */,
-              tAVRC_SDP_DB_PARAMS* /* p_db */,
-              const tAVRC_FIND_CBACK& /* find_cback */) {
-        return return_value;
-      }};
-  uint16_t operator()(uint16_t service_uuid, const RawAddress& bd_addr,
-                      tAVRC_SDP_DB_PARAMS* p_db,
+                         tAVRC_SDP_DB_PARAMS* p_db, const tAVRC_FIND_CBACK& find_cback)>
+          body{[](uint16_t /* service_uuid */, const RawAddress& /* bd_addr */,
+                  tAVRC_SDP_DB_PARAMS* /* p_db */,
+                  const tAVRC_FIND_CBACK& /* find_cback */) { return return_value; }};
+  uint16_t operator()(uint16_t service_uuid, const RawAddress& bd_addr, tAVRC_SDP_DB_PARAMS* p_db,
                       const tAVRC_FIND_CBACK& find_cback) {
     return body(service_uuid, bd_addr, p_db, find_cback);
-  };
+  }
 };
 extern struct AVRC_FindService AVRC_FindService;
 
@@ -100,7 +94,7 @@ extern struct AVRC_FindService AVRC_FindService;
 // Return: void
 struct AVRC_Init {
   std::function<void(void)> body{[](void) {}};
-  void operator()(void) { body(); };
+  void operator()(void) { body(); }
 };
 extern struct AVRC_Init AVRC_Init;
 
@@ -110,10 +104,19 @@ extern struct AVRC_Init AVRC_Init;
 struct AVRC_RemoveRecord {
   static uint16_t return_value;
   std::function<uint16_t(uint32_t sdp_handle)> body{
-      [](uint32_t /* sdp_handle */) { return return_value; }};
-  uint16_t operator()(uint32_t sdp_handle) { return body(sdp_handle); };
+          [](uint32_t /* sdp_handle */) { return return_value; }};
+  uint16_t operator()(uint32_t sdp_handle) { return body(sdp_handle); }
 };
 extern struct AVRC_RemoveRecord AVRC_RemoveRecord;
+
+// Name: AVRC_ResetServiceUuid
+// Params: void
+// Return: void
+struct AVRC_ResetServiceUuid {
+  std::function<void(void)> body{[](void) {}};
+  void operator()(void) { body(); }
+};
+extern struct AVRC_ResetServiceUuid AVRC_ResetServiceUuid;
 
 }  // namespace stack_avrc_sdp
 }  // namespace mock

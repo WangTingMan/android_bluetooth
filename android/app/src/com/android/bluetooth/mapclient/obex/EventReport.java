@@ -39,7 +39,8 @@ import java.util.Map;
  * <p>This object will be received in {@link Client#EVENT_EVENT_REPORT} callback message.
  */
 public class EventReport {
-    private static final String TAG = "EventReport";
+    private static final String TAG = EventReport.class.getSimpleName();
+
     private final Type mType;
     private final String mDateTime;
     private final String mHandle;
@@ -96,21 +97,19 @@ public class EventReport {
 
             int event = xpp.getEventType();
             while (event != XmlPullParser.END_DOCUMENT) {
-                switch (event) {
-                    case XmlPullParser.START_TAG:
-                        if (xpp.getName().equals("event")) {
-                            HashMap<String, String> attrs = new HashMap<String, String>();
+                if (event == XmlPullParser.START_TAG) {
+                    if (xpp.getName().equals("event")) {
+                        HashMap<String, String> attrs = new HashMap<>();
 
-                            for (int i = 0; i < xpp.getAttributeCount(); i++) {
-                                attrs.put(xpp.getAttributeName(i), xpp.getAttributeValue(i));
-                            }
-
-                            ev = new EventReport(attrs);
-
-                            // return immediately, only one event should be here
-                            return ev;
+                        for (int i = 0; i < xpp.getAttributeCount(); i++) {
+                            attrs.put(xpp.getAttributeName(i), xpp.getAttributeValue(i));
                         }
-                        break;
+
+                        ev = new EventReport(attrs);
+
+                        // return immediately, only one event should be here
+                        return ev;
+                    }
                 }
 
                 event = xpp.next();
@@ -127,7 +126,7 @@ public class EventReport {
         return ev;
     }
 
-    private Type parseType(String type) throws IllegalArgumentException {
+    private static Type parseType(String type) throws IllegalArgumentException {
         for (Type t : Type.values()) {
             if (t.toString().equals(type)) {
                 return t;
@@ -137,7 +136,7 @@ public class EventReport {
         throw new IllegalArgumentException("Invalid value for type: " + type);
     }
 
-    private Bmessage.Type parseMsgType(String msgType) throws IllegalArgumentException {
+    private static Bmessage.Type parseMsgType(String msgType) throws IllegalArgumentException {
         for (Bmessage.Type t : Bmessage.Type.values()) {
             if (t.name().equals(msgType)) {
                 return t;

@@ -16,32 +16,32 @@
 
 #pragma once
 
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/uuid.h>
+
 #include <cstdint>
+#include <string>
 
 #include "bta/include/bta_gatt_api.h"
+#include "gd/common/circular_buffer.h"
 #include "include/hardware/bt_common_types.h"
 #include "stack/include/btm_ble_api_types.h"
-#include "types/bluetooth/uuid.h"
-#include "types/raw_address.h"
 
 //
 // Interface as a GATT client for bta clients
 //
 struct gatt_interface_t {
-  void (*BTA_GATTC_CancelOpen)(tGATT_IF client_if, const RawAddress& remote_bda,
-                               bool is_direct);
+  void (*BTA_GATTC_CancelOpen)(tGATT_IF client_if, const RawAddress& remote_bda, bool is_direct);
   void (*BTA_GATTC_Refresh)(const RawAddress& remote_bda);
-  void (*BTA_GATTC_GetGattDb)(uint16_t conn_id, uint16_t start_handle,
-                              uint16_t end_handle, btgatt_db_element_t** db,
-                              int* count);
-  void (*BTA_GATTC_AppRegister)(tBTA_GATTC_CBACK* p_client_cb,
+  void (*BTA_GATTC_GetGattDb)(tCONN_ID conn_id, uint16_t start_handle, uint16_t end_handle,
+                              btgatt_db_element_t** db, int* count);
+  void (*BTA_GATTC_AppRegister)(const std::string& name, tBTA_GATTC_CBACK* p_client_cb,
                                 BtaAppRegisterCallback cb, bool eatt_support);
-  void (*BTA_GATTC_Close)(uint16_t conn_id);
-  void (*BTA_GATTC_ServiceSearchRequest)(uint16_t conn_id,
-                                         const bluetooth::Uuid* p_srvc_uuid);
+  void (*BTA_GATTC_Close)(tCONN_ID conn_id);
+  void (*BTA_GATTC_ServiceSearchRequest)(tCONN_ID conn_id, const bluetooth::Uuid* p_srvc_uuid);
   void (*BTA_GATTC_Open)(tGATT_IF client_if, const RawAddress& remote_bda,
-                         tBTM_BLE_CONN_TYPE connection_type,
-                         bool opportunistic);
+                         tBTM_BLE_CONN_TYPE connection_type, bool opportunistic,
+                         uint16_t preferred_mtu, bool prefer_relax_mode);
 };
 
 //
@@ -59,13 +59,6 @@ void gatt_history_callback(const std::string& entry);
 //
 void DumpsysBtaDmGattClient(int fd);
 
-namespace bluetooth {
-namespace testing {
-
-//
-// TESTING: Sets a specialzed GATT client interface implementation for testing
-//
-void set_gatt_interface(const gatt_interface_t& interface);
-
-}  // namespace testing
-}  // namespace bluetooth
+namespace bluetooth::testing {
+std::vector<bluetooth::common::TimestampedEntry<std::string>> PullCopyOfGattHistory();
+}  // namespace bluetooth::testing

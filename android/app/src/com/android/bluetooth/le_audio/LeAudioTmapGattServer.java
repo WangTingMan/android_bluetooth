@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.android.bluetooth.le_audio;
 
+import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCharacteristic;
@@ -23,7 +24,6 @@ import android.bluetooth.BluetoothGattServer;
 import android.bluetooth.BluetoothGattServerCallback;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
-import android.bluetooth.BluetoothProfile;
 import android.bluetooth.BluetoothUuid;
 import android.content.Context;
 import android.util.Log;
@@ -31,18 +31,15 @@ import android.util.Log;
 import com.android.internal.annotations.VisibleForTesting;
 
 import java.util.Arrays;
-import java.util.List;
 import java.util.UUID;
 
 /** A GATT server for Telephony and Media Audio Profile (TMAP) */
-@VisibleForTesting
-public class LeAudioTmapGattServer {
-    private static final String TAG = "LeAudioTmapGattServer";
+class LeAudioTmapGattServer {
+    private static final String TAG = LeAudioTmapGattServer.class.getSimpleName();
 
     /* Telephony and Media Audio Profile Role Characteristic UUID */
     @VisibleForTesting
-    public static final UUID UUID_TMAP_ROLE =
-            UUID.fromString("00002B51-0000-1000-8000-00805f9b34fb");
+    static final UUID UUID_TMAP_ROLE = UUID.fromString("00002B51-0000-1000-8000-00805f9b34fb");
 
     /* TMAP Role: Call Gateway */
     public static final int TMAP_ROLE_FLAG_CG = 1;
@@ -64,12 +61,9 @@ public class LeAudioTmapGattServer {
     }
 
     /**
-     * Init TMAP server
-     *
      * @param roleMask bit mask of supported roles.
      */
-    @VisibleForTesting
-    public void start(int roleMask) {
+    void start(int roleMask) {
         Log.d(TAG, "start(roleMask:" + roleMask + ")");
 
         if (!mBluetoothGattServer.open(mBluetoothGattServerCallback)) {
@@ -94,9 +88,7 @@ public class LeAudioTmapGattServer {
         }
     }
 
-    /** Stop TMAP server */
-    @VisibleForTesting
-    public void stop() {
+    void stop() {
         Log.d(TAG, "stop()");
         if (mBluetoothGattServer == null) {
             Log.w(TAG, "mBluetoothGattServer should not be null when stop() is called");
@@ -133,7 +125,7 @@ public class LeAudioTmapGattServer {
      *
      * <p>This is necessary due to the "final" attribute of the BluetoothGattServer class.
      */
-    public static class BluetoothGattServerProxy {
+    static class BluetoothGattServerProxy {
         private final Context mContext;
         private final BluetoothManager mBluetoothManager;
 
@@ -144,7 +136,7 @@ public class LeAudioTmapGattServer {
          *
          * @param context context to use
          */
-        public BluetoothGattServerProxy(Context context) {
+        BluetoothGattServerProxy(Context context) {
             mContext = context;
             mBluetoothManager = context.getSystemService(BluetoothManager.class);
         }
@@ -155,13 +147,15 @@ public class LeAudioTmapGattServer {
          * @param callback callback to invoke
          * @return true on success
          */
-        public boolean open(BluetoothGattServerCallback callback) {
+        @SuppressLint("AndroidFrameworkRequiresPermission") // TODO: b/350563786
+        boolean open(BluetoothGattServerCallback callback) {
             mBluetoothGattServer = mBluetoothManager.openGattServer(mContext, callback);
             return mBluetoothGattServer != null;
         }
 
         /** Close the GATT server, should be called as soon as the server is not needed */
-        public void close() {
+        @SuppressLint("AndroidFrameworkRequiresPermission") // TODO: b/350563786
+        void close() {
             if (mBluetoothGattServer == null) {
                 Log.w(TAG, "BluetoothGattServerProxy.close() called without open()");
                 return;
@@ -176,7 +170,8 @@ public class LeAudioTmapGattServer {
          * @param service added service
          * @return true on success
          */
-        public boolean addService(BluetoothGattService service) {
+        @SuppressLint("AndroidFrameworkRequiresPermission") // TODO: b/350563786
+        boolean addService(BluetoothGattService service) {
             return mBluetoothGattServer.addService(service);
         }
 
@@ -190,18 +185,10 @@ public class LeAudioTmapGattServer {
          * @param value value content
          * @return true on success
          */
-        public boolean sendResponse(
+        @SuppressLint("AndroidFrameworkRequiresPermission") // TODO: b/350563786
+        boolean sendResponse(
                 BluetoothDevice device, int requestId, int status, int offset, byte[] value) {
             return mBluetoothGattServer.sendResponse(device, requestId, status, offset, value);
-        }
-
-        /**
-         * Gatt a list of devices connected to this GATT server
-         *
-         * @return list of connected devices at this moment
-         */
-        public List<BluetoothDevice> getConnectedDevices() {
-            return mBluetoothManager.getConnectedDevices(BluetoothProfile.GATT_SERVER);
         }
     }
 }

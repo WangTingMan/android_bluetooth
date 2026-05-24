@@ -26,7 +26,6 @@
 #include <string>
 #include <cstdio>
 
-#include "os/log.h"
 #include "bluetooth/log.h"
 
 namespace bluetooth {

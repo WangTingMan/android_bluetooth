@@ -15,17 +15,14 @@
  */
 
 #include <base/functional/bind.h>
+#include <bluetooth/types/uuid.h>
 
-#include <unordered_map>
+#include <cstdint>
+#include <cstring>
+#include <string>
 
-#include "bta/include/bta_gatt_api.h"
-#include "bta/include/bta_ras_api.h"
+#include "bluetooth/log.h"
 #include "bta/ras/ras_types.h"
-#include "os/log.h"
-#include "stack/include/bt_types.h"
-#include "stack/include/btm_ble_addr.h"
-#include "stack/include/gap_api.h"
-#include "types/bluetooth/uuid.h"
 
 using namespace bluetooth;
 using namespace ::ras;
@@ -55,8 +52,7 @@ std::string uuid::getUuidName(const bluetooth::Uuid& uuid) {
   }
 }
 
-bool ParseControlPointCommand(ControlPointCommand* command,
-                              const uint8_t* value, uint16_t len) {
+bool ParseControlPointCommand(ControlPointCommand* command, const uint8_t* value, uint16_t len) {
   command->opcode_ = static_cast<Opcode>(value[0]);
   // Check for minimum expected length
   switch (value[0]) {
@@ -65,25 +61,21 @@ bool ParseControlPointCommand(ControlPointCommand* command,
         return false;
       }
       break;
-    case (uint8_t)Opcode::PCT_FORMAT: {
-      if (len != 2) {
-        return false;
-      }
-    } break;
     case (uint8_t)Opcode::GET_RANGING_DATA:
     case (uint8_t)Opcode::ACK_RANGING_DATA:
-    case (uint8_t)Opcode::FILTER: {
+    case (uint8_t)Opcode::FILTER:
       if (len != 3) {
         return false;
       }
-    } break;
-    case (uint8_t)Opcode::RETRIEVE_LOST_RANGING_DATA_SEGMENTS: {
+      break;
+    case (uint8_t)Opcode::RETRIEVE_LOST_RANGING_DATA_SEGMENTS:
       if (len != 5) {
         return false;
       }
-    } break;
+      break;
     default:
       log::warn("unknown opcode 0x{:02x}", value[0]);
+      command->isValid_ = true;
       return false;
   }
   std::memcpy(command->parameter_, value + 1, len - 1);
@@ -103,8 +95,6 @@ std::string GetOpcodeText(Opcode opcode) {
       return "ABORT_OPERATION";
     case Opcode::FILTER:
       return "FILTER";
-    case Opcode::PCT_FORMAT:
-      return "PCT_FORMAT";
     default:
       return "Unknown Opcode";
   }
@@ -126,12 +116,12 @@ std::string GetResponseOpcodeValueText(ResponseCodeValue response_code_value) {
       return "ABORT_UNSUCCESSFUL";
     case ResponseCodeValue::PROCEDURE_NOT_COMPLETED:
       return "PROCEDURE_NOT_COMPLETED";
-    case ResponseCodeValue::OPERAND_NOT_SUPPORTED:
-      return "OPERAND_NOT_SUPPORTED";
+    case ResponseCodeValue::SERVER_BUSY:
+      return "SERVER_BUSY";
     case ResponseCodeValue::NO_RECORDS_FOUND:
       return "NO_RECORDS_FOUND";
     default:
-      return "Unknown Opcode";
+      return "Reserved for Future Use";
   }
 }
 

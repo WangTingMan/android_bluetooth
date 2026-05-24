@@ -18,6 +18,8 @@
 #ifndef ANDROID_INCLUDE_BLUETOOTH_H
 #define ANDROID_INCLUDE_BLUETOOTH_H
 
+#include <bluetooth/types/ble_address_with_type.h>
+#include <bluetooth/types/uuid.h>
 #include <stdbool.h>
 #include <stdint.h>
 #if __has_include(<sys/cdefs.h>)
@@ -28,10 +30,6 @@
 #include <vector>
 
 #include "avrcp/avrcp.h"
-#include "base/functional/callback.h"
-#include "bluetooth/uuid.h"
-#include "bt_transport.h"
-#include "raw_address.h"
 
 /**
  * The Bluetooth Hardware Module ID
@@ -52,7 +50,6 @@
 #define BT_PROFILE_MAP_CLIENT_ID "map_client"
 #define BT_PROFILE_SDP_CLIENT_ID "sdp"
 #define BT_PROFILE_GATT_ID "gatt"
-#define BT_PROFILE_AV_RC_ID "avrcp"
 #define BT_PROFILE_AV_RC_CTRL_ID "avrcp_ctrl"
 #define BT_PROFILE_HEARING_AID_ID "hearing_aid"
 #define BT_PROFILE_HAP_CLIENT_ID "has_client"
@@ -62,12 +59,13 @@
 #define BT_PROFILE_CSIS_CLIENT_ID "csis_client"
 #define BT_PROFILE_LE_AUDIO_ID "le_audio"
 #define BT_PROFILE_LE_AUDIO_BROADCASTER_ID "le_audio_broadcaster"
+#define BT_PROFILE_VAPS_SERVER_ID "vaps_server"
 #define BT_BQR_ID "bqr"
 
 /** Bluetooth Device Name */
-#pragma pack(1)
-typedef struct { uint8_t name[249]; } /*__attribute__((packed))*/ bt_bdname_t;
-#pragma pack()
+typedef struct {
+  uint8_t name[249];
+}bt_bdname_t;
 
 /** Bluetooth Adapter Visibility Modes*/
 typedef enum {
@@ -116,6 +114,11 @@ typedef enum {
   BT_STATUS_UNEXPECTED_STATE,
   BT_STATUS_SOCKET_ERROR
 } bt_status_t;
+
+typedef enum : uint8_t {
+  BT_REASON_FOR_NO_UUIDS_EMPTY_UUID_LIST = 0x01,
+  BT_REASON_FOR_NO_UUIDS_NO_UUID_TYPES_EXIST = 0x02,
+} bt_reason_for_no_uuids;
 
 inline std::string bt_status_text(const bt_status_t& status) {
   switch (status) {
@@ -168,7 +171,9 @@ typedef uint8_t bt_hci_error_code_t;
 
 #pragma pack(1)
 /** Bluetooth PinKey Code */
-typedef struct { uint8_t pin[16]; } /*__attribute__((packed))*/ bt_pin_code_t;
+typedef struct {
+  uint8_t pin[16];
+}bt_pin_code_t;
 
 typedef struct {
   uint8_t status;
@@ -187,16 +192,10 @@ typedef struct {
 #pragma pack()
 
 /** Bluetooth Adapter Discovery state */
-typedef enum {
-  BT_DISCOVERY_STOPPED,
-  BT_DISCOVERY_STARTED
-} bt_discovery_state_t;
+typedef enum { BT_DISCOVERY_STOPPED, BT_DISCOVERY_STARTED } bt_discovery_state_t;
 
 /** Bluetooth ACL connection state */
-typedef enum {
-  BT_ACL_STATE_CONNECTED,
-  BT_ACL_STATE_DISCONNECTED
-} bt_acl_state_t;
+typedef enum { BT_ACL_STATE_CONNECTED, BT_ACL_STATE_DISCONNECTED } bt_acl_state_t;
 
 /** Bluetooth ACL connection direction */
 typedef enum {
@@ -246,6 +245,11 @@ typedef struct {
   uint16_t adv_filter_extended_features_mask;
   bool le_channel_sounding_supported;
 } bt_local_le_features_t;
+
+typedef struct {
+  uint8_t number_of_supported_offloaded_le_coc_sockets;
+  uint8_t number_of_supported_offloaded_rfcomm_sockets;
+} bt_lpp_offload_features_t;
 
 /** Bluetooth Vendor and Product ID info */
 typedef struct {
@@ -303,7 +307,7 @@ typedef enum {
    */
   BT_PROPERTY_TYPE_OF_DEVICE,
   /**
-   * Description - Bluetooth Service Record
+   * Description - Bluetooth Service Record, UUIDs on BREDR transport
    * Access mode - Only GET.
    * Data type   - bt_service_record_t
    */
@@ -411,11 +415,12 @@ typedef enum {
   BT_PROPERTY_REMOTE_ADDR_TYPE,
 
   /**
-   * Description - Whether remote device supports Secure Connections mode
+   * Description - Whether remote device supports Secure Connections mode on
+   * host
    * Access mode - GET and SET.
    * Data Type - uint8_t.
    */
-  BT_PROPERTY_REMOTE_SECURE_CONNECTIONS_SUPPORTED,
+  BT_PROPERTY_REMOTE_HOST_SECURE_CONNECTIONS_SUPPORTED,
 
   /**
    * Description - Maximum observed session key for remote device
@@ -423,6 +428,58 @@ typedef enum {
    * Data Type - uint8_t.
    */
   BT_PROPERTY_REMOTE_MAX_SESSION_KEY_SIZE,
+
+  /**
+   * Description - Low power processor offload features
+   * Access mode - GET.
+   * Data Type   - bt_lpp_offload_features_t.
+   */
+  BT_PROPERTY_LPP_OFFLOAD_FEATURES,
+
+  /**
+   * Description - Bluetooth Service 128-bit UUIDs on LE transport
+   * Access mode - Only GET.
+   * Data type   - Array of bluetooth::Uuid (Array size inferred from property
+   *               length).
+   */
+  BT_PROPERTY_UUIDS_LE,
+
+  /**
+   * Description - Bluetooth discovery result type (i.e. inquiry result type)
+   * Access mode - Only GET.
+   * Data type   - uint8_t
+   */
+  BT_PROPERTY_DISCOVERY_RESULT_TYPE,
+
+  /**
+   * Description - Bluetooth Service 128-bit UUIDs in Extended inquiry result (EIR).
+   * Access mode - Only GET.
+   * Data type   - The data type should be inferred from the property length:
+   *   - If the length is 1, bt_reason_for_no_uuids (uint8_t):
+   *     - BT_REASON_FOR_NO_UUIDS_EMPTY_UUID_LIST: UUID type exists, but the UUID list is empty.
+   *     - BT_REASON_FOR_NO_UUIDS_NO_UUID_TYPES_EXIST: No UUID type exists in EIR, or no EIR exists.
+   *   - Otherwise, Array of bluetooth::Uuid (Array size inferred from property length).
+   */
+  BT_PROPERTY_UUIDS_FROM_EXTENDED_INQUIRY_RESPONSE,
+
+  /**
+   * Description - Bluetooth Service 128-bit UUIDs in LE Advertising data (AD)
+   * Access mode - Only GET.
+   * Data type   - The data type should be inferred from the property length:
+   *   - If the length is 1, bt_reason_for_no_uuids (uint8_t):
+   *     - BT_REASON_FOR_NO_UUIDS_EMPTY_UUID_LIST: UUID type exists, but the UUID list is empty.
+   *     - BT_REASON_FOR_NO_UUIDS_NO_UUID_TYPES_EXIST: No UUID type exists in AD, or no AD exists.
+   *   - Otherwise, Array of bluetooth::Uuid (Array size inferred from property length).
+   */
+  BT_PROPERTY_UUIDS_FROM_LE_ADVERTISING_DATA,
+
+  /**
+   * Description - Whether remote device supports Secure Connections mode on
+   * controller
+   * Access mode - GET and SET.
+   * Data Type - uint8_t.
+   */
+  BT_PROPERTY_REMOTE_CONTROLLER_SECURE_CONNECTIONS_SUPPORTED,
 
   BT_PROPERTY_REMOTE_DEVICE_TIMESTAMP = 0xFF,
 } bt_property_type_t;
@@ -452,19 +509,19 @@ typedef struct bt_oob_data_s {
   // Both
   bool is_valid = false; /* Default to invalid data; force caller to verify */
   uint8_t address[OOB_ADDRESS_SIZE];
-  uint8_t c[OOB_C_SIZE];      /* Simple Pairing Hash C-192/256 (Classic or LE) */
-  uint8_t r[OOB_R_SIZE];      /* Simple Pairing Randomizer R-192/256 (Classic or LE) */
+  uint8_t c[OOB_C_SIZE];                  /* Simple Pairing Hash C-192/256 (Classic or LE) */
+  uint8_t r[OOB_R_SIZE];                  /* Simple Pairing Randomizer R-192/256 (Classic or LE) */
   uint8_t device_name[OOB_NAME_MAX_SIZE]; /* Name of the device */
 
   // Classic
   uint8_t oob_data_length[OOB_DATA_LEN_SIZE]; /* Classic only data Length. Value includes this
                                                  in length */
-  uint8_t class_of_device[OOB_COD_SIZE]; /* Class of Device (Classic or LE) */
+  uint8_t class_of_device[OOB_COD_SIZE];      /* Class of Device (Classic or LE) */
 
   // LE
-  uint8_t le_device_role;   /* Supported and preferred role of device */
-  uint8_t sm_tk[OOB_TK_SIZE];        /* Security Manager TK Value (LE Only) */
-  uint8_t le_flags;         /* LE Flags for discoverability and features */
+  uint8_t le_device_role;                        /* Supported and preferred role of device */
+  uint8_t sm_tk[OOB_TK_SIZE];                    /* Security Manager TK Value (LE Only) */
+  uint8_t le_flags;                              /* LE Flags for discoverability and features */
   uint8_t le_appearance[OOB_LE_APPEARANCE_SIZE]; /* For the appearance of the device */
 } bt_oob_data_t;
 
@@ -476,11 +533,7 @@ typedef enum {
 } bt_device_type_t;
 
 /** Bluetooth Bond state */
-typedef enum {
-  BT_BOND_STATE_NONE,
-  BT_BOND_STATE_BONDING,
-  BT_BOND_STATE_BONDED
-} bt_bond_state_t;
+typedef enum { BT_BOND_STATE_NONE, BT_BOND_STATE_BONDING, BT_BOND_STATE_BONDED } bt_bond_state_t;
 
 /** Bluetooth SSP Bonding Variant */
 typedef enum {
@@ -489,6 +542,15 @@ typedef enum {
   BT_SSP_VARIANT_CONSENT,
   BT_SSP_VARIANT_PASSKEY_NOTIFICATION
 } bt_ssp_variant_t;
+
+typedef struct {
+  RawAddress bd_addr;
+  uint8_t status; /* bt_hci_error_code_t */
+  bool encr_enable;
+  uint8_t key_size;
+  tBT_TRANSPORT transport;
+  bool secure_connections;
+} bt_encryption_change_evt;
 
 #define BT_MAX_NUM_UUIDS 32
 
@@ -506,31 +568,27 @@ typedef void (*adapter_state_changed_callback)(bt_state_t state);
  * If this is going to be handled in the Java framework, then we do not need
  * to manage sessions here.
  */
-typedef void (*adapter_properties_callback)(bt_status_t status,
-                                            int num_properties,
+typedef void (*adapter_properties_callback)(bt_status_t status, int num_properties,
                                             bt_property_t* properties);
 
 /** GET/SET Remote Device Properties callback */
 /** TODO: For remote device properties, do not see a need to get/set
  * multiple properties - num_properties shall be 1
  */
-typedef void (*remote_device_properties_callback)(bt_status_t status,
-                                                  RawAddress* bd_addr,
-                                                  int num_properties,
+typedef void (*remote_device_properties_callback)(bt_status_t status, RawAddress* bd_addr,
+                                                  uint8_t address_type, int num_properties,
                                                   bt_property_t* properties);
 
 /** New device discovered callback */
 /** If EIR data is not present, then BD_NAME and RSSI shall be NULL and -1
  * respectively */
-typedef void (*device_found_callback)(int num_properties,
-                                      bt_property_t* properties);
+typedef void (*device_found_callback)(int num_properties, bt_property_t* properties);
 
 /** Discovery state changed callback */
 typedef void (*discovery_state_changed_callback)(bt_discovery_state_t state);
 
 /** Bluetooth Legacy PinKey Request callback */
-typedef void (*pin_request_callback)(RawAddress* remote_bd_addr,
-                                     bt_bdname_t* bd_name, uint32_t cod,
+typedef void (*pin_request_callback)(RawAddress* remote_bd_addr, bt_bdname_t* bd_name, uint32_t cod,
                                      bool min_16_digit);
 
 /** Bluetooth SSP Request callback - Just Works & Numeric Comparison*/
@@ -538,16 +596,13 @@ typedef void (*pin_request_callback)(RawAddress* remote_bd_addr,
  *  BT_SSP_PAIRING_PASSKEY_ENTRY */
 /* TODO: Passkey request callback shall not be needed for devices with display
  * capability. We still need support this in the stack for completeness */
-typedef void (*ssp_request_callback)(RawAddress* remote_bd_addr,
-                                     bt_ssp_variant_t pairing_variant,
+typedef void (*ssp_request_callback)(RawAddress* remote_bd_addr, bt_ssp_variant_t pairing_variant,
                                      uint32_t pass_key);
 
 /** Bluetooth Bond state changed callback */
 /* Invoked in response to create_bond, cancel_bond or remove_bond */
-typedef void (*bond_state_changed_callback)(bt_status_t status,
-                                            RawAddress* remote_bd_addr,
-                                            bt_bond_state_t state,
-                                            int fail_reason);
+typedef void (*bond_state_changed_callback)(bt_status_t status, RawAddress* remote_bd_addr,
+                                            bt_bond_state_t state, int fail_reason);
 
 /** Bluetooth Address consolidate callback */
 /* Callback to inform upper layer that these two addresses come from same
@@ -557,21 +612,21 @@ typedef void (*address_consolidate_callback)(RawAddress* main_bd_addr,
 
 /** Bluetooth LE Address association callback */
 /* Callback for the upper layer to associate the LE-only device's RPA to the
- * identity address */
+ * identity address and identity address type */
 typedef void (*le_address_associate_callback)(RawAddress* main_bd_addr,
-                                              RawAddress* secondary_bd_addr);
+                                              RawAddress* secondary_bd_addr,
+                                              uint8_t identity_address_type);
 
 /** Bluetooth ACL connection state changed callback */
-typedef void (*acl_state_changed_callback)(
-    bt_status_t status, RawAddress* remote_bd_addr, bt_acl_state_t state,
-    int transport_link_type, bt_hci_error_code_t hci_reason,
-    bt_conn_direction_t direction, uint16_t acl_handle);
+typedef void (*acl_state_changed_callback)(bt_status_t status, tAclLinkSpec& link_spec,
+                                           bt_acl_state_t state, bt_hci_error_code_t hci_reason,
+                                           bt_conn_direction_t direction, uint16_t acl_handle);
 
 /** Bluetooth link quality report callback */
-typedef void (*link_quality_report_callback)(
-    uint64_t timestamp, int report_id, int rssi, int snr,
-    int retransmission_count, int packets_not_receive_count,
-    int negative_acknowledgement_count);
+typedef void (*link_quality_report_callback)(uint64_t timestamp, int report_id, int rssi, int snr,
+                                             int retransmission_count,
+                                             int packets_not_receive_count,
+                                             int negative_acknowledgement_count);
 
 /** Switch the buffer size callback */
 typedef void (*switch_buffer_size_callback)(bool is_low_latency_buffer_size);
@@ -591,8 +646,7 @@ typedef void (*callback_thread_event)(bt_cb_thread_evt evt);
 /** Bluetooth Test Mode Callback */
 /* Receive any HCI event from controller. Must be in DUT Mode for this callback
  * to be received */
-typedef void (*dut_mode_recv_callback)(uint16_t opcode, uint8_t* buf,
-                                       uint8_t len);
+typedef void (*dut_mode_recv_callback)(uint16_t opcode, uint8_t* buf, uint8_t len);
 
 /* LE Test mode callbacks
  * This callback shall be invoked whenever the le_tx_test, le_rx_test or
@@ -612,10 +666,11 @@ typedef void (*energy_info_callback)(bt_activity_energy_info* energy_info,
                                      bt_uid_traffic_t* uid_data);
 
 /** Callback invoked when OOB data is returned from the controller */
-typedef void (*generate_local_oob_data_callback)(tBT_TRANSPORT transport,
-                                                 bt_oob_data_t oob_data);
+typedef void (*generate_local_oob_data_callback)(tBT_TRANSPORT transport, bt_oob_data_t oob_data);
 
-typedef void (*key_missing_callback)(const RawAddress bd_addr);
+typedef void (*key_missing_callback)(const RawAddress bd_addr, uint8_t reason);
+
+typedef void (*encryption_change_callback)(const bt_encryption_change_evt encryption_change);
 
 /** TODO: Add callbacks for Link Up/Down and other generic
  *  notifications/callbacks */
@@ -645,6 +700,7 @@ typedef struct {
   switch_codec_callback switch_codec_cb;
   le_rand_callback le_rand_cb;
   key_missing_callback key_missing_cb;
+  encryption_change_callback encryption_change_cb;
 } bt_callbacks_t;
 
 typedef int (*acquire_wake_lock_callout)(const char* lock_name);
@@ -685,22 +741,24 @@ typedef struct {
 typedef struct {
   /** set to sizeof(bt_interface_t) */
   size_t size;
+#ifdef TARGET_FLOSS
+  /** set index of the adapter to use */
+  void (*set_adapter_index)(int adapter_index);
+#endif
+
   /**
    * Opens the interface and provides the callback routines
-   * to the implemenation of this interface.
+   * to the implementation of this interface.
    * The |start_restricted| flag inits the adapter in restricted mode. In
    * restricted mode, bonds that are created are marked as restricted in the
    * config file. These devices are deleted upon leaving restricted mode.
-   * The |is_common_criteria_mode| flag inits the adapter in commom criteria
+   * The |is_common_criteria_mode| flag inits the adapter in common criteria
    * mode. The |config_compare_result| flag show the config checksum check
-   * result if is in common criteria mode. The |init_flags| are config flags
-   * that cannot change during run. The |is_atv| flag indicates whether the
-   * local device is an Android TV
+   * result if is in common criteria mode. The |is_atv| flag indicates whether
+   * the local device is an Android TV
    */
-  int (*init)(bt_callbacks_t* callbacks, bool guest_mode,
-              bool is_common_criteria_mode, int config_compare_result,
-              const char** init_flags, bool is_atv,
-              const char* user_data_directory);
+  int (*init)(bt_callbacks_t* callbacks, bool guest_mode, bool is_common_criteria_mode,
+              int config_compare_result, bool is_atv, const char* hci_instance_name);
 
   /** Enable Bluetooth. */
   int (*enable)();
@@ -710,12 +768,6 @@ typedef struct {
 
   /** Closes the interface. */
   void (*cleanup)(void);
-
-  /** Start Rust Module */
-  void (*start_rust_module)(void);
-
-  /** Stop Rust Module */
-  void (*stop_rust_module)(void);
 
   /** Get all Bluetooth Adapter properties at init */
   int (*get_adapter_properties)(void);
@@ -735,16 +787,13 @@ typedef struct {
   int (*get_remote_device_properties)(RawAddress* remote_addr);
 
   /** Get Remote Device property of 'type' */
-  int (*get_remote_device_property)(RawAddress* remote_addr,
-                                    bt_property_type_t type);
+  int (*get_remote_device_property)(RawAddress* remote_addr, bt_property_type_t type);
 
   /** Set Remote Device property of 'type' */
-  int (*set_remote_device_property)(RawAddress* remote_addr,
-                                    const bt_property_t* property);
+  int (*set_remote_device_property)(RawAddress* remote_addr, const bt_property_t* property);
 
   /** Get Remote Device's service record  for the given UUID */
-  int (*get_remote_service_record)(const RawAddress& remote_addr,
-                                   const bluetooth::Uuid& uuid);
+  int (*get_remote_service_record)(const RawAddress& remote_addr, const bluetooth::Uuid& uuid);
 
   /** Start service discovery with transport to get remote services */
   int (*get_remote_services)(RawAddress* remote_addr, int transport);
@@ -763,8 +812,7 @@ typedef struct {
 
   /** Create Bluetooth Bond using out of band data */
   int (*create_bond_out_of_band)(const RawAddress* bd_addr, int transport,
-                                 const bt_oob_data_t* p192_data,
-                                 const bt_oob_data_t* p256_data);
+                                 const bt_oob_data_t* p192_data, const bt_oob_data_t* p256_data);
 
   /** Remove Bond */
   int (*remove_bond)(const RawAddress* bd_addr);
@@ -791,8 +839,8 @@ typedef struct {
    * BT_SSP_VARIANT_CONSENT
    * For BT_SSP_VARIANT_PASSKEY_ENTRY, if accept==FALSE, then passkey
    * shall be zero */
-  int (*ssp_reply)(const RawAddress* bd_addr, bt_ssp_variant_t variant,
-                   uint8_t accept, uint32_t passkey);
+  int (*ssp_reply)(const RawAddress* bd_addr, bt_ssp_variant_t variant, uint8_t accept,
+                   uint32_t passkey);
 
   /** Get Bluetooth profile interface */
   const void* (*get_profile_interface)(const char* profile_id);
@@ -829,14 +877,6 @@ typedef struct {
   void (*dump)(int fd, const char** arguments);
 
   /**
-   * Native support for metrics protobuf dumping. The dumping format will be
-   * raw byte array
-   *
-   * @param output an externally allocated string to dump serialized protobuf
-   */
-  void (*dumpMetrics)(std::string* output);
-
-  /**
    * Clear /data/misc/bt_config.conf and erase all stored connections
    */
   int (*config_clear)(void);
@@ -852,8 +892,7 @@ typedef struct {
    * NOTE: |feature| has to match an item defined in interop_feature_t
    * (interop.h).
    */
-  void (*interop_database_add)(uint16_t feature, const RawAddress* addr,
-                               size_t len);
+  void (*interop_database_add)(uint16_t feature, const RawAddress* addr, size_t len);
 
   /**
    * Get the AvrcpTarget Service interface to interact with the Avrcp Service
@@ -914,6 +953,11 @@ typedef struct {
    * Call to disconnect all ACL connections
    */
   int (*disconnect_all_acls)();
+
+  /**
+   * Call to disconnect ACL connection to device
+   */
+  int (*disconnect_acl)(const RawAddress& bd_addr, int transport);
 
   /**
    * Call to retrieve a generated random
@@ -984,8 +1028,7 @@ typedef struct {
    * @param key Metadata key
    * @param value Metadata value
    */
-  void (*metadata_changed)(const RawAddress& remote_bd_addr, int key,
-                           std::vector<uint8_t> value);
+  void (*metadata_changed)(const RawAddress& remote_bd_addr, int key, std::vector<uint8_t> value);
 
   /** interop match address */
   bool (*interop_match_addr)(const char* feature_name, const RawAddress* addr);
@@ -994,25 +1037,20 @@ typedef struct {
   bool (*interop_match_name)(const char* feature_name, const char* name);
 
   /** interop match address or name */
-  bool (*interop_match_addr_or_name)(const char* feature_name,
-                                     const RawAddress* addr);
+  bool (*interop_match_addr_or_name)(const char* feature_name, const RawAddress* addr);
 
   /** add or remove address entry to interop database */
-  void (*interop_database_add_remove_addr)(bool do_add,
-                                           const char* feature_name,
+  void (*interop_database_add_remove_addr)(bool do_add, const char* feature_name,
                                            const RawAddress* addr, int length);
 
   /** add or remove name entry to interop database */
-  void (*interop_database_add_remove_name)(bool do_add,
-                                           const char* feature_name,
-                                           const char* name);
+  void (*interop_database_add_remove_name)(bool do_add, const char* feature_name, const char* name);
 
   /** get remote Pbap PCE  version*/
   int (*get_remote_pbap_pce_version)(const RawAddress* bd_addr);
 
   /** check if pbap pse dynamic version upgrade is enable */
   bool (*pbap_pse_dynamic_version_upgrade_is_enabled)();
-
 } bt_interface_t;
 
 #define BLUETOOTH_INTERFACE_STRING "bluetoothInterface"
@@ -1020,7 +1058,7 @@ typedef struct {
 #if __has_include(<bluetooth/log.h>)
 #include <bluetooth/log.h>
 
-namespace fmt {
+namespace std {
 template <>
 struct formatter<bt_status_t> : enum_formatter<bt_status_t> {};
 template <>
@@ -1029,7 +1067,9 @@ template <>
 struct formatter<bt_bond_state_t> : enum_formatter<bt_bond_state_t> {};
 template <>
 struct formatter<bt_property_type_t> : enum_formatter<bt_property_type_t> {};
-}  // namespace fmt
+template <>
+struct formatter<bt_ssp_variant_t> : enum_formatter<bt_ssp_variant_t> {};
+}  // namespace std
 
 #endif  // __has_include(<bluetooth/log.h>)
 

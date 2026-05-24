@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,103 +13,99 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.pbap;
+
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTED;
+import static android.content.pm.PackageManager.FEATURE_TELEPHONY_SUBSCRIPTION;
+
+import static com.android.bluetooth.TestUtils.getTestDevice;
+import static com.android.bluetooth.TestUtils.mockGetBluetoothManager;
 
 import static com.google.common.truth.Truth.assertThat;
 
-import static org.junit.Assert.assertThrows;
+import static org.junit.Assume.assumeTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doNothing;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import android.bluetooth.BluetoothAdapter;
+import android.app.NotificationManager;
 import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothProfile;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Message;
-import android.os.test.TestLooper;
+import android.os.UserManager;
+import android.test.mock.MockContentResolver;
 
-import androidx.test.InstrumentationRegistry;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.MediumTest;
-import androidx.test.runner.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
 
-import com.android.bluetooth.BluetoothMethodProxy;
+import com.android.bluetooth.TestLooper;
 import com.android.bluetooth.TestUtils;
 import com.android.bluetooth.btservice.AdapterService;
 import com.android.bluetooth.btservice.storage.DatabaseManager;
+import com.android.bluetooth.flags.Flags;
+import com.android.tests.bluetooth.MockitoRule;
 
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
-import org.mockito.Spy;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
+import java.util.List;
+
+/** Test cases for {@link BluetoothPbapService}. */
 @MediumTest
 @RunWith(AndroidJUnit4.class)
 public class BluetoothPbapServiceTest {
-    private static final String REMOTE_DEVICE_ADDRESS = "00:00:00:00:00:00";
-
-    private BluetoothPbapService mService;
-    private BluetoothAdapter mAdapter = null;
-    private BluetoothDevice mRemoteDevice;
-    private boolean mIsAdapterServiceSet;
-    private boolean mIsBluetoothPabpServiceStarted;
-    private TestLooper mTestLooper;
-
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
 
     @Mock private AdapterService mAdapterService;
     @Mock private DatabaseManager mDatabaseManager;
-    @Spy private BluetoothMethodProxy mMethodProxy = BluetoothMethodProxy.getInstance();
+    @Mock private NotificationManager mNotificationManager;
+    @Mock private SharedPreferences mSharedPreferences;
+
+    private final BluetoothDevice mRemoteDevice = getTestDevice(42);
+    private final Context mContext = InstrumentationRegistry.getInstrumentation().getContext();
+    private final MockContentResolver mMockContentResolver = new MockContentResolver(mContext);
+
+    private BluetoothPbapService mService;
+    private TestLooper mLooper;
 
     @Before
     public void setUp() throws Exception {
-        Context targetContext = InstrumentationRegistry.getTargetContext();
-        mTestLooper = new TestLooper();
-        BluetoothMethodProxy.setInstanceForTesting(mMethodProxy);
-        doReturn(mTestLooper.getLooper()).when(mMethodProxy).handlerThreadGetLooper(any());
-        doNothing().when(mMethodProxy).threadStart(any());
-        mTestLooper.startAutoDispatch();
-        TestUtils.setAdapterService(mAdapterService);
-        mIsAdapterServiceSet = true;
-        doReturn(mDatabaseManager).when(mAdapterService).getDatabase();
-        mService = new BluetoothPbapService(targetContext);
-        mService.start();
-        mService.setAvailable(true);
-        mIsBluetoothPabpServiceStarted = true;
-        // Try getting the Bluetooth adapter
-        mAdapter = BluetoothAdapter.getDefaultAdapter();
-        assertThat(mAdapter).isNotNull();
-        mRemoteDevice = mAdapter.getRemoteDevice(REMOTE_DEVICE_ADDRESS);
-    }
+        assumeTrue(mContext.getPackageManager().hasSystemFeature(FEATURE_TELEPHONY_SUBSCRIPTION));
 
-    @After
-    public void tearDown() throws Exception {
-        mTestLooper.stopAutoDispatchAndIgnoreExceptions();
-        BluetoothMethodProxy.setInstanceForTesting(null);
-        if (!mIsAdapterServiceSet) {
-            return;
-        }
-        if (mIsBluetoothPabpServiceStarted) {
-            mService.stop();
-            mService = BluetoothPbapService.getBluetoothPbapService();
-            assertThat(mService).isNull();
-        }
-        TestUtils.clearAdapterService(mAdapterService);
+        doReturn(mSharedPreferences)
+                .when(mAdapterService)
+                .getSharedPreferences(anyString(), anyInt());
+        doReturn(mContext.getPackageName()).when(mAdapterService).getPackageName();
+        doReturn(mContext.getPackageManager()).when(mAdapterService).getPackageManager();
+        doReturn(mMockContentResolver).when(mAdapterService).getContentResolver();
+        UserManager manager = TestUtils.mockGetSystemService(mAdapterService, UserManager.class);
+        doReturn(List.of()).when(manager).getAllProfiles();
+
+        mLooper = new TestLooper();
+        doReturn(mDatabaseManager).when(mAdapterService).getDatabaseManager();
+        mockGetBluetoothManager(mAdapterService);
+        mService =
+                new BluetoothPbapService(
+                        mAdapterService, mNotificationManager, mLooper.getLooper());
+        mService.setAvailable(true);
     }
 
     @Test
-    public void initialize() {
-        assertThat(BluetoothPbapService.getBluetoothPbapService()).isNotNull();
+    public void init_cleanup() {
+        mService.cleanup();
     }
 
     @Test
@@ -131,18 +127,6 @@ public class BluetoothPbapServiceTest {
     }
 
     @Test
-    public void getConnectionPolicy_withDeviceIsNull_throwsNPE() {
-        assertThrows(IllegalArgumentException.class, () -> mService.getConnectionPolicy(null));
-    }
-
-    @Test
-    public void getConnectionPolicy() {
-        mService.getConnectionPolicy(mRemoteDevice);
-
-        verify(mDatabaseManager).getProfileConnectionPolicy(mRemoteDevice, BluetoothProfile.PBAP);
-    }
-
-    @Test
     public void getDevicesMatchingConnectionStates_whenStatesIsNull_returnsEmptyList() {
         assertThat(mService.getDevicesMatchingConnectionStates(null)).isEmpty();
     }
@@ -151,20 +135,22 @@ public class BluetoothPbapServiceTest {
     public void getDevicesMatchingConnectionStates() {
         PbapStateMachine sm = mock(PbapStateMachine.class);
         mService.mPbapStateMachineMap.put(mRemoteDevice, sm);
-        when(sm.getConnectionState()).thenReturn(BluetoothProfile.STATE_CONNECTED);
+        when(sm.getConnectionState()).thenReturn(STATE_CONNECTED);
 
-        int[] states = new int[] {BluetoothProfile.STATE_CONNECTED};
+        int[] states = new int[] {STATE_CONNECTED};
         assertThat(mService.getDevicesMatchingConnectionStates(states)).contains(mRemoteDevice);
     }
 
     @Test
     public void onAcceptFailed() {
-        mTestLooper.stopAutoDispatchAndIgnoreExceptions();
         PbapStateMachine sm = mock(PbapStateMachine.class);
         mService.mPbapStateMachineMap.put(mRemoteDevice, sm);
 
         mService.onAcceptFailed();
 
+        if (Flags.pbapCleanupUseHandler()) {
+            mLooper.dispatchAll();
+        }
         assertThat(mService.mPbapStateMachineMap).isEmpty();
     }
 
@@ -194,6 +180,7 @@ public class BluetoothPbapServiceTest {
         intent.putExtra(BluetoothPbapService.EXTRA_SESSION_KEY, sessionKey);
         intent.putExtra(BluetoothPbapService.EXTRA_DEVICE, mRemoteDevice);
         PbapStateMachine sm = mock(PbapStateMachine.class);
+        doCallRealMethod().when(sm).obtainMessage(anyInt(), any());
         mService.mPbapStateMachineMap.put(mRemoteDevice, sm);
 
         mService.mPbapReceiver.onReceive(null, intent);

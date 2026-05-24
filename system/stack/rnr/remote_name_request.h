@@ -15,41 +15,34 @@
  */
 #pragma once
 
+#include <bluetooth/types/address.h>
+
 #include "osi/include/alarm.h"
 #include "stack/include/bt_device_type.h"
 #include "stack/include/bt_name.h"
 #include "stack/include/btm_status.h"
 #include "stack/include/hci_error_code.h"
+#include "stack/include/rnr_interface.h"
 #include "stack/include/security_client_callbacks.h"
-#include "types/raw_address.h"
-
-/* Structure returned with remote name  request */
-typedef struct {
-  tBTM_STATUS status;
-  RawAddress bd_addr;
-  BD_NAME remote_bd_name;
-  tHCI_STATUS hci_status;
-} tBTM_REMOTE_DEV_NAME;
-
-typedef void(tBTM_NAME_CMPL_CB)(const tBTM_REMOTE_DEV_NAME*);
 
 namespace bluetooth {
+namespace stack {
 namespace rnr {
 
 class RemoteNameRequest {
- public:
+public:
   tBTM_NAME_CMPL_CB* p_remname_cmpl_cb{nullptr};
   alarm_t* remote_name_timer{nullptr};
-  RawAddress remname_bda{}; /* Name of bd addr for active remote name request */
-  bool remname_active{
-      false}; /* State of a remote name request by external API */
+  RawAddress remname_bda{};   /* Name of bd addr for active remote name request */
+  bool remname_active{false}; /* State of a remote name request by external API */
   tBT_DEVICE_TYPE remname_dev_type{
-      BT_DEVICE_TYPE_UNKNOWN}; /* Whether it's LE or BREDR name request */
+          BT_DEVICE_TYPE_UNKNOWN}; /* Whether it's LE or BREDR name request */
 #define BTM_SEC_MAX_RMT_NAME_CALLBACKS 2
   tBTM_RMT_NAME_CALLBACK* p_rmt_name_callback[BTM_SEC_MAX_RMT_NAME_CALLBACKS]{nullptr, nullptr};
 };
 
 }  // namespace rnr
+}  // namespace stack
 }  // namespace bluetooth
 
 /*******************************************************************************
@@ -97,3 +90,89 @@ bool BTM_SecDeleteRmtNameNotifyCallback(tBTM_RMT_NAME_CALLBACK* p_callback);
  *
  ******************************************************************************/
 bool BTM_IsRemoteNameKnown(const RawAddress& bd_addr, tBT_TRANSPORT transport);
+
+/*******************************************************************************
+ *
+ * Function         BTM_ReadRemoteDeviceName
+ *
+ * Description      This function initiates a remote device HCI command to the
+ *                  controller and calls the callback when the process has
+ *                  completed.
+ *
+ * Input Params:    remote_bda      - bluetooth device address of name to
+ *                                    retrieve
+ *                  p_cb            - callback function called when
+ *                                    remote name is received or when procedure
+ *                                    timed out.
+ *                  transport       - transport used to query the remote name
+ * Returns
+ *                  tBTM_STATUS::BTM_CMD_STARTED is returned if the request was successfully
+ *                                    sent to HCI.
+ *                  BTM_BUSY if already in progress
+ *                  BTM_UNKNOWN_ADDR if device address is bad
+ *                  BTM_NO_RESOURCES if could not allocate resources to start
+ *                                   the command
+ *                  BTM_WRONG_MODE if the device is not up.
+ *
+ ******************************************************************************/
+tBTM_STATUS BTM_ReadRemoteDeviceName(const RawAddress& remote_bda, tBTM_NAME_CMPL_CB* p_cb,
+                                     tBT_TRANSPORT transport);
+
+/*******************************************************************************
+ *
+ * Function         BTM_CancelRemoteDeviceName
+ *
+ * Description      This function initiates the cancel request for the specified
+ *                  remote device.
+ *
+ * Input Params:    None
+ *
+ * Returns
+ *                  tBTM_STATUS::BTM_CMD_STARTED is returned if the request was successfully
+ *                                  sent to HCI.
+ *                  BTM_NO_RESOURCES if could not allocate resources to start
+ *                                   the command
+ *                  BTM_WRONG_MODE if there is not an active remote name
+ *                                 request.
+ *
+ ******************************************************************************/
+tBTM_STATUS BTM_CancelRemoteDeviceName(void);
+
+/*******************************************************************************
+ *
+ * Function         btm_process_remote_name
+ *
+ * Description      This function is called when a remote name is received from
+ *                  the device. If remote names are cached, it updates the
+ *                  inquiry database.
+ *
+ * Returns          void
+ *
+ ******************************************************************************/
+void btm_process_remote_name(const RawAddress* bda, const BD_NAME bdn, uint16_t /* evt_len */,
+                             tHCI_STATUS hci_status);
+
+void btm_inq_remote_name_timer_timeout(void* data);
+
+namespace bluetooth {
+namespace stack {
+namespace rnr {
+
+class Impl : public bluetooth::stack::rnr::Interface {
+public:
+  Impl() = default;
+
+  [[nodiscard]] bool BTM_SecAddRmtNameNotifyCallback(tBTM_RMT_NAME_CALLBACK* p_callback) override;
+  [[nodiscard]] bool BTM_SecDeleteRmtNameNotifyCallback(tBTM_RMT_NAME_CALLBACK* p_callback);
+  [[nodiscard]] bool BTM_IsRemoteNameKnown(const RawAddress& bd_addr, tBT_TRANSPORT transport);
+  [[nodiscard]] tBTM_STATUS BTM_ReadRemoteDeviceName(const RawAddress& remote_bda,
+                                                     tBTM_NAME_CMPL_CB* p_cb,
+                                                     tBT_TRANSPORT transport);
+  [[nodiscard]] tBTM_STATUS BTM_CancelRemoteDeviceName(void);
+  void btm_process_remote_name(const RawAddress* bda, const BD_NAME bdn, uint16_t /* evt_len */,
+                               tHCI_STATUS hci_status);
+};
+
+}  // namespace rnr
+}  // namespace stack
+}  // namespace bluetooth

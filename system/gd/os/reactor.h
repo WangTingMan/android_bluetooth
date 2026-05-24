@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,12 +36,15 @@
 namespace bluetooth {
 namespace os {
 
+constexpr std::chrono::milliseconds kReactableUnregistrationTimeout =
+        std::chrono::milliseconds(1000);
+
 // A simple implementation of reactor-style looper.
-// When a reactor is running, the main loop is polling and blocked until at least one registered reactable is ready to
-// read or write. It will invoke on_read_ready() or on_write_ready(), which is registered with the reactor. Then, it
-// blocks again until ready event.
+// When a reactor is running, the main loop is polling and blocked until at least one registered
+// reactable is ready to read or write. It will invoke on_read_ready() or on_write_ready(), which is
+// registered with the reactor. Then, it blocks again until ready event.
 class Reactor {
- public:
+public:
   // An object used for Unregister() and ModifyRegistration()
   class Reactable;
 
@@ -57,12 +60,14 @@ class Reactor {
   // Start the reactor. The current thread will be blocked until Stop() is invoked and handled.
   void Run();
 
-  // Stop the reactor. Must be invoked from a different thread. Note: all registered reactables will not be unregistered
-  // by Stop(). If the reactor is not running, it will be stopped once it's started.
+  // Stop the reactor. Must be invoked from a different thread. Note: all registered reactables will
+  // not be unregistered by Stop(). If the reactor is not running, it will be stopped once it's
+  // started.
   void Stop();
 
-  // Register a reactable fd to this reactor. Returns a pointer to a Reactable. Caller must use this object to
-  // unregister or modify registration. Ownership of the memory space is NOT transferred to user.
+  // Register a reactable fd to this reactor. Returns a pointer to a Reactable. Caller must use this
+  // object to unregister or modify registration. Ownership of the memory space is NOT transferred
+  // to user.
   Reactable* Register(int fd, common::Closure on_read_ready, common::Closure on_write_ready);
 
   // Unregister a reactable from this reactor
@@ -84,16 +89,16 @@ class Reactor {
   void ModifyRegistration(  Reactable* reactable, common::Closure on_read_ready, common::Closure on_write_ready );
 
   class Event {
-   public:
+  public:
     Event();
     ~Event();
     bool Read();
     int Id() const;
     void Clear();
     void Close();
-    void Notify();
+    void Notify(uint64_t num_events_generated = 1);
 
-   private:
+  private:
     Event(const Event& handler) = default;
     struct impl;
     impl* pimpl_{nullptr};

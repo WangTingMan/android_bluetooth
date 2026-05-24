@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,9 @@
 
 #pragma once
 
+#include <base/thread_annotations.h>
+
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -23,29 +26,50 @@
 #include "common/bind.h"
 #include "common/callback.h"
 #include "common/postable_context.h"
+#include "os/alarm.h"
+#include "os/boottime_clock.h"
 #include "os/thread.h"
 
 namespace bluetooth {
+// Timeout for waiting for a handler to stop, used in Handler::WaitUntilStopped()
+constexpr std::chrono::milliseconds kHandlerStopTimeout = std::chrono::milliseconds(2000);
+using TimePoint = os::boottime_clock::time_point;
+using DelayedTask = std::pair<TimePoint, common::OnceClosure>;
+
+// Define the lambda comparator
+inline auto compare_task_by_time = [](const DelayedTask& a, const DelayedTask& b) {
+  // For a min-heap of time_points (earliest time has highest priority),
+  // this returns true if 'a' should come after 'b' (i.e., 'a' has a later time).
+  return a.first > b.first;
+};
+
+// Priority queue of delayed tasks, the minimum to maximum priority.
+// Note: `time_point` delay is absolute time in the future, and will be compared against the
+// current time.
+using DelayedTaskQueue =
+        std::priority_queue<DelayedTask, std::vector<DelayedTask>, decltype(compare_task_by_time)>;
+
 namespace os {
 
-// A message-queue style handler for reactor-based thread to handle incoming events from different threads. When it's
-// constructed, it will register a reactable on the specified thread; when it's destroyed, it will unregister itself
-// from the thread.
+// A message-queue style handler for reactor-based thread to handle incoming events from different
+// threads. When it's constructed, it will register a reactable on the specified thread; when it's
+// destroyed, it will unregister itself from the thread.
 class Handler : public common::PostableContext {
- public:
+public:
   // Create and register a handler on given thread
   explicit Handler(Thread* thread);
 
   Handler(const Handler&) = delete;
   Handler& operator=(const Handler&) = delete;
 
-  // Unregister this handler from the thread and release resource. Unhandled events will be discarded and not executed.
+  // Unregister this handler from the thread and release resource. Unhandled events will be
+  // discarded and not executed.
   virtual ~Handler();
 
   // Enqueue a closure to the queue of this handler
   virtual void Post(common::OnceClosure closure) override;
 
-  // Remove all pending events from the queue of this handler
+  // Remove all pending events from the queue of this handler, and asynchronously stop the handler.
   void Clear();
 
   // Die if the current reactable doesn't stop before the timeout.  Must be called after Clear()
@@ -58,8 +82,29 @@ class Handler : public common::PostableContext {
 
   template <typename T, typename Functor, typename... Args>
   void CallOn(T* obj, Functor&& functor, Args&&... args) {
-    Post(common::BindOnce(std::forward<Functor>(functor), common::Unretained(obj), std::forward<Args>(args)...));
+    Post(common::BindOnce(std::forward<Functor>(functor), common::Unretained(obj),
+                          std::forward<Args>(args)...));
   }
+
+  Thread& thread() const { return *thread_; }
+
+  // Returns true if `Clear` has been called, but the handler could still be running (see
+  // WaitUntilStopped).
+  bool IsCleared() const LOCKS_EXCLUDED(mutex_) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return reactable_ == nullptr;
+  }
+
+  bool Synchronize(std::chrono::milliseconds timeout) {
+    std::promise<void> promise;
+    auto future = promise.get_future();
+    Post(common::BindOnce(&std::promise<void>::set_value, common::Unretained(&promise)));
+    return future.wait_for(timeout) == std::future_status::ready;
+  }
+
+  common::PostableContext* GetPostableContext() { return this; }
+
+  bool PostWithDelay(common::OnceClosure closure, std::chrono::milliseconds delay);
 
   template <typename T>
   friend class Queue;
@@ -68,16 +113,27 @@ class Handler : public common::PostableContext {
 
   friend class RepeatingAlarm;
 
- private:
-  inline bool was_cleared() const {
-    return tasks_ == nullptr;
-  };
-  std::queue<common::OnceClosure>* tasks_;
+private:
+  inline bool was_cleared() const EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
+    return tasks_ == nullptr || delayed_tasks_ == nullptr;
+  }
+  std::queue<common::OnceClosure>* tasks_ GUARDED_BY(mutex_);
+
   Thread* thread_;
   std::unique_ptr<Reactor::Event> event_;
-  Reactor::Reactable* reactable_;
+  Reactor::Reactable* reactable_ GUARDED_BY(mutex_);
   mutable std::mutex mutex_;
+
+  // A priority queue (minimum priority to maximum priority) of delayed tasks, once the delayed task
+  // timer expires, the task will be Post()ed to the handler.
+  DelayedTaskQueue* delayed_tasks_ GUARDED_BY(mutex_);
+
+  // The alarm used to schedule delayed tasks.
+  Alarm* alarm_ GUARDED_BY(mutex_);
+
   void handle_next_event();
+  void handle_delayed_event();
+  void reschedule_delayed_tasks();
 };
 
 }  // namespace os

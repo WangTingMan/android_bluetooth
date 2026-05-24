@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,23 @@
 
 package com.android.bluetooth.avrcp;
 
+import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTED;
+
+import static java.util.Objects.requireNonNull;
+import static java.util.Objects.requireNonNullElseGet;
+
 import android.annotation.NonNull;
+import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.BluetoothUtils;
-import android.bluetooth.IBluetoothAvrcpTarget;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.media.AudioAttributes;
 import android.media.AudioManager;
+import android.media.AudioPlaybackConfiguration;
 import android.os.Looper;
 import android.os.UserManager;
 import android.sysprop.BluetoothProperties;
@@ -34,10 +41,8 @@ import android.util.Log;
 import android.view.KeyEvent;
 
 import com.android.bluetooth.BluetoothEventLogger;
-import com.android.bluetooth.BluetoothMetricsProto;
-import com.android.bluetooth.R;
-import com.android.bluetooth.Utils;
 import com.android.bluetooth.a2dp.A2dpService;
+import com.android.bluetooth.audio_util.ListItem;
 import com.android.bluetooth.audio_util.MediaData;
 import com.android.bluetooth.audio_util.MediaPlayerList;
 import com.android.bluetooth.audio_util.MediaPlayerWrapper;
@@ -45,9 +50,9 @@ import com.android.bluetooth.audio_util.Metadata;
 import com.android.bluetooth.audio_util.PlayStatus;
 import com.android.bluetooth.audio_util.PlayerInfo;
 import com.android.bluetooth.audio_util.PlayerSettingsManager;
-import com.android.bluetooth.btservice.MetricsLogger;
+import com.android.bluetooth.btservice.AdapterService;
 import com.android.bluetooth.btservice.ProfileService;
-import com.android.bluetooth.btservice.ServiceFactory;
+import com.android.bluetooth.flags.Flags;
 import com.android.internal.annotations.VisibleForTesting;
 
 import java.util.List;
@@ -62,14 +67,6 @@ public class AvrcpTargetService extends ProfileService {
     private final BluetoothEventLogger mMediaKeyEventLogger =
             new BluetoothEventLogger(MEDIA_KEY_EVENT_LOGGER_SIZE, MEDIA_KEY_EVENT_LOGGER_TITLE);
 
-    private AvrcpVersion mAvrcpVersion;
-    private MediaPlayerList mMediaPlayerList;
-    private PlayerSettingsManager mPlayerSettingsManager;
-    private AudioManager mAudioManager;
-    private AvrcpBroadcastReceiver mReceiver;
-    private AvrcpNativeInterface mNativeInterface;
-    private AvrcpVolumeManager mVolumeManager;
-    private ServiceFactory mFactory = new ServiceFactory();
     private final BroadcastReceiver mUserUnlockedReceiver =
             new BroadcastReceiver() {
                 @Override
@@ -84,22 +81,89 @@ public class AvrcpTargetService extends ProfileService {
                         Log.e(TAG, "userChangeReceiver received an invalid EXTRA_USER_HANDLE");
                         return;
                     }
-                    if (mMediaPlayerList != null) {
-                        mMediaPlayerList.init(new ListCallback());
-                    }
+                    mMediaPlayerList.init(new ListCallback());
                 }
             };
+
+    // Cover Art Service (Storage + BIP Server)
+    private final AvrcpCoverArtService mAvrcpCoverArtService;
+    private final AvrcpVersion mAvrcpVersion;
+    private final MediaPlayerList mMediaPlayerList;
+    private final PlayerSettingsManager mPlayerSettingsManager;
+    private final AudioManager mAudioManager;
+    private final AvrcpBroadcastReceiver mReceiver;
+    private final AvrcpNativeInterface mNativeInterface;
+    private final AvrcpVolumeManager mVolumeManager;
+    private final boolean mIsVfsCoverArtEnabled;
 
     // Only used to see if the metadata has changed from its previous value
     private MediaData mCurrentData;
 
-    // Cover Art Service (Storage + BIP Server)
-    private AvrcpCoverArtService mAvrcpCoverArtService = null;
+    public AvrcpTargetService(AdapterService adapterService, UserManager userManager) {
+        this(requireNonNull(adapterService), null, null, null, userManager, Looper.myLooper());
+    }
 
-    private static AvrcpTargetService sInstance = null;
+    @VisibleForTesting
+    AvrcpTargetService(
+            AdapterService adapterService,
+            AudioManager audioManager,
+            AvrcpNativeInterface nativeInterface,
+            AvrcpVolumeManager volumeManager,
+            UserManager userManager,
+            Looper looper) {
+        super(BluetoothProfile.AVRCP, requireNonNull(adapterService));
+        mAudioManager =
+                requireNonNullElseGet(audioManager, () -> obtainSystemService(AudioManager.class));
+        mNativeInterface =
+                requireNonNullElseGet(
+                        nativeInterface, () -> new AvrcpNativeInterface(adapterService, this));
 
-    public AvrcpTargetService(Context ctx) {
-        super(ctx);
+        mMediaPlayerList = new MediaPlayerList(adapterService, looper);
+
+        IntentFilter userFilter = new IntentFilter();
+        userFilter.setPriority(IntentFilter.SYSTEM_HIGH_PRIORITY);
+        userFilter.addAction(Intent.ACTION_USER_UNLOCKED);
+        getApplicationContext().registerReceiver(mUserUnlockedReceiver, userFilter);
+
+        Log.i(TAG, "Starting the AVRCP Target Service");
+        mCurrentData = new MediaData(null, null, null);
+
+        mPlayerSettingsManager = new PlayerSettingsManager(mMediaPlayerList, this);
+        mNativeInterface.init();
+
+        mAvrcpVersion = AvrcpVersion.getCurrentSystemPropertiesValue();
+        mVolumeManager =
+                requireNonNullElseGet(
+                        volumeManager,
+                        () ->
+                                new AvrcpVolumeManager(
+                                        requireNonNull(adapterService), mNativeInterface));
+
+        if (userManager.isUserUnlocked()) {
+            mMediaPlayerList.init(new ListCallback());
+        }
+
+        if (!mAvrcpVersion.isAtLeastVersion(AvrcpVersion.AVRCP_VERSION_1_6)) {
+            Log.e(TAG, "Please use AVRCP version 1.6 to enable cover art");
+            mAvrcpCoverArtService = null;
+        } else {
+            AvrcpCoverArtService coverArtService =
+                    new AvrcpCoverArtService(adapterService, mNativeInterface);
+            if (coverArtService.start()) {
+                mAvrcpCoverArtService = coverArtService;
+            } else {
+                Log.e(TAG, "Failed to start cover art service");
+                mAvrcpCoverArtService = null;
+            }
+        }
+
+        mIsVfsCoverArtEnabled = mMediaPlayerList.isVfsCoverArtEnabled();
+
+        mReceiver = new AvrcpBroadcastReceiver();
+        IntentFilter filter = new IntentFilter();
+        filter.setPriority(IntentFilter.SYSTEM_HIGH_PRIORITY);
+        filter.addAction(AudioManager.ACTION_VOLUME_CHANGED);
+        registerReceiver(mReceiver, filter);
     }
 
     /** Checks for profile enabled state in Bluetooth sysprops. */
@@ -111,11 +175,9 @@ public class AvrcpTargetService extends ProfileService {
     class ListCallback implements MediaPlayerList.MediaUpdateCallback {
         @Override
         public void run(MediaData data) {
-            if (mNativeInterface == null) return;
-
             boolean metadata = !Objects.equals(mCurrentData.metadata, data.metadata);
             boolean state = !MediaPlayerWrapper.playstateEquals(mCurrentData.state, data.state);
-            boolean queue = !Objects.equals(mCurrentData.queue, data.queue);
+            boolean queue = isQueueUpdated(mCurrentData.queue, data.queue);
 
             Log.d(
                     TAG,
@@ -132,48 +194,32 @@ public class AvrcpTargetService extends ProfileService {
 
         @Override
         public void run(boolean availablePlayers, boolean addressedPlayers, boolean uids) {
-            if (mNativeInterface == null) return;
-
             mNativeInterface.sendFolderUpdate(availablePlayers, addressedPlayers, uids);
         }
     }
 
     /**
      * Listens for {@link AudioManager.ACTION_VOLUME_CHANGED} events to update {@link
-     * AvrcpVolumeManager}.
+     * AvrcpVolumeManager} in case the remote device doesn't support absolute volume.
      */
     private class AvrcpBroadcastReceiver extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
-            if (action.equals(AudioManager.ACTION_VOLUME_CHANGED)) {
-                int streamType = intent.getIntExtra(AudioManager.EXTRA_VOLUME_STREAM_TYPE, -1);
-                if (streamType == AudioManager.STREAM_MUSIC) {
-                    int volume = intent.getIntExtra(AudioManager.EXTRA_VOLUME_STREAM_VALUE, 0);
-                    BluetoothDevice activeDevice = getA2dpActiveDevice();
-                    if (activeDevice != null
-                            && !mVolumeManager.getAbsoluteVolumeSupported(activeDevice)) {
-                        Log.d(TAG, "stream volume change to " + volume + " " + activeDevice);
-                        mVolumeManager.storeVolumeForDevice(activeDevice, volume);
-                    }
-                }
+            if (!action.equals(AudioManager.ACTION_VOLUME_CHANGED)) {
+                return;
+            }
+            int streamType = intent.getIntExtra(AudioManager.EXTRA_VOLUME_STREAM_TYPE, -1);
+            if (streamType != AudioManager.STREAM_MUSIC) {
+                return;
+            }
+            int volume = intent.getIntExtra(AudioManager.EXTRA_VOLUME_STREAM_VALUE, 0);
+            BluetoothDevice activeDevice = getA2dpActiveDevice();
+            if (activeDevice != null && !mVolumeManager.getAbsoluteVolumeSupported(activeDevice)) {
+                Log.d(TAG, "stream volume change to " + volume + " " + activeDevice);
+                mVolumeManager.storeVolumeForDevice(activeDevice, volume);
             }
         }
-    }
-
-    /** Sets the AvrcpTargetService instance. */
-    @VisibleForTesting
-    public static void set(AvrcpTargetService instance) {
-        sInstance = instance;
-    }
-
-    /**
-     * Returns the {@link AvrcpTargetService} instance.
-     *
-     * <p>Returns null if the service hasn't been initialized.
-     */
-    public static AvrcpTargetService get() {
-        return sInstance;
     }
 
     /** Returns the {@link AvrcpCoverArtService} instance. */
@@ -182,107 +228,31 @@ public class AvrcpTargetService extends ProfileService {
     }
 
     @Override
-    public String getName() {
-        return TAG;
-    }
-
-    @Override
     protected IProfileServiceBinder initBinder() {
-        return new AvrcpTargetBinder(this);
+        return null;
     }
 
     @Override
-    public void start() {
-        if (sInstance != null) {
-            throw new IllegalStateException("start() called twice");
-        }
-
-        IntentFilter userFilter = new IntentFilter();
-        userFilter.setPriority(IntentFilter.SYSTEM_HIGH_PRIORITY);
-        userFilter.addAction(Intent.ACTION_USER_UNLOCKED);
-        getApplicationContext().registerReceiver(mUserUnlockedReceiver, userFilter);
-
-        Log.i(TAG, "Starting the AVRCP Target Service");
-        mCurrentData = new MediaData(null, null, null);
-
-        mAudioManager = getSystemService(AudioManager.class);
-
-        mMediaPlayerList = new MediaPlayerList(Looper.myLooper(), this);
-
-        mPlayerSettingsManager = new PlayerSettingsManager(mMediaPlayerList, this);
-
-        mNativeInterface = AvrcpNativeInterface.getInstance();
-        mNativeInterface.init(AvrcpTargetService.this);
-
-        mAvrcpVersion = AvrcpVersion.getCurrentSystemPropertiesValue();
-
-        mVolumeManager = new AvrcpVolumeManager(this, mAudioManager, mNativeInterface);
-
-        UserManager userManager = getApplicationContext().getSystemService(UserManager.class);
-        if (userManager.isUserUnlocked()) {
-            mMediaPlayerList.init(new ListCallback());
-        }
-
-        if (getResources().getBoolean(R.bool.avrcp_target_enable_cover_art)) {
-            if (mAvrcpVersion.isAtleastVersion(AvrcpVersion.AVRCP_VERSION_1_6)) {
-                mAvrcpCoverArtService = new AvrcpCoverArtService();
-                boolean started = mAvrcpCoverArtService.start();
-                if (!started) {
-                    Log.e(TAG, "Failed to start cover art service");
-                    mAvrcpCoverArtService = null;
-                }
-            } else {
-                Log.e(TAG, "Please use AVRCP version 1.6 to enable cover art");
-            }
-        }
-
-        mReceiver = new AvrcpBroadcastReceiver();
-        IntentFilter filter = new IntentFilter();
-        filter.setPriority(IntentFilter.SYSTEM_HIGH_PRIORITY);
-        filter.addAction(AudioManager.ACTION_VOLUME_CHANGED);
-        registerReceiver(mReceiver, filter);
-
-        // Only allow the service to be used once it is initialized
-        sInstance = this;
-    }
-
-    @Override
-    public void stop() {
-        Log.i(TAG, "Stopping the AVRCP Target Service");
-
-        if (sInstance == null) {
-            Log.w(TAG, "stop() called before start()");
-            return;
-        }
+    public void cleanup() {
+        Log.i(TAG, "cleanup()");
 
         if (mAvrcpCoverArtService != null) {
             mAvrcpCoverArtService.stop();
         }
-        mAvrcpCoverArtService = null;
 
-        sInstance = null;
         unregisterReceiver(mReceiver);
 
         // We check the interfaces first since they only get set on User Unlocked
-        if (mPlayerSettingsManager != null) mPlayerSettingsManager.cleanup();
-        if (mMediaPlayerList != null) mMediaPlayerList.cleanup();
-        if (mNativeInterface != null) mNativeInterface.cleanup();
+        mPlayerSettingsManager.cleanup();
+        mMediaPlayerList.cleanup();
+        mNativeInterface.cleanup();
+        mVolumeManager.cleanup();
         getApplicationContext().unregisterReceiver(mUserUnlockedReceiver);
-
-        mPlayerSettingsManager = null;
-        mMediaPlayerList = null;
-        mNativeInterface = null;
-        mAudioManager = null;
-        mReceiver = null;
     }
 
     /** Returns the active A2DP {@link BluetoothDevice} */
     private BluetoothDevice getA2dpActiveDevice() {
-        A2dpService service = mFactory.getA2dpService();
-        if (service == null) {
-            return null;
-        }
-        return service.getActiveDevice();
+        return mAdapterService.getA2dpService().map(A2dpService::getActiveDevice).orElse(null);
     }
 
     /**
@@ -292,19 +262,17 @@ public class AvrcpTargetService extends ProfileService {
      * device. See packages/modules/Bluetooth/system/profile/avrcp/device.cc.
      */
     private void setA2dpActiveDevice(@NonNull BluetoothDevice device) {
-        A2dpService service = A2dpService.getA2dpService();
-        if (service == null) {
-            Log.d(TAG, "setA2dpActiveDevice: A2dp service not found");
+        if (Flags.setA2dpActiveDeviceThroughAdapterService()) {
+            mAdapterService.setActiveDevice(device, BluetoothAdapter.ACTIVE_DEVICE_AUDIO);
             return;
         }
-        service.setActiveDevice(device);
+        mAdapterService.getA2dpService().ifPresent(a2dp -> a2dp.setActiveDevice(device));
     }
 
     /** Informs {@link AvrcpVolumeManager} that a new device is connected */
     void deviceConnected(BluetoothDevice device, boolean absoluteVolume) {
         Log.i(TAG, "deviceConnected: device=" + device + " absoluteVolume=" + absoluteVolume);
         mVolumeManager.deviceConnected(device, absoluteVolume);
-        MetricsLogger.logProfileConnectionEvent(BluetoothMetricsProto.ProfileId.AVRCP);
     }
 
     /** Informs {@link AvrcpVolumeManager} that a device is disconnected */
@@ -337,8 +305,8 @@ public class AvrcpTargetService extends ProfileService {
      * <p>If the A2DP connection disconnects, we request AVRCP to disconnect device as well.
      */
     public void handleA2dpConnectionStateChanged(BluetoothDevice device, int newState) {
-        if (device == null || mNativeInterface == null) return;
-        if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+        if (device == null) return;
+        if (newState == STATE_DISCONNECTED) {
             // If there is no connection, disconnectDevice() will do nothing
             if (mNativeInterface.disconnectDevice(device)) {
                 Log.d(TAG, "request to disconnect device " + device);
@@ -357,10 +325,8 @@ public class AvrcpTargetService extends ProfileService {
      */
     public void handleA2dpActiveDeviceChanged(BluetoothDevice device) {
         mVolumeManager.volumeDeviceSwitched(device);
-        if (mNativeInterface != null) {
-            // Update all the playback status info for each connected device
-            mNativeInterface.sendMediaUpdate(false, true, false);
-        }
+        // Update all the playback status info for each connected device
+        mNativeInterface.sendMediaUpdate(false, true, false);
     }
 
     /** Informs {@link AvrcpVolumeManager} that a remote device requests a volume change */
@@ -400,8 +366,7 @@ public class AvrcpTargetService extends ProfileService {
     Metadata getCurrentSongInfo() {
         Metadata metadata = mMediaPlayerList.getCurrentSongInfo();
         if (mAvrcpCoverArtService != null && metadata.image != null) {
-            String imageHandle = mAvrcpCoverArtService.storeImage(metadata.image);
-            if (imageHandle != null) metadata.image.setImageHandle(imageHandle);
+            metadata.image.setImageHandle(mAvrcpCoverArtService.storeImage(metadata.image));
         }
         return metadata;
     }
@@ -434,26 +399,20 @@ public class AvrcpTargetService extends ProfileService {
     List<Metadata> getNowPlayingList() {
         String currentMediaId = getCurrentMediaId();
         Metadata currentTrack = null;
-        String imageHandle = null;
         List<Metadata> nowPlayingList = mMediaPlayerList.getNowPlayingList();
         if (mAvrcpCoverArtService != null) {
             for (Metadata metadata : nowPlayingList) {
                 if (TextUtils.equals(metadata.mediaId, currentMediaId)) {
                     currentTrack = metadata;
                 } else if (metadata.image != null) {
-                    imageHandle = mAvrcpCoverArtService.storeImage(metadata.image);
-                    if (imageHandle != null) {
-                        metadata.image.setImageHandle(imageHandle);
-                    }
+                    metadata.image.setImageHandle(mAvrcpCoverArtService.storeImage(metadata.image));
                 }
             }
 
             // Always store the current item from the queue last so we know the image is in storage
             if (currentTrack != null) {
-                imageHandle = mAvrcpCoverArtService.storeImage(currentTrack.image);
-                if (imageHandle != null) {
-                    currentTrack.image.setImageHandle(imageHandle);
-                }
+                currentTrack.image.setImageHandle(
+                        mAvrcpCoverArtService.storeImage(currentTrack.image));
             }
         }
         return nowPlayingList;
@@ -479,14 +438,33 @@ public class AvrcpTargetService extends ProfileService {
         return mMediaPlayerList.getMediaPlayerList();
     }
 
-    /** See {@link MediaPlayerList#getPlayerRoot}. */
-    void getPlayerRoot(int playerId, MediaPlayerList.GetPlayerRootCallback cb) {
-        mMediaPlayerList.getPlayerRoot(playerId, cb);
+    /** See {@link MediaPlayerList#setBrowsedPlayer}. */
+    void setBrowsedPlayer(
+            int playerId, String currentPath, MediaPlayerList.SetBrowsedPlayerCallback cb) {
+        mMediaPlayerList.setBrowsedPlayer(playerId, currentPath, cb);
+    }
+
+    /** See {@link MediaPlayerList#setAddressedPlayer}. */
+    int setAddressedPlayer(int playerId) {
+        return mMediaPlayerList.setAddressedPlayer(playerId);
     }
 
     /** See {@link MediaPlayerList#getFolderItems}. */
     void getFolderItems(int playerId, String mediaId, MediaPlayerList.GetFolderItemsCallback cb) {
-        mMediaPlayerList.getFolderItems(playerId, mediaId, cb);
+        mMediaPlayerList.getFolderItems(
+                playerId,
+                mediaId,
+                (id, results) -> {
+                    if (mIsVfsCoverArtEnabled && mAvrcpCoverArtService != null) {
+                        for (ListItem item : results) {
+                            if (item != null && item.song != null && item.song.image != null) {
+                                item.song.image.setImageHandle(
+                                        mAvrcpCoverArtService.storeImage(item.song.image));
+                            }
+                        }
+                    }
+                    cb.run(id, results);
+                });
     }
 
     /** See {@link MediaPlayerList#playItem}. */
@@ -497,23 +475,70 @@ public class AvrcpTargetService extends ProfileService {
     }
 
     /** Informs {@link AudioManager} of an incoming key event from a remote device. */
-    void sendMediaKeyEvent(int key, boolean pushed) {
-        BluetoothDevice activeDevice = getA2dpActiveDevice();
-        MediaPlayerWrapper player = mMediaPlayerList.getActivePlayer();
-        mMediaKeyEventLogger.logd(
-                TAG,
+    void sendMediaKeyEvent(BluetoothDevice device, int key, boolean pushed) {
+        MediaPlayerWrapper activePlayer = mMediaPlayerList.getActivePlayer();
+
+        boolean voiceCommunicationActive = isVoiceCommunicationActive();
+        int keyCode = AvrcpPassthrough.toKeyCode(key);
+
+        String keyEventLog =
                 "sendMediaKeyEvent:"
                         + " device="
-                        + activeDevice
+                        + device
                         + " key="
-                        + key
+                        + KeyEvent.keyCodeToString(keyCode)
                         + " pushed="
                         + pushed
-                        + " to "
-                        + (player == null ? null : player.getPackageName()));
+                        + " voice active="
+                        + voiceCommunicationActive
+                        + " internal active player is "
+                        + (activePlayer == null ? null : activePlayer.getPackageName());
+        mMediaKeyEventLogger.logd(TAG, keyEventLog);
+
+        // Some devices will send a play event upon SCO disconnection, resulting in music starting
+        // even if the call is still ongoing. As this is a BT specific issue we handle it here.
+        if (voiceCommunicationActive && KeyEvent.KEYCODE_MEDIA_PLAY == keyCode) {
+            Log.w(TAG, "Received play event while call is active, not sending it to AudioManager");
+            return;
+        }
+
+        // A/V controls should be sent to the addressed player.
+        // We don't have a way to set a media player as the active session so we
+        // keep the active device playing until we receive a PLAY event for the
+        // addressed player. Other events will still be broadcasted to active player.
+        // Note: some devices will only send the event when the button is released and some
+        // will only send the event when the button is pressed, so we can't filter it here.
+        MediaPlayerWrapper addressedPlayer = mMediaPlayerList.getAddressedPlayer();
+        if (addressedPlayer != null
+                && KeyEvent.KEYCODE_MEDIA_PLAY == keyCode
+                && activePlayer != addressedPlayer) {
+            Log.d(
+                    TAG,
+                    "Sending play event directly to addressed player: "
+                            + addressedPlayer.getPackageName());
+            addressedPlayer.playCurrent();
+            return;
+        }
+
+        Log.d(TAG, "KeyEvent dispatched to AudioManager");
+
+        if (isA2dpConnectionForbidden(device)) {
+            Log.e(TAG, "Ignore passthrough key as media profiles disabled");
+            return;
+        }
+
         int action = pushed ? KeyEvent.ACTION_DOWN : KeyEvent.ACTION_UP;
-        KeyEvent event = new KeyEvent(action, AvrcpPassthrough.toKeyCode(key));
+        KeyEvent event = new KeyEvent(action, keyCode);
         mAudioManager.dispatchMediaKeyEvent(event);
+    }
+
+    /** Returns {@code true} if A2DP connection policy is forbidden. */
+    private boolean isA2dpConnectionForbidden(BluetoothDevice device) {
+        return BluetoothProfile.CONNECTION_POLICY_FORBIDDEN
+                == mAdapterService
+                        .getA2dpService()
+                        .map(a2dp -> a2dp.getConnectionPolicy(device))
+                        .orElse(BluetoothProfile.CONNECTION_POLICY_UNKNOWN);
     }
 
     /**
@@ -553,30 +578,62 @@ public class AvrcpTargetService extends ProfileService {
 
     /** Called from player callback to indicate new settings to remote device. */
     public void sendPlayerSettings(int repeatMode, int shuffleMode) {
-        if (mNativeInterface == null) {
-            Log.i(TAG, "Tried to send Player Settings while native interface is null");
-            return;
+        mNativeInterface.sendPlayerSettings(repeatMode, shuffleMode);
+    }
+
+    /**
+     * Compares the {@link Metadata} of the current and new queues
+     *
+     * <p>Whenever the current playing track changed in the now playing list, its metadata is
+     * updated. We should only send an update if the elements of the queue have been modified.
+     *
+     * <p>Only Title, Album and Artist metadata can be used for comparison. The metadata ID
+     * corresponds to the position in the list and is not unique for each media. Genre, duration and
+     * cover art are updated when the playing track changes as we are only able to retrieve this
+     * information then.
+     */
+    @VisibleForTesting
+    public static boolean isQueueUpdated(List<Metadata> currentQueue, List<Metadata> newQueue) {
+        if (newQueue == null && currentQueue == null) {
+            return false;
+        }
+        if (newQueue == null || currentQueue == null || currentQueue.size() != newQueue.size()) {
+            return true;
         }
 
-        mNativeInterface.sendPlayerSettings(repeatMode, shuffleMode);
+        for (int index = 0; index < currentQueue.size(); index++) {
+            Metadata currentMetadata = currentQueue.get(index);
+            Metadata newMetadata = newQueue.get(index);
+
+            if (!Objects.equals(currentMetadata.title, newMetadata.title)
+                    || !Objects.equals(currentMetadata.artist, newMetadata.artist)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isVoiceCommunicationActive() {
+        for (AudioPlaybackConfiguration audioConfig :
+                mAudioManager.getActivePlaybackConfigurations()) {
+            if (audioConfig.getAudioAttributes().getUsage()
+                            == AudioAttributes.USAGE_VOICE_COMMUNICATION
+                    && audioConfig.isActive()) {
+                Log.d(TAG, "Voice active playback found: " + audioConfig);
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Dump debugging information to the string builder */
     public void dump(StringBuilder sb) {
         sb.append("\nProfile: AvrcpTargetService:\n");
-        if (sInstance == null) {
-            sb.append("AvrcpTargetService not running");
-            return;
-        }
 
         StringBuilder tempBuilder = new StringBuilder();
-        tempBuilder.append("AVRCP version: " + mAvrcpVersion + "\n");
+        tempBuilder.append("AVRCP version: ").append(mAvrcpVersion).append("\n");
 
-        if (mMediaPlayerList != null) {
-            mMediaPlayerList.dump(tempBuilder);
-        } else {
-            tempBuilder.append("\nMedia Player List is empty\n");
-        }
+        mMediaPlayerList.dump(tempBuilder);
 
         mMediaKeyEventLogger.dump(tempBuilder);
         tempBuilder.append("\n");
@@ -588,29 +645,5 @@ public class AvrcpTargetService extends ProfileService {
 
         // Tab everything over by two spaces
         sb.append(tempBuilder.toString().replaceAll("(?m)^", "  "));
-    }
-
-    private static class AvrcpTargetBinder extends IBluetoothAvrcpTarget.Stub
-            implements IProfileServiceBinder {
-        private AvrcpTargetService mService;
-
-        AvrcpTargetBinder(AvrcpTargetService service) {
-            mService = service;
-        }
-
-        @Override
-        public void cleanup() {
-            mService = null;
-        }
-
-        @Override
-        public void sendVolumeChanged(int volume) {
-            if (mService == null
-                    || !Utils.checkCallerIsSystemOrActiveOrManagedUser(mService, TAG)) {
-                return;
-            }
-
-            mService.sendVolumeChanged(volume);
-        }
     }
 }

@@ -19,12 +19,13 @@
  *   Functions generated:9
  */
 
+#include <bluetooth/types/address.h>
+
 #include "avct_api.h"
 #include "stack/include/bt_hdr.h"
 #include "test/common/mock_functions.h"
-#include "types/raw_address.h"
 
-uint16_t AVCT_CreateBrowse(uint8_t /* handle */, uint8_t /* role */) {
+uint16_t AVCT_CreateBrowse(uint8_t /* handle */, tAVCT_ROLE /* role */) {
   inc_func_call_count(__func__);
   return 0;
 }
@@ -41,8 +42,8 @@ uint16_t AVCT_GetPeerMtu(uint8_t /* handle */) {
   inc_func_call_count(__func__);
   return 0;
 }
-uint16_t AVCT_MsgReq(uint8_t /* handle */, uint8_t /* label */,
-                     uint8_t /* cr */, BT_HDR* /* p_msg */) {
+uint16_t AVCT_MsgReq(uint8_t /* handle */, uint8_t /* label */, uint8_t /* cr */,
+                     BT_HDR* /* p_msg */) {
   inc_func_call_count(__func__);
   return 0;
 }
@@ -56,3 +57,4 @@ uint16_t AVCT_RemoveConn(uint8_t /* handle */) {
 }
 void AVCT_Deregister(void) { inc_func_call_count(__func__); }
 void AVCT_Register() { inc_func_call_count(__func__); }
+void AVCT_Dumpsys(int /* fd */) { inc_func_call_count(__func__); }

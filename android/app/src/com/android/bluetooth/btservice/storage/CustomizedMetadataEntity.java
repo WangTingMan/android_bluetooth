@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,6 +50,7 @@ class CustomizedMetadataEntity {
     public byte[] gmcs_cccd;
     public byte[] gtbs_cccd;
     public byte[] exclusive_manager;
+    public byte[] zoomed_in_icon;
 
     public String toString() {
         StringBuilder builder = new StringBuilder();
@@ -112,12 +113,14 @@ class CustomizedMetadataEntity {
                 .append("|gtbs_cccd=")
                 .append(metadataToString(gtbs_cccd))
                 .append("|exclusive_manager=")
-                .append(metadataToString(exclusive_manager));
+                .append(metadataToString(exclusive_manager))
+                .append("|zoomed_in_icon=")
+                .append(metadataToString(zoomed_in_icon));
 
         return builder.toString();
     }
 
-    private String metadataToString(byte[] metadata) {
+    private static String metadataToString(byte[] metadata) {
         if (metadata == null) {
             return null;
         }

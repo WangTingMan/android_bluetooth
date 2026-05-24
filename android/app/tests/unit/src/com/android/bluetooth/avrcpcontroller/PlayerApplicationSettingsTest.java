@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,13 @@ import static com.google.common.truth.Truth.assertThat;
 
 import android.support.v4.media.session.PlaybackStateCompat;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.SmallTest;
-import androidx.test.runner.AndroidJUnit4;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+/** Test cases for {@link PlayerApplicationSettings}. */
 @SmallTest
 @RunWith(AndroidJUnit4.class)
 public class PlayerApplicationSettingsTest {
@@ -116,43 +117,43 @@ public class PlayerApplicationSettingsTest {
     }
 
     @Test
-    public void mapAvrcpPlayerSettingstoBTattribVal() {
+    public void mapAvrcpPlayerSettingsToBTattribVal() {
         assertThat(
-                        PlayerApplicationSettings.mapAvrcpPlayerSettingstoBTattribVal(
+                        PlayerApplicationSettings.mapAvrcpPlayerSettingsToBTattribVal(
                                 PlayerApplicationSettings.REPEAT_STATUS,
                                 PlaybackStateCompat.REPEAT_MODE_NONE))
                 .isEqualTo(PlayerApplicationSettings.JNI_REPEAT_STATUS_OFF);
         assertThat(
-                        PlayerApplicationSettings.mapAvrcpPlayerSettingstoBTattribVal(
+                        PlayerApplicationSettings.mapAvrcpPlayerSettingsToBTattribVal(
                                 PlayerApplicationSettings.REPEAT_STATUS,
                                 PlaybackStateCompat.REPEAT_MODE_ONE))
                 .isEqualTo(PlayerApplicationSettings.JNI_REPEAT_STATUS_SINGLE_TRACK_REPEAT);
         assertThat(
-                        PlayerApplicationSettings.mapAvrcpPlayerSettingstoBTattribVal(
+                        PlayerApplicationSettings.mapAvrcpPlayerSettingsToBTattribVal(
                                 PlayerApplicationSettings.REPEAT_STATUS,
                                 PlaybackStateCompat.REPEAT_MODE_ALL))
                 .isEqualTo(PlayerApplicationSettings.JNI_REPEAT_STATUS_ALL_TRACK_REPEAT);
         assertThat(
-                        PlayerApplicationSettings.mapAvrcpPlayerSettingstoBTattribVal(
+                        PlayerApplicationSettings.mapAvrcpPlayerSettingsToBTattribVal(
                                 PlayerApplicationSettings.REPEAT_STATUS,
                                 PlaybackStateCompat.REPEAT_MODE_GROUP))
                 .isEqualTo(PlayerApplicationSettings.JNI_REPEAT_STATUS_GROUP_REPEAT);
         assertThat(
-                        PlayerApplicationSettings.mapAvrcpPlayerSettingstoBTattribVal(
+                        PlayerApplicationSettings.mapAvrcpPlayerSettingsToBTattribVal(
                                 PlayerApplicationSettings.SHUFFLE_STATUS,
                                 PlaybackStateCompat.SHUFFLE_MODE_NONE))
                 .isEqualTo(PlayerApplicationSettings.JNI_SHUFFLE_STATUS_OFF);
         assertThat(
-                        PlayerApplicationSettings.mapAvrcpPlayerSettingstoBTattribVal(
+                        PlayerApplicationSettings.mapAvrcpPlayerSettingsToBTattribVal(
                                 PlayerApplicationSettings.SHUFFLE_STATUS,
                                 PlaybackStateCompat.SHUFFLE_MODE_ALL))
                 .isEqualTo(PlayerApplicationSettings.JNI_SHUFFLE_STATUS_ALL_TRACK_SHUFFLE);
         assertThat(
-                        PlayerApplicationSettings.mapAvrcpPlayerSettingstoBTattribVal(
+                        PlayerApplicationSettings.mapAvrcpPlayerSettingsToBTattribVal(
                                 PlayerApplicationSettings.SHUFFLE_STATUS,
                                 PlaybackStateCompat.SHUFFLE_MODE_GROUP))
                 .isEqualTo(PlayerApplicationSettings.JNI_SHUFFLE_STATUS_GROUP_SHUFFLE);
-        assertThat(PlayerApplicationSettings.mapAvrcpPlayerSettingstoBTattribVal(-1, -1))
+        assertThat(PlayerApplicationSettings.mapAvrcpPlayerSettingsToBTattribVal(-1, -1))
                 .isEqualTo(PlayerApplicationSettings.JNI_STATUS_INVALID);
     }
 }

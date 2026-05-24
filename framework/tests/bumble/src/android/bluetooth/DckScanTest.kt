@@ -19,6 +19,7 @@ package android.bluetooth
 import android.bluetooth.DckTestRule.LeScanResult
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanSettings
+import android.bluetooth.test_utils.EnableBluetoothRule
 import android.content.Context
 import android.os.ParcelUuid
 import androidx.test.core.app.ApplicationProvider
@@ -40,7 +41,7 @@ import org.junit.runner.RunWith
 class DckScanTest(
     private @TestParameter val isBluetoothToggled: Boolean,
     private @TestParameter val isRemoteAdvertisingWithUuid: Boolean,
-    private @TestParameter val isGattConnected: Boolean
+    private @TestParameter val isGattConnected: Boolean,
 ) {
     // TODO(315852141): Include variations for LE only vs. Dual mode Bumble when supported
     // TODO(315852141): Include variations for two advertisements at the same time
@@ -63,8 +64,10 @@ class DckScanTest(
             bumble,
             isBluetoothToggled = isBluetoothToggled,
             isRemoteAdvertisingWithUuid = isRemoteAdvertisingWithUuid,
-            isGattConnected = isGattConnected
+            isGattConnected = isGattConnected,
         )
+
+    @Rule(order = 3) @JvmField val enableBluetoothRule = EnableBluetoothRule(false, true)
 
     @Test
     fun scanForIrkAndIdentityAddress_remoteFound() {
@@ -74,7 +77,7 @@ class DckScanTest(
                 .setDeviceAddress(
                     TEST_ADDRESS_RANDOM_STATIC,
                     BluetoothDevice.ADDRESS_TYPE_RANDOM,
-                    Utils.BUMBLE_IRK
+                    Utils.BUMBLE_IRK,
                 )
                 .build()
         val scanSettings =
@@ -120,7 +123,7 @@ class DckScanTest(
     }
 
     companion object {
-        private const val TIMEOUT_MS = 3000L
+        private const val TIMEOUT_MS = 5000L
         private const val TEST_ADDRESS_RANDOM_STATIC = "F0:43:A8:23:10:11"
         private val CCC_DK_UUID = UUID.fromString("0000FFF5-0000-1000-8000-00805f9b34fb")
     }

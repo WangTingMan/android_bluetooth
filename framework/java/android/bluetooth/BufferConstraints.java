@@ -18,6 +18,7 @@ package android.bluetooth;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.annotation.RequiresNoPermission;
 import android.annotation.SystemApi;
 import android.os.Parcel;
 import android.os.Parcelable;
@@ -34,26 +35,25 @@ import java.util.Map;
  */
 @SystemApi
 public final class BufferConstraints implements Parcelable {
+    private static final String TAG = BufferConstraints.class.getSimpleName();
+
     public static final int BUFFER_CODEC_MAX_NUM = 32;
 
-    private static final String TAG = "BufferConstraints";
-
-    private Map<Integer, BufferConstraint> mBufferConstraints;
-    private List<BufferConstraint> mBufferConstraintList;
+    private final Map<Integer, BufferConstraint> mBufferConstraints;
+    private final List<BufferConstraint> mBufferConstraintList;
 
     public BufferConstraints(@NonNull List<BufferConstraint> bufferConstraintList) {
 
-        mBufferConstraintList = new ArrayList<BufferConstraint>(bufferConstraintList);
-        mBufferConstraints = new HashMap<Integer, BufferConstraint>();
+        mBufferConstraintList = new ArrayList<>(bufferConstraintList);
+        mBufferConstraints = new HashMap<>();
         for (int i = 0; i < BUFFER_CODEC_MAX_NUM; i++) {
             mBufferConstraints.put(i, bufferConstraintList.get(i));
         }
     }
 
     BufferConstraints(Parcel in) {
-        mBufferConstraintList = new ArrayList<BufferConstraint>();
-        mBufferConstraints = new HashMap<Integer, BufferConstraint>();
-        in.readList(mBufferConstraintList, BufferConstraint.class.getClassLoader());
+        mBufferConstraints = new HashMap<>();
+        mBufferConstraintList = in.createTypedArrayList(BufferConstraint.CREATOR);
         for (int i = 0; i < mBufferConstraintList.size(); i++) {
             mBufferConstraints.put(i, mBufferConstraintList.get(i));
         }
@@ -72,7 +72,7 @@ public final class BufferConstraints implements Parcelable {
 
     @Override
     public void writeToParcel(@NonNull Parcel out, int flags) {
-        out.writeList(mBufferConstraintList);
+        out.writeTypedList(mBufferConstraintList);
     }
 
     @Override
@@ -88,6 +88,7 @@ public final class BufferConstraints implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public @Nullable BufferConstraint forCodec(@BluetoothCodecConfig.SourceCodecType int codec) {
         return mBufferConstraints.get(codec);
     }

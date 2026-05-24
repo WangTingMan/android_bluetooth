@@ -8,7 +8,7 @@ use crate::gatt::ids::{AdvertiserId, ServerId, TransportIndex};
 
 /// This class is responsible for tracking which connections and advertising we
 /// own, and using this information to decide what servers should be exposed to
-/// a given connetion.
+/// a given connection.
 #[derive(Default)]
 pub struct IsolationManager {
     advertiser_to_server: HashMap<AdvertiserId, ServerId>,
@@ -221,5 +221,34 @@ mod test {
 
         assert!(server_id.is_none());
         assert!(!isolation_manager.is_connection_isolated(TCB_IDX));
+    }
+
+    #[test]
+    fn test_associate_twice() {
+        let mut isolation_manager = IsolationManager::new();
+        isolation_manager.associate_server_with_advertiser(SERVER_ID, ADVERTISER_ID);
+        isolation_manager
+            .associate_server_with_advertiser(ServerId(SERVER_ID.0 + 1), ADVERTISER_ID);
+        // Should log error but not crash. The second association should stick.
+        isolation_manager.on_le_connect(TCB_IDX, Some(ADVERTISER_ID));
+        assert_eq!(isolation_manager.get_server_id(TCB_IDX), Some(ServerId(SERVER_ID.0 + 1)));
+    }
+
+    #[test]
+    fn test_outgoing_connect() {
+        let mut isolation_manager = IsolationManager::new();
+        isolation_manager.associate_server_with_advertiser(SERVER_ID, ADVERTISER_ID);
+        isolation_manager.on_le_connect(TCB_IDX, None);
+        assert!(!isolation_manager.is_connection_isolated(TCB_IDX));
+    }
+
+    #[test]
+    fn test_connect_twice() {
+        let mut isolation_manager = IsolationManager::new();
+        isolation_manager.associate_server_with_advertiser(SERVER_ID, ADVERTISER_ID);
+        isolation_manager.on_le_connect(TCB_IDX, Some(ADVERTISER_ID));
+        isolation_manager.on_le_connect(TCB_IDX, Some(ADVERTISER_ID));
+        // Should log error but not crash.
+        assert!(isolation_manager.is_connection_isolated(TCB_IDX));
     }
 }

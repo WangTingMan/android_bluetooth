@@ -21,18 +21,38 @@ import android.content.pm.PackageManager;
 import android.media.MediaMetadata;
 import android.media.browse.MediaBrowser.MediaItem;
 import android.media.session.MediaSession;
+import android.os.SystemProperties;
 import android.util.Log;
 
-import com.android.bluetooth.R;
+import androidx.annotation.VisibleForTesting;
 
 import java.util.ArrayList;
 import java.util.List;
 
 class Util {
-    public static String TAG = "audio_util.Util";
+    private static final String TAG = "audio_util." + Util.class.getSimpleName();
+
+    private static final String VFS_COVER_ART_ENABLED_PROPERTY =
+            "bluetooth.profile.avrcp.target.vfs_coverart.enabled";
+
+    private static final String MULTIPLE_PLAYERS_SUPPORT_ENABLED_PROPERTY =
+            "bluetooth.profile.avrcp.target.multiple_players.enabled";
+
+    // See https://en.wikipedia.org/wiki/Initialization-on-demand_holder_idiom
+    @VisibleForTesting
+    static class UriImagesSupport {
+        static boolean sValue = SystemProperties.getBoolean(VFS_COVER_ART_ENABLED_PROPERTY, false);
+    }
+
+    private static class MultiPlayersSupport {
+        private static boolean sValue =
+                SystemProperties.getBoolean(MULTIPLE_PLAYERS_SUPPORT_ENABLED_PROPERTY, false);
+    }
 
     // TODO (apanicke): Remove this prefix later, for now it makes debugging easier.
     public static final String NOW_PLAYING_PREFIX = "NowPlayingId";
+
+    private Util() {}
 
     /** Get an empty set of Metadata */
     public static final Metadata empty_data() {
@@ -49,13 +69,23 @@ class Util {
     }
 
     /**
-     * Get whether or not Bluetooth is configured to support URI images or not.
+     * Get whether or not Bluetooth is configured to support URI images.
      *
      * <p>Note that creating URI images will dramatically increase memory usage.
      */
-    public static boolean areUriImagesSupported(Context context) {
-        if (context == null) return false;
-        return context.getResources().getBoolean(R.bool.avrcp_target_cover_art_uri_images);
+    public static boolean areUriImagesSupported() {
+        return UriImagesSupport.sValue;
+    }
+
+    /**
+     * Get whether or not Bluetooth is configured to advertise multiple media players.
+     *
+     * <p>This is disabled by default as some car head units will stop working if multiple media
+     * players are present. Addressed Player and Browsing commands should always display only one
+     * media player to the remote device by default.
+     */
+    public static boolean areMultiplePlayersSupported() {
+        return MultiPlayersSupport.sValue;
     }
 
     /** Translate a MediaItem to audio_util's Metadata */
@@ -129,7 +159,7 @@ class Util {
     // Helper method to close a list of ListItems so that if the callee wants
     // to mutate the list they can do it without affecting any internally cached info
     public static List<ListItem> cloneList(List<ListItem> list) {
-        List<ListItem> clone = new ArrayList<ListItem>(list.size());
+        List<ListItem> clone = new ArrayList<>(list.size());
         for (ListItem item : list) clone.add(item.clone());
         return clone;
     }

@@ -21,6 +21,9 @@
 #include "btif_config.h"
 
 #include <bluetooth/log.h>
+#include <bluetooth/metrics/metric_id_api.h>
+#include <bluetooth/metrics/os_metrics.h>
+#include <bluetooth/types/address.h>
 #include <openssl/rand.h>
 #if __has_include(<unistd.h>)
 #include <unistd.h>
@@ -34,13 +37,9 @@
 #include <unordered_map>
 
 #include "btif_keystore.h"
-#include "btif_metrics_logging.h"
 #include "common/address_obfuscator.h"
-#include "common/metric_id_allocator.h"
 #include "main/shim/config.h"
 #include "main/shim/shim.h"
-#include "os/log.h"
-#include "raw_address.h"
 #include "storage/config_keys.h"
 
 #define TEMPORARY_SECTION_CAPACITY 10000
@@ -51,18 +50,10 @@
 #define TIME_STRING_LENGTH sizeof("YYYY-MM-DD HH:MM:SS")
 #define DISABLED "disabled"
 
-using bluetooth::bluetooth_keystore::BluetoothKeystoreInterface;
 using bluetooth::common::AddressObfuscator;
-using bluetooth::common::MetricIdAllocator;
 using namespace bluetooth;
 
 // Key attestation
-static const std::string ENCRYPTED_STR = "encrypted";
-static const std::string CONFIG_FILE_PREFIX = "bt_config-origin";
-static const std::string CONFIG_FILE_HASH = "hash";
-static const std::string encrypt_key_name_list[] = {
-    "LinkKey",      "LE_KEY_PENC", "LE_KEY_PID",  "LE_KEY_LID",
-    "LE_KEY_PCSRK", "LE_KEY_LENC", "LE_KEY_LCSRK"};
 
 /**
  * Read metrics salt from config file, if salt is invalid or does not exist,
@@ -71,16 +62,15 @@ static const std::string encrypt_key_name_list[] = {
 static void read_or_set_metrics_salt() {
   AddressObfuscator::Octet32 metrics_salt = {};
   size_t metrics_salt_length = metrics_salt.size();
-  if (!btif_config_get_bin(BTIF_STORAGE_SECTION_METRICS,
-                           BTIF_STORAGE_KEY_METRICS_SALT_256BIT,
+  if (!btif_config_get_bin(BTIF_STORAGE_SECTION_METRICS, BTIF_STORAGE_KEY_METRICS_SALT_256BIT,
                            metrics_salt.data(), &metrics_salt_length)) {
     log::warn("Failed to read metrics salt from config");
     // Invalidate salt
     metrics_salt.fill(0);
   }
   if (metrics_salt_length != metrics_salt.size()) {
-    log::error("Metrics salt length incorrect, {} instead of {}",
-               metrics_salt_length, metrics_salt.size());
+    log::error("Metrics salt length incorrect, {} instead of {}", metrics_salt_length,
+               metrics_salt.size());
     // Invalidate salt
     metrics_salt.fill(0);
   }
@@ -89,8 +79,7 @@ static void read_or_set_metrics_salt() {
     if (RAND_bytes(metrics_salt.data(), metrics_salt.size()) != 1) {
       log::fatal("Failed to generate salt for metrics");
     }
-    if (!btif_config_set_bin(BTIF_STORAGE_SECTION_METRICS,
-                             BTIF_STORAGE_KEY_METRICS_SALT_256BIT,
+    if (!btif_config_set_bin(BTIF_STORAGE_SECTION_METRICS, BTIF_STORAGE_KEY_METRICS_SALT_256BIT,
                              metrics_salt.data(), metrics_salt.size())) {
       log::fatal("Failed to write metrics salt to config");
     }
@@ -118,7 +107,7 @@ static void init_metric_id_allocator() {
       // there is one metric id under this mac_address
       int id = 0;
       btif_config_get_int(addr_str, BTIF_STORAGE_KEY_METRICS_ID_KEY, &id);
-      if (is_valid_id_from_metric_id_allocator(id)) {
+      if (bluetooth::metrics::IsValidIdFromMetricIdAllocator(id)) {
         paired_device_map[mac_address] = id;
         is_valid_id_found = true;
       }
@@ -129,26 +118,21 @@ static void init_metric_id_allocator() {
   }
 
   // Initialize MetricIdAllocator
-  MetricIdAllocator::Callback save_device_callback =
-      [](const RawAddress& address, const int id) {
-        return btif_config_set_int(address.ToString(),
-                                   BTIF_STORAGE_KEY_METRICS_ID_KEY, id);
-      };
-  MetricIdAllocator::Callback forget_device_callback =
-      [](const RawAddress& address, const int id) {
-        return btif_config_remove(address.ToString(),
-                                  BTIF_STORAGE_KEY_METRICS_ID_KEY);
-      };
-  if (!init_metric_id_allocator(paired_device_map,
-                                std::move(save_device_callback),
-                                std::move(forget_device_callback))) {
+  auto save_device_callback = [](const RawAddress& address, const int id) {
+    return btif_config_set_int(address.ToString(), BTIF_STORAGE_KEY_METRICS_ID_KEY, id);
+  };
+  auto forget_device_callback = [](const RawAddress& address, const int /* id */) {
+    return btif_config_remove(address.ToString(), BTIF_STORAGE_KEY_METRICS_ID_KEY);
+  };
+  if (!bluetooth::metrics::InitMetricIdAllocator(paired_device_map, std::move(save_device_callback),
+                                                 std::move(forget_device_callback))) {
     log::fatal("Failed to initialize MetricIdAllocator");
   }
 
   // Add device_without_id
   for (auto& address : addresses_without_id) {
-    allocate_metric_id_from_metric_id_allocator(address);
-    save_metric_id_from_metric_id_allocator(address);
+    bluetooth::metrics::AllocateIdFromMetricIdAllocator(address);
+    bluetooth::metrics::SaveDeviceOnMetricIdAllocator(address);
   }
 }
 
@@ -165,16 +149,14 @@ static future_t* init(void) {
   return future_new_immediate(FUTURE_SUCCESS);
 }
 
-static future_t* shut_down(void) {
-  return future_new_immediate(FUTURE_SUCCESS);
-}
+static future_t* shut_down(void) { return future_new_immediate(FUTURE_SUCCESS); }
 
 static future_t* clean_up(void) {
   log::assert_that(bluetooth::shim::is_gd_stack_started_up(),
                    "assert failed: bluetooth::shim::is_gd_stack_started_up()");
   // GD storage module cleanup by itself
   std::unique_lock<std::recursive_mutex> lock(config_lock);
-  close_metric_id_allocator();
+  bluetooth::metrics::CloseMetricIdAllocator();
   return future_new_immediate(FUTURE_SUCCESS);
 }
 
@@ -185,27 +167,28 @@ static future_t* clean_up(void) {
                                              .clean_up = clean_up};
 
 bool btif_get_device_clockoffset(const RawAddress& bda, int* p_clock_offset) {
-  if (p_clock_offset == NULL) return false;
+  if (p_clock_offset == NULL) {
+    return false;
+  }
 
   std::string addrstr = bda.ToString();
   const char* bd_addr_str = addrstr.c_str();
 
-  if (!btif_config_get_int(bd_addr_str, BTIF_STORAGE_KEY_CLOCK_OFFSET,
-                           p_clock_offset))
+  if (!btif_config_get_int(bd_addr_str, BTIF_STORAGE_KEY_CLOCK_OFFSET, p_clock_offset)) {
     return false;
+  }
 
   log::debug("Device [{}] clock_offset {}", bda, *p_clock_offset);
   return true;
 }
 
 bool btif_set_device_clockoffset(const RawAddress& bda, int clock_offset) {
-
   std::string addrstr = bda.ToString();
   const char* bd_addr_str = addrstr.c_str();
 
-  if (!btif_config_set_int(bd_addr_str, BTIF_STORAGE_KEY_CLOCK_OFFSET,
-                           clock_offset))
+  if (!btif_config_set_int(bd_addr_str, BTIF_STORAGE_KEY_CLOCK_OFFSET, clock_offset)) {
     return false;
+  }
 
   log::debug("Device [{}] clock_offset {}", bda, clock_offset);
   return true;
@@ -217,29 +200,25 @@ bool btif_config_exist(const std::string& section, const std::string& key) {
   return bluetooth::shim::BtifConfigInterface::HasProperty(section, key);
 }
 
-bool btif_config_get_int(const std::string& section, const std::string& key,
-                         int* value) {
+bool btif_config_get_int(const std::string& section, const std::string& key, int* value) {
   log::assert_that(bluetooth::shim::is_gd_stack_started_up(),
                    "assert failed: bluetooth::shim::is_gd_stack_started_up()");
   return bluetooth::shim::BtifConfigInterface::GetInt(section, key, value);
 }
 
-bool btif_config_set_int(const std::string& section, const std::string& key,
-                         int value) {
+bool btif_config_set_int(const std::string& section, const std::string& key, int value) {
   log::assert_that(bluetooth::shim::is_gd_stack_started_up(),
                    "assert failed: bluetooth::shim::is_gd_stack_started_up()");
   return bluetooth::shim::BtifConfigInterface::SetInt(section, key, value);
 }
 
-bool btif_config_get_uint64(const std::string& section, const std::string& key,
-                            uint64_t* value) {
+bool btif_config_get_uint64(const std::string& section, const std::string& key, uint64_t* value) {
   log::assert_that(bluetooth::shim::is_gd_stack_started_up(),
                    "assert failed: bluetooth::shim::is_gd_stack_started_up()");
   return bluetooth::shim::BtifConfigInterface::GetUint64(section, key, value);
 }
 
-bool btif_config_set_uint64(const std::string& section, const std::string& key,
-                            uint64_t value) {
+bool btif_config_set_uint64(const std::string& section, const std::string& key, uint64_t value) {
   log::assert_that(bluetooth::shim::is_gd_stack_started_up(),
                    "assert failed: bluetooth::shim::is_gd_stack_started_up()");
   return bluetooth::shim::BtifConfigInterface::SetUint64(section, key, value);
@@ -264,12 +243,11 @@ bool btif_config_set_uint64(const std::string& section, const std::string& key,
  *
  ******************************************************************************/
 
-bool btif_config_get_str(const std::string& section, const std::string& key,
-                         char* value, int* size_bytes) {
+bool btif_config_get_str(const std::string& section, const std::string& key, char* value,
+                         int* size_bytes) {
   log::assert_that(bluetooth::shim::is_gd_stack_started_up(),
                    "assert failed: bluetooth::shim::is_gd_stack_started_up()");
-  return bluetooth::shim::BtifConfigInterface::GetStr(section, key, value,
-                                                      size_bytes);
+  return bluetooth::shim::BtifConfigInterface::GetStr(section, key, value, size_bytes);
 }
 
 bool btif_config_set_str(const std::string& section, const std::string& key,
@@ -279,27 +257,24 @@ bool btif_config_set_str(const std::string& section, const std::string& key,
   return bluetooth::shim::BtifConfigInterface::SetStr(section, key, value);
 }
 
-bool btif_config_get_bin(const std::string& section, const std::string& key,
-                         uint8_t* value, size_t* length) {
+bool btif_config_get_bin(const std::string& section, const std::string& key, uint8_t* value,
+                         size_t* length) {
   log::assert_that(bluetooth::shim::is_gd_stack_started_up(),
                    "assert failed: bluetooth::shim::is_gd_stack_started_up()");
-  return bluetooth::shim::BtifConfigInterface::GetBin(section, key, value,
-                                                      length);
+  return bluetooth::shim::BtifConfigInterface::GetBin(section, key, value, length);
 }
 
-size_t btif_config_get_bin_length(const std::string& section,
-                                  const std::string& key) {
+size_t btif_config_get_bin_length(const std::string& section, const std::string& key) {
   log::assert_that(bluetooth::shim::is_gd_stack_started_up(),
                    "assert failed: bluetooth::shim::is_gd_stack_started_up()");
   return bluetooth::shim::BtifConfigInterface::GetBinLength(section, key);
 }
 
-bool btif_config_set_bin(const std::string& section, const std::string& key,
-                         const uint8_t* value, size_t length) {
+bool btif_config_set_bin(const std::string& section, const std::string& key, const uint8_t* value,
+                         size_t length) {
   log::assert_that(bluetooth::shim::is_gd_stack_started_up(),
                    "assert failed: bluetooth::shim::is_gd_stack_started_up()");
-  return bluetooth::shim::BtifConfigInterface::SetBin(section, key, value,
-                                                      length);
+  return bluetooth::shim::BtifConfigInterface::SetBin(section, key, value, length);
 }
 
 std::vector<RawAddress> btif_config_get_paired_devices() {
@@ -311,10 +286,10 @@ std::vector<RawAddress> btif_config_get_paired_devices() {
   std::vector<RawAddress> result;
   result.reserve(names.size());
   for (const auto& name : names) {
-    RawAddress addr = {};
+    auto addr = RawAddress::FromString(name);
     // Gather up known devices from configuration section names
-    if (RawAddress::FromString(name, addr)) {
-      result.emplace_back(addr);
+    if (addr.has_value()) {
+      result.emplace_back(addr.value());
     }
   }
   return result;
@@ -330,6 +305,12 @@ void btif_config_remove_device(const std::string& section) {
   log::assert_that(bluetooth::shim::is_gd_stack_started_up(),
                    "assert failed: bluetooth::shim::is_gd_stack_started_up()");
   bluetooth::shim::BtifConfigInterface::RemoveSection(section);
+}
+
+void btif_config_remove_device_with_key(const std::string& key) {
+  log::assert_that(bluetooth::shim::is_gd_stack_started_up(),
+                   "assert failed: bluetooth::shim::is_gd_stack_started_up()");
+  bluetooth::shim::BtifConfigInterface::RemoveSectionWithProperty(key);
 }
 
 bool btif_config_clear(void) {

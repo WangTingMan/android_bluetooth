@@ -25,39 +25,41 @@
 #ifndef PORT_INT_H
 #define PORT_INT_H
 
+#include <bluetooth/types/address.h>
+
 #include <cstdint>
 
 #include "include/macros.h"
 #include "internal_include/bt_target.h"
 #include "osi/include/alarm.h"
 #include "osi/include/fixed_queue.h"
-#include "stack/include/l2c_api.h"
+#include "stack/include/l2cap_types.h"
 #include "stack/include/port_api.h"
 #include "stack/include/rfcdefs.h"
+#include "stack/rfcomm/rfc_event.h"
 #include "stack/rfcomm/rfc_state.h"
-#include "types/raw_address.h"
 
 /*
  * Flow control configuration values for the mux
-*/
+ */
 #define PORT_FC_UNDEFINED 0 /* mux flow control mechanism not defined yet */
 #define PORT_FC_TS710 1     /* use TS 07.10 flow control  */
 #define PORT_FC_CREDIT 2    /* use RFCOMM credit based flow control */
 
 /*
- * Define Port Data Transfere control block
-*/
+ * Define Port Data Transfer control block
+ */
 typedef struct {
-  fixed_queue_t* queue; /* Queue of buffers waiting to be sent */
-  bool peer_fc; /* true if flow control is set based on peer's request */
-  bool user_fc; /* true if flow control is set based on user's request  */
+  fixed_queue_t* queue;       /* Queue of buffers waiting to be sent */
+  bool peer_fc;               /* true if flow control is set based on peer's request */
+  bool user_fc;               /* true if flow control is set based on user's request  */
   uint32_t queue_size;        /* Number of data bytes in the queue */
   tPORT_CALLBACK* p_callback; /* Address of the callback function */
 } tPORT_DATA;
 
 /*
  * Port control structure used to pass modem info
-*/
+ */
 typedef struct {
 #define MODEM_SIGNAL_DTRDSR 0x01
 #define MODEM_SIGNAL_RTSCTS 0x02
@@ -80,37 +82,51 @@ typedef struct {
 
 /*
  * RFCOMM multiplexer Control Block
-*/
-struct tRFC_MCB
-{
-  alarm_t* mcb_timer = nullptr;   /* MCB timer */
-  fixed_queue_t* cmd_q = nullptr; /* Queue for command messages on this mux */
+ */
+struct tRFC_MCB {
+  alarm_t* mcb_timer = nullptr;              /* MCB timer */
+  fixed_queue_t* cmd_q = nullptr;            /* Queue for command messages on this mux */
   uint8_t port_handles[RFCOMM_MAX_DLCI + 1]; /* Array for quick access to  */
   /* port handles based on dlci        */
-  RawAddress bd_addr =
-      RawAddress::kEmpty;                /* BD ADDR of the peer if initiator */
-  uint16_t lcid;                         /* Local cid used for this channel */
-  uint16_t peer_l2cap_mtu; /* Max frame that can be sent to peer L2CAP */
-  tRFC_MX_STATE state;     /* Current multiplexer channel state */
-  uint8_t is_initiator;    /* true if this side sends SABME (dlci=0) */
-  bool restart_required;  /* true if has to restart channel after disc */
-  bool peer_ready;        /* True if other side can accept frames */
-  uint8_t flow;           /* flow control mechanism for this mux */
-  bool l2cap_congested;   /* true if L2CAP is congested */
-  bool is_disc_initiator; /* true if initiated disc of port */
-  uint16_t
-      pending_lcid; /* store LCID for incoming connection while connecting */
-  bool pending_configure_complete;       /* true if confiquration of the pending
-                                            connection was completed*/
-  tL2CAP_CFG_INFO pending_cfg_info = {}; /* store configure info for incoming
-                                       connection while connecting */
+  RawAddress bd_addr = RawAddress::kEmpty; /* BD ADDR of the peer if initiator */
+  uint16_t lcid;                           /* Local cid used for this channel */
+  uint16_t peer_l2cap_mtu;                 /* Max frame that can be sent to peer L2CAP */
+  tRFC_MX_STATE state;                     /* Current multiplexer channel state */
+  uint8_t is_initiator;                    /* true if this side sends SABME (dlci=0) */
+  bool restart_required;                   /* true if has to restart channel after disc */
+  bool peer_ready;                         /* True if other side can accept frames */
+  uint8_t flow;                            /* flow control mechanism for this mux */
+  bool l2cap_congested;                    /* true if L2CAP is congested */
+  bool is_disc_initiator;                  /* true if initiated disc of port */
+  uint16_t collision_outgoing_lcid;        /* store LCID for retry of outgoing connection*/
+  bool collision_outgoing_conn_cnf;        /* true if peer responded to start_req after collision */
+  bool collision_outgoing_cfg_complete;    /* true if configuration of outgoing conn completed */
+  tL2CAP_CFG_INFO collision_cfg_info = {}; /* collision: store cfg info for outgoing connection */
+  // TODO: b/399420482 - delete pending_XXX when removing flag
+  uint16_t pending_lcid;                   /* store LCID for incoming connection while connecting */
+  bool pending_configure_complete;         /* true if confiquration of the pending
+                                              connection was completed*/
+  tL2CAP_CFG_INFO pending_cfg_info = {};   /* store configure info for incoming
+                                         connection while connecting */
+};
+
+/*
+ * RFCOMM Port State Machine Control Block
+ */
+struct RfcommPortSm {
+  tRFC_PORT_STATE state;
+  tRFC_PORT_STATE state_prior;
+  tRFC_PORT_EVENT last_event;
+  tPORT_RESULT close_reason;
+  uint64_t open_timestamp;
+  uint64_t close_timestamp;
 };
 
 /*
  * RFCOMM Port Connection Control Block
-*/
+ */
 typedef struct {
-  uint8_t state; /* Current state of the connection */
+  RfcommPortSm sm_cb;  // State machine control block
 
 #define RFC_RSP_PN 0x01
 #define RFC_RSP_RPN_REPLY 0x02
@@ -132,8 +148,7 @@ typedef enum : uint8_t {
   PORT_CONNECTION_STATE_CLOSING = 3,
 } tPORT_CONNECTION_STATE;
 
-inline std::string port_connection_state_text(
-    const tPORT_CONNECTION_STATE& state) {
+inline std::string port_connection_state_text(const tPORT_CONNECTION_STATE& state) {
   switch (state) {
     CASE_RETURN_STRING(PORT_CONNECTION_STATE_CLOSED);
     CASE_RETURN_STRING(PORT_CONNECTION_STATE_OPENING);
@@ -145,27 +160,28 @@ inline std::string port_connection_state_text(
   RETURN_UNKNOWN_TYPE_STRING(tPORT_CONNECTION_STATE, state);
 }
 
-namespace fmt {
+namespace std {
 template <>
-struct formatter<tPORT_CONNECTION_STATE>
-    : enum_formatter<tPORT_CONNECTION_STATE> {};
-}  // namespace fmt
+struct formatter<tPORT_CONNECTION_STATE> : enum_formatter<tPORT_CONNECTION_STATE> {};
+}  // namespace std
 
 /*
  * Define control block containing information about PORT connection
-*/
+ */
 typedef struct {
   uint8_t handle;  // Starting from 1, unique for this object
-  bool in_use; /* True when structure is allocated */
+  bool in_use;     /* True when structure is allocated */
 
   tPORT_CONNECTION_STATE state; /* State of the application */
 
-  uint8_t scn;   /* Service channel number */
-  uint16_t uuid; /* Service UUID */
+  uint8_t scn;              /* Service channel number */
+  uint16_t uuid;            /* Service UUID */
+  uint32_t app_uid;         /* UID of the app for which this socket was created */
+  uint64_t sdp_duration_ms; /* Time it took to perform SDP (for metrics) */
 
   RawAddress bd_addr; /* BD ADDR of the device for the multiplexer channel */
-  bool is_server;  /* true if the server application */
-  uint8_t dlci;    /* DLCI of the connection */
+  bool is_server;     /* true if the server application */
+  uint8_t dlci;       /* DLCI of the connection */
 
   uint8_t line_status; /* Line status as reported by peer */
 
@@ -177,8 +193,8 @@ typedef struct {
   tPORT_DATA tx; /* Control block for data from app to peer */
   tPORT_DATA rx; /* Control block for data from peer to app */
 
-  tPORT_STATE user_port_pars; /* Port parameters for user connection */
-  tPORT_STATE peer_port_pars; /* Port parameters for user connection */
+  PortSettings user_port_settings; /* Port parameters for user connection */
+  PortSettings peer_port_settings; /* Port parameters for peer connection */
 
   tPORT_CTRL local_ctrl;
   tPORT_CTRL peer_ctrl;
@@ -187,6 +203,8 @@ typedef struct {
 #define PORT_CTRL_REQ_CONFIRMED 0x02
 #define PORT_CTRL_IND_RECEIVED 0x04
 #define PORT_CTRL_IND_RESPONDED 0x08
+#define PORT_CTRL_SETUP_COMPLETED \
+  (PORT_CTRL_REQ_SENT | PORT_CTRL_REQ_CONFIRMED | PORT_CTRL_IND_RECEIVED | PORT_CTRL_IND_RESPONDED)
 
   uint8_t port_ctrl; /* Modem Status Command  */
 
@@ -194,19 +212,15 @@ typedef struct {
 
   tRFC_PORT rfc; /* RFCOMM port control block */
 
-  uint32_t ev_mask;           /* Event mask for the callback */
-  tPORT_CALLBACK* p_callback; /* Pointer to users callback function */
-  tPORT_MGMT_CALLBACK*
-      p_mgmt_callback; /* Callback function to receive connection up/down */
-  tPORT_DATA_CALLBACK*
-      p_data_callback; /* Callback function to receive data indications */
-  tPORT_DATA_CO_CALLBACK*
-      p_data_co_callback; /* Callback function with callouts and flowctrl */
-  uint16_t credit_tx;     /* Flow control credits for tx path */
-  uint16_t credit_rx;     /* Flow control credits for rx path, this is */
-                          /* number of buffers peer is allowed to sent */
-  uint16_t
-      credit_rx_max; /* Max number of credits we will allow this guy to sent */
+  uint32_t ev_mask;                           /* Event mask for the callback */
+  tPORT_CALLBACK* p_callback;                 /* Pointer to users callback function */
+  tPORT_MGMT_CALLBACK* p_mgmt_callback;       /* Callback function to receive connection up/down */
+  tPORT_DATA_CALLBACK* p_data_callback;       /* Callback function to receive data indications */
+  tPORT_DATA_CO_CALLBACK* p_data_co_callback; /* Callback function with callouts and flowctrl */
+  uint16_t credit_tx;                         /* Flow control credits for tx path */
+  uint16_t credit_rx;                         /* Flow control credits for rx path, this is */
+                                              /* number of buffers peer is allowed to sent */
+  uint16_t credit_rx_max;   /* Max number of credits we will allow this guy to sent */
   uint16_t credit_rx_low;   /* Number of credits when we send credit update */
   uint16_t rx_buf_critical; /* port receive queue critical watermark level */
   bool keep_port_handle;    /* true if port is not deallocated when closing */
@@ -214,10 +228,12 @@ typedef struct {
   uint16_t keep_mtu; /* Max MTU that port can receive by server */
   uint16_t sec_mask; /* Bitmask of security requirements for this port */
                      /* see the BTM_SEC_* values in btm_api_types.h */
+  RfcommCfgInfo rfc_cfg_info; /* store optional rfc configure info for incoming */
+                              /* connection while connecting */
 } tPORT;
 
 /* Define the PORT/RFCOMM control structure
-*/
+ */
 typedef struct {
   tPORT port[MAX_RFC_PORTS];            /* Port info pool */
   tRFC_MCB rfc_mcb[MAX_BD_CONNECTIONS]; /* RFCOMM bd_connections pool */
@@ -225,7 +241,7 @@ typedef struct {
 
 /*
  * Functions provided by the port_utils.cc
-*/
+ */
 tPORT* port_allocate_port(uint8_t dlci, const RawAddress& bd_addr);
 void port_set_defaults(tPORT* p_port);
 void port_select_mtu(tPORT* p_port);
@@ -234,14 +250,13 @@ tPORT* port_find_mcb_dlci_port(tRFC_MCB* p_mcb, uint8_t dlci);
 tRFC_MCB* port_find_mcb(const RawAddress& bd_addr);
 tPORT* port_find_dlci_port(uint8_t dlci);
 tPORT* port_find_port(uint8_t dlci, const RawAddress& bd_addr);
-uint32_t port_get_signal_changes(tPORT* p_port, uint8_t old_signals,
-                                 uint8_t signal);
+uint32_t port_get_signal_changes(tPORT* p_port, uint8_t old_signals, uint8_t signal);
 uint32_t port_flow_control_user(tPORT* p_port);
 void port_flow_control_peer(tPORT* p_port, bool enable, uint16_t count);
 
 /*
  * Functions provided by the port_rfc.cc
-*/
+ */
 int port_open_continue(tPORT* p_port);
 void port_start_port_open(tPORT* p_port);
 void port_start_par_neg(tPORT* p_port);

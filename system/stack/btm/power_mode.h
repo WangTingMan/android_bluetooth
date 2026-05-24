@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <base/strings/stringprintf.h>
+#include <bluetooth/types/address.h>
 
 #include <cstdint>
 #include <string>
@@ -24,7 +24,6 @@
 #include "stack/include/btm_status.h"
 #include "stack/include/hci_error_code.h"
 #include "stack/include/hci_mode.h"
-#include "types/raw_address.h"
 
 /* BTM Power manager status codes */
 enum : uint8_t {
@@ -32,9 +31,9 @@ enum : uint8_t {
   BTM_PM_STS_HOLD = HCI_MODE_HOLD,      // 0x01
   BTM_PM_STS_SNIFF = HCI_MODE_SNIFF,    // 0x02
   BTM_PM_STS_PARK = HCI_MODE_PARK,      // 0x03
-  BTM_PM_STS_SSR,     /* report the SSR parameters in HCI_SNIFF_SUB_RATE_EVT */
-  BTM_PM_STS_PENDING, /* when waiting for status from controller */
-  BTM_PM_STS_ERROR    /* when HCI command status returns error */
+  BTM_PM_STS_SSR,                       /* report the SSR parameters in HCI_SNIFF_SUB_RATE_EVT */
+  BTM_PM_STS_PENDING,                   /* when waiting for status from controller */
+  BTM_PM_STS_ERROR                      /* when HCI command status returns error */
 };
 typedef uint8_t tBTM_PM_STATUS;
 
@@ -65,7 +64,7 @@ enum : uint8_t {
   BTM_PM_MD_HOLD = HCI_MODE_HOLD,      // 0x01
   BTM_PM_MD_SNIFF = HCI_MODE_SNIFF,    // 0x02
   BTM_PM_MD_PARK = HCI_MODE_PARK,      // 0x03
-  BTM_PM_MD_FORCE = 0x10, /* OR this to force ACL link to a certain mode */
+  BTM_PM_MD_FORCE = 0x10,              /* OR this to force ACL link to a certain mode */
   BTM_PM_MD_UNKNOWN = 0xEF,
 };
 
@@ -85,7 +84,7 @@ inline bool is_legal_power_mode(tBTM_PM_MODE mode) {
 }
 
 inline std::string power_mode_text(tBTM_PM_MODE mode) {
-  std::string s = base::StringPrintf((mode & BTM_PM_MD_FORCE) ? "" : "forced:");
+  std::string s = (mode & BTM_PM_MD_FORCE) ? "" : "forced:";
   switch (mode & ~BTM_PM_MD_FORCE) {
     case BTM_PM_MD_ACTIVE:
       return s + std::string("active");
@@ -119,8 +118,7 @@ struct tBTM_PM_PWR_MD
   tBTM_PM_MODE mode = BTM_PM_MD_ACTIVE;  // 0
 };
 
-typedef void(tBTM_PM_STATUS_CBACK)(const RawAddress& p_bda,
-                                   tBTM_PM_STATUS status, uint16_t value,
+typedef void(tBTM_PM_STATUS_CBACK)(const RawAddress& p_bda, tBTM_PM_STATUS status, uint16_t value,
                                    tHCI_STATUS hci_status);
 
 #define BTM_CONTRL_UNKNOWN 0
@@ -159,8 +157,7 @@ typedef void(tBTM_PM_STATUS_CBACK)(const RawAddress& p_bda,
 
 typedef uint32_t tBTM_CONTRL_STATE;
 
-inline void set_num_acl_active_to_ctrl_state(uint32_t num,
-                                             tBTM_CONTRL_STATE& ctrl_state) {
+inline void set_num_acl_active_to_ctrl_state(uint32_t num, tBTM_CONTRL_STATE& ctrl_state) {
   if (num > BTM_CONTRL_NUM_ACL_CLASSIC_ACTIVE_MASK) {
     num = BTM_CONTRL_NUM_ACL_CLASSIC_ACTIVE_MASK;
   }
@@ -168,35 +165,29 @@ inline void set_num_acl_active_to_ctrl_state(uint32_t num,
                  << BTM_CONTRL_NUM_ACL_CLASSIC_ACTIVE_SHIFT);
 }
 
-inline void set_num_acl_sniff_to_ctrl_state(uint32_t num,
-                                            tBTM_CONTRL_STATE& ctrl_state) {
+inline void set_num_acl_sniff_to_ctrl_state(uint32_t num, tBTM_CONTRL_STATE& ctrl_state) {
   if (num > BTM_CONTRL_NUM_ACL_CLASSIC_SNIFF_MASK) {
     num = BTM_CONTRL_NUM_ACL_CLASSIC_SNIFF_MASK;
   }
-  ctrl_state |= ((num & BTM_CONTRL_NUM_ACL_CLASSIC_SNIFF_MASK)
-                 << BTM_CONTRL_NUM_ACL_CLASSIC_SNIFF_SHIFT);
+  ctrl_state |=
+          ((num & BTM_CONTRL_NUM_ACL_CLASSIC_SNIFF_MASK) << BTM_CONTRL_NUM_ACL_CLASSIC_SNIFF_SHIFT);
 }
 
-inline void set_num_acl_le_to_ctrl_state(uint32_t num,
-                                         tBTM_CONTRL_STATE& ctrl_state) {
+inline void set_num_acl_le_to_ctrl_state(uint32_t num, tBTM_CONTRL_STATE& ctrl_state) {
   if (num > BTM_CONTRL_NUM_ACL_LE_MASK) {
     num = BTM_CONTRL_NUM_ACL_LE_MASK;
   }
-  ctrl_state |=
-      ((num & BTM_CONTRL_NUM_ACL_LE_MASK) << BTM_CONTRL_NUM_ACL_LE_SHIFT);
+  ctrl_state |= ((num & BTM_CONTRL_NUM_ACL_LE_MASK) << BTM_CONTRL_NUM_ACL_LE_SHIFT);
 }
 
-inline void set_num_le_adv_to_ctrl_state(uint32_t num,
-                                         tBTM_CONTRL_STATE& ctrl_state) {
+inline void set_num_le_adv_to_ctrl_state(uint32_t num, tBTM_CONTRL_STATE& ctrl_state) {
   if (num > BTM_CONTRL_NUM_LE_ADV_MASK) {
     num = BTM_CONTRL_NUM_LE_ADV_MASK;
   }
-  ctrl_state |=
-      ((num & BTM_CONTRL_NUM_LE_ADV_MASK) << BTM_CONTRL_NUM_LE_ADV_SHIFT);
+  ctrl_state |= ((num & BTM_CONTRL_NUM_LE_ADV_MASK) << BTM_CONTRL_NUM_LE_ADV_SHIFT);
 }
 
-inline void set_le_scan_mode_to_ctrl_state(uint32_t duty_cycle,
-                                           tBTM_CONTRL_STATE& ctrl_state) {
+inline void set_le_scan_mode_to_ctrl_state(uint32_t duty_cycle, tBTM_CONTRL_STATE& ctrl_state) {
   uint32_t scan_mode;
   if (duty_cycle == 0) {
     scan_mode = BTM_CONTRL_LE_SCAN_MODE_IDLE;
@@ -209,8 +200,7 @@ inline void set_le_scan_mode_to_ctrl_state(uint32_t duty_cycle,
   } else {
     scan_mode = BTM_CONTRL_LE_SCAN_MODE_LOW_LATENCY;
   }
-  ctrl_state |= ((scan_mode & BTM_CONTRL_LE_SCAN_MODE_MASK)
-                 << BTM_CONTRL_LE_SCAN_MODE_SHIFT);
+  ctrl_state |= ((scan_mode & BTM_CONTRL_LE_SCAN_MODE_MASK) << BTM_CONTRL_LE_SCAN_MODE_SHIFT);
 }
 
 /*******************************************************************************
@@ -219,13 +209,12 @@ inline void set_le_scan_mode_to_ctrl_state(uint32_t duty_cycle,
  *
  * Description      register or deregister with power manager
  *
- * Returns          BTM_SUCCESS if successful,
- *                  BTM_NO_RESOURCES if no room to hold registration
- *                  BTM_ILLEGAL_VALUE
+ * Returns          tBTM_STATUS::BTM_SUCCESS if successful,
+ *                  tBTM_STATUS::BTM_NO_RESOURCES if no room to hold registration
+ *                  tBTM_STATUS::BTM_ILLEGAL_VALUE
  *
  ******************************************************************************/
-tBTM_STATUS BTM_PmRegister(uint8_t mask, uint8_t* p_pm_id,
-                           tBTM_PM_STATUS_CBACK* p_cb);
+tBTM_STATUS BTM_PmRegister(uint8_t mask, uint8_t* p_pm_id, tBTM_PM_STATUS_CBACK* p_cb);
 
 // Notified by ACL that a new link is connected
 void BTM_PM_OnConnected(uint16_t handle, const RawAddress& remote_bda);
@@ -240,8 +229,8 @@ void BTM_PM_OnDisconnected(uint16_t handle);
  * Description      store the mode in control block or
  *                  alter ACL connection behavior.
  *
- * Returns          BTM_SUCCESS if successful,
- *                  BTM_UNKNOWN_ADDR if bd addr is not active or bad
+ * Returns          tBTM_STATUS::BTM_SUCCESS if successful,
+ *                  tBTM_STATUS::BTM_UNKNOWN_ADDR if bd addr is not active or bad
  *
  ******************************************************************************/
 tBTM_STATUS BTM_SetPowerMode(uint8_t pm_id, const RawAddress& remote_bda,
@@ -261,25 +250,13 @@ bool BTM_SetLinkPolicyActiveMode(const RawAddress& remote_bda);
  *                  min_loc_to - minimum local timeout
  *
  *
- * Returns          BTM_SUCCESS if the HCI command is issued successful,
- *                  BTM_UNKNOWN_ADDR if bd addr is not active or bad
- *                  BTM_CMD_STORED if the command is stored
+ * Returns          tBTM_STATUS::BTM_SUCCESS if the HCI command is issued successful,
+ *                  tBTM_STATUS::BTM_UNKNOWN_ADDR if bd addr is not active or bad
+ *                  tBTM_STATUS::BTM_CMD_STORED if the command is stored
  *
  ******************************************************************************/
-tBTM_STATUS BTM_SetSsrParams(const RawAddress& remote_bda, uint16_t max_lat,
-                             uint16_t min_rmt_to, uint16_t min_loc_to);
-
-/*******************************************************************************
- *
- * Function         BTM_PM_ReadControllerState
- *
- * Description      This function is called to obtain the controller state
- *
- * Returns          Controller state (BTM_CONTRL_ACTIVE, BTM_CONTRL_SCAN, and
- *                                    BTM_CONTRL_IDLE)
- *
- ******************************************************************************/
-tBTM_CONTRL_STATE BTM_PM_ReadControllerState(void);
+tBTM_STATUS BTM_SetSsrParams(const RawAddress& remote_bda, uint16_t max_lat, uint16_t min_rmt_to,
+                             uint16_t min_loc_to);
 
 /*******************************************************************************
  *

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,13 +20,15 @@ import static com.google.common.truth.Truth.assertThat;
 
 import android.bluetooth.BluetoothProfile;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
 
 import java.util.Arrays;
 
-@RunWith(JUnit4.class)
+/** Test cases for {@link Config}. */
+@RunWith(AndroidJUnit4.class)
 public final class ConfigTest {
     @Test
     public void setProfileEnabled() {

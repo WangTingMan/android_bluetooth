@@ -22,6 +22,8 @@
  *  mockcify.pl ver 0.7.0
  */
 
+#include <bluetooth/types/address.h>
+
 #include <functional>
 
 #include "include/hardware/bluetooth_headset_interface.h"
@@ -47,11 +49,23 @@ namespace btif_hf {
 // Returns: bluetooth::headset::Interface*
 
 struct GetInterface {
-  std::function<bluetooth::headset::Interface*()> body{
-      []() { return nullptr; }};
-  bluetooth::headset::Interface* operator()() { return body(); };
+  std::function<bluetooth::headset::Interface*()> body{[]() { return nullptr; }};
+  bluetooth::headset::Interface* operator()() { return body(); }
 };
 extern struct GetInterface GetInterface;
+
+struct IsCallIdle {
+  std::function<bool()> body{[]() { return false; }};
+  bool operator()() { return body(); }
+};
+extern struct IsCallIdle IsCallIdle;
+
+struct IsDuringVoiceRecognition {
+  std::function<bool(RawAddress bd_addr)> body{
+          [](RawAddress bd_addr) { return !bd_addr.IsEmpty(); }};
+  bool operator()(RawAddress bd_addr) { return body(bd_addr); }
+};
+extern struct IsDuringVoiceRecognition IsDuringVoiceRecognition;
 
 // Shared state between mocked functions and tests
 }  // namespace btif_hf

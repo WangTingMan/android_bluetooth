@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,41 +16,50 @@
 
 package com.android.bluetooth.avrcpcontroller;
 
+import static com.android.bluetooth.TestUtils.getTestDevice;
+
 import static com.google.common.truth.Truth.assertThat;
 
-import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.SmallTest;
-import androidx.test.runner.AndroidJUnit4;
 
 import com.android.bluetooth.avrcpcontroller.BrowseTree.BrowseNode;
+import com.android.bluetooth.btservice.AdapterService;
+import com.android.tests.bluetooth.MockitoRule;
+
+import com.google.common.testing.EqualsTester;
 
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.Mock;
 
 import java.util.ArrayList;
 import java.util.List;
 
+/** Test cases for {@link BrowseNode}. */
 @SmallTest
 @RunWith(AndroidJUnit4.class)
 public class BrowseNodeTest {
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
+
+    @Mock private AdapterService mAdapterService;
+
     private static final int TEST_PLAYER_ID = 1;
     private static final String TEST_UUID = "1111";
     private static final String TEST_NAME = "item";
 
-    private final byte[] mTestAddress = new byte[] {01, 01, 01, 01, 01, 01};
-    private BluetoothAdapter mAdapter;
-    private BluetoothDevice mTestDevice = null;
+    private final BluetoothDevice mDevice = getTestDevice(4);
+
     private BrowseTree mBrowseTree;
     private BrowseNode mRootNode;
 
     @Before
     public void setUp() {
-        mAdapter = BluetoothAdapter.getDefaultAdapter();
-        mTestDevice = mAdapter.getRemoteDevice(mTestAddress);
-        mBrowseTree = new BrowseTree(null);
+        mBrowseTree = new BrowseTree(mAdapterService, null);
         mRootNode = mBrowseTree.mRootNode;
     }
 
@@ -60,15 +69,28 @@ public class BrowseNodeTest {
                 mBrowseTree
                 .new BrowseNode(
                         new AvrcpPlayer.Builder()
-                                .setDevice(mTestDevice)
+                                .setDevice(mDevice)
                                 .setPlayerId(TEST_PLAYER_ID)
                                 .setSupportedFeature(AvrcpPlayer.FEATURE_BROWSING)
                                 .build());
 
         assertThat(browseNode.isPlayer()).isTrue();
         assertThat(browseNode.getBluetoothID()).isEqualTo(TEST_PLAYER_ID);
-        assertThat(browseNode.getDevice()).isEqualTo(mTestDevice);
+        assertThat(browseNode.getDevice()).isEqualTo(mDevice);
         assertThat(browseNode.isBrowsable()).isTrue();
+    }
+
+    @Test
+    public void constructor_withBluetoothDevice_createsRandomUuid() {
+        BrowseNode browseNode1 = mBrowseTree.new BrowseNode(mDevice);
+
+        assertThat(browseNode1.getID()).isNotNull();
+        assertThat(browseNode1.getDevice()).isEqualTo(mDevice);
+        assertThat(browseNode1.isPlayer()).isFalse();
+        assertThat(browseNode1.isBrowsable()).isTrue();
+
+        BrowseNode browseNode2 = mBrowseTree.new BrowseNode(mDevice);
+        assertThat(browseNode1.getID()).isNotEqualTo(browseNode2.getID());
     }
 
     @Test
@@ -135,7 +157,7 @@ public class BrowseNodeTest {
 
         mRootNode.addChild(browseNode);
 
-        assertThat(mRootNode.getContents().size()).isEqualTo(1);
+        assertThat(mRootNode.getContents()).hasSize(1);
     }
 
     @Test
@@ -152,6 +174,48 @@ public class BrowseNodeTest {
     }
 
     @Test
+    public void setUncached_whenNodeHasChildrenNodes() {
+        BrowseNode deviceNode = mBrowseTree.new BrowseNode(mDevice);
+        mRootNode.addChild(deviceNode);
+        mRootNode.setCached(true);
+
+        BrowseNode browseNodeChild1 =
+                mBrowseTree.new BrowseNode(new AvrcpItem.Builder().setUuid("child1").build());
+        BrowseNode browseNodeChild2 =
+                mBrowseTree.new BrowseNode(new AvrcpItem.Builder().setUuid("child2").build());
+        BrowseNode browseNodeChild3 =
+                mBrowseTree.new BrowseNode(new AvrcpItem.Builder().setUuid("child3").build());
+        deviceNode.addChild(browseNodeChild1);
+        deviceNode.addChild(browseNodeChild2);
+        deviceNode.addChild(browseNodeChild3);
+        deviceNode.setCached(true);
+
+        BrowseNode browseNodeChild1_1 =
+                mBrowseTree.new BrowseNode(new AvrcpItem.Builder().setUuid("child1_1").build());
+        browseNodeChild1.addChild(browseNodeChild1_1);
+        browseNodeChild1.setCached(true);
+
+        assertThat(mRootNode.isCached()).isTrue();
+        assertThat(deviceNode.isCached()).isTrue();
+        assertThat(browseNodeChild1.isCached()).isTrue();
+        assertThat(mRootNode.getChildrenCount()).isEqualTo(1);
+        assertThat(deviceNode.getChildrenCount()).isEqualTo(3);
+        assertThat(browseNodeChild1.getChildrenCount()).isEqualTo(1);
+
+        deviceNode.setCached(false);
+
+        assertThat(mRootNode.isCached()).isTrue();
+        assertThat(deviceNode.isCached()).isFalse();
+        assertThat(browseNodeChild1.isCached()).isFalse();
+        assertThat(browseNodeChild2.isCached()).isFalse();
+        assertThat(browseNodeChild3.isCached()).isFalse();
+        assertThat(browseNodeChild1_1.isCached()).isFalse();
+        assertThat(mRootNode.getChildrenCount()).isEqualTo(1);
+        assertThat(deviceNode.getChildrenCount()).isEqualTo(0);
+        assertThat(browseNodeChild1.getChildrenCount()).isEqualTo(0);
+    }
+
+    @Test
     public void getters() {
         BrowseNode browseNode =
                 mBrowseTree.new BrowseNode(new AvrcpItem.Builder().setUuid(TEST_UUID).build());
@@ -162,20 +226,18 @@ public class BrowseNodeTest {
     }
 
     @Test
-    public void equals_withDifferentClass() {
-        AvrcpItem avrcpItem = new AvrcpItem.Builder().setUuid(TEST_UUID).build();
-
-        assertThat(mRootNode).isNotEqualTo(avrcpItem);
-    }
-
-    @Test
-    public void equals_withSameId() {
+    public void equals() {
         BrowseNode browseNodeOne =
                 mBrowseTree.new BrowseNode(new AvrcpItem.Builder().setUuid(TEST_UUID).build());
         BrowseNode browseNodeTwo =
                 mBrowseTree.new BrowseNode(new AvrcpItem.Builder().setUuid(TEST_UUID).build());
 
-        assertThat(browseNodeOne).isEqualTo(browseNodeTwo);
+        AvrcpItem avrcpItem = new AvrcpItem.Builder().setUuid(TEST_UUID).build();
+
+        new EqualsTester()
+                .addEqualityGroup(browseNodeOne, browseNodeTwo)
+                .addEqualityGroup(avrcpItem)
+                .testEquals();
     }
 
     @Test
@@ -190,10 +252,12 @@ public class BrowseNodeTest {
     @Test
     public void toTreeString_returnFormattedString() {
         final String expected =
-                "  [Id: 1111 Name: item Size: 2]\n"
-                        + "    [Id: child1 Name: child1 Size: 1]\n"
-                        + "      [Id: child3 Name: child3 Size: 0]\n"
-                        + "    [Id: child2 Name: child2 Size: 0]\n";
+                """
+                  [id=1111, name=item, cached=false, size=2]
+                    [id=child1, name=child1, cached=false, size=1]
+                      [id=child3, name=child3, cached=false, size=0]
+                    [id=child2, name=child2, cached=false, size=0]
+                """;
 
         BrowseNode browseNode =
                 mBrowseTree
@@ -243,6 +307,6 @@ public class BrowseNodeTest {
                                 .build());
 
         assertThat(browseNode.toString())
-                .isEqualTo("[Id: " + TEST_UUID + " Name: " + TEST_NAME + " Size: 0]");
+                .isEqualTo("[id=" + TEST_UUID + ", name=" + TEST_NAME + ", cached=false, size=0]");
     }
 }

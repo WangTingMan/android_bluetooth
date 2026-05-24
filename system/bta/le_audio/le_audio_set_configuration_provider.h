@@ -23,21 +23,20 @@ namespace bluetooth::le_audio {
 
 /* Audio set configurations provider interface. */
 class AudioSetConfigurationProvider {
- public:
+public:
   AudioSetConfigurationProvider();
   virtual ~AudioSetConfigurationProvider() = default;
   static AudioSetConfigurationProvider* Get();
   static void Initialize(types::CodecLocation location);
-  static void DebugDump(int fd);
   static void Cleanup();
-  virtual const set_configurations::AudioSetConfigurations* GetConfigurations(
-      ::bluetooth::le_audio::types::LeAudioContextType content_type) const;
+  virtual const types::AudioSetConfigurations* GetConfigurations(
+          ::bluetooth::le_audio::types::LeAudioContextType content_type) const;
   virtual bool CheckConfigurationIsBiDirSwb(
-      const set_configurations::AudioSetConfiguration& set_configuration) const;
+          const types::AudioSetConfiguration& set_configuration) const;
   virtual bool CheckConfigurationIsDualBiDirSwb(
-      const set_configurations::AudioSetConfiguration& set_configuration) const;
+          const types::AudioSetConfiguration& set_configuration) const;
 
- private:
+private:
   struct impl;
   std::unique_ptr<impl> pimpl_;
 };

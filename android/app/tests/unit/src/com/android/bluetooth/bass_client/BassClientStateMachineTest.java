@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,23 @@
 
 package com.android.bluetooth.bass_client;
 
-import static android.Manifest.permission.BLUETOOTH_CONNECT;
 import static android.bluetooth.BluetoothGatt.GATT_FAILURE;
 import static android.bluetooth.BluetoothGatt.GATT_SUCCESS;
+import static android.bluetooth.BluetoothLeBroadcastAssistant.ACTION_CONNECTION_STATE_CHANGED;
+import static android.bluetooth.BluetoothProfile.EXTRA_PREVIOUS_STATE;
+import static android.bluetooth.BluetoothProfile.EXTRA_STATE;
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTED;
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTING;
+import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTED;
+import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTING;
 
 import static androidx.test.espresso.intent.matcher.IntentMatchers.hasAction;
 import static androidx.test.espresso.intent.matcher.IntentMatchers.hasExtra;
 import static androidx.test.espresso.intent.matcher.IntentMatchers.hasFlag;
 
+import static com.android.bluetooth.TestUtils.getRealDevice;
+import static com.android.bluetooth.TestUtils.getTestDevice;
+import static com.android.bluetooth.TestUtils.mockGetBluetoothManager;
 import static com.android.bluetooth.bass_client.BassClientStateMachine.ADD_BCAST_SOURCE;
 import static com.android.bluetooth.bass_client.BassClientStateMachine.CANCEL_PENDING_SOURCE_OPERATION;
 import static com.android.bluetooth.bass_client.BassClientStateMachine.CONNECT;
@@ -32,39 +41,35 @@ import static com.android.bluetooth.bass_client.BassClientStateMachine.CONNECT_T
 import static com.android.bluetooth.bass_client.BassClientStateMachine.DISCONNECT;
 import static com.android.bluetooth.bass_client.BassClientStateMachine.GATT_TXN_PROCESSED;
 import static com.android.bluetooth.bass_client.BassClientStateMachine.GATT_TXN_TIMEOUT;
-import static com.android.bluetooth.bass_client.BassClientStateMachine.PSYNC_ACTIVE_TIMEOUT;
-import static com.android.bluetooth.bass_client.BassClientStateMachine.REACHED_MAX_SOURCE_LIMIT;
+import static com.android.bluetooth.bass_client.BassClientStateMachine.INITIATE_PA_SYNC_TRANSFER;
 import static com.android.bluetooth.bass_client.BassClientStateMachine.READ_BASS_CHARACTERISTICS;
 import static com.android.bluetooth.bass_client.BassClientStateMachine.REMOTE_SCAN_START;
 import static com.android.bluetooth.bass_client.BassClientStateMachine.REMOTE_SCAN_STOP;
 import static com.android.bluetooth.bass_client.BassClientStateMachine.REMOVE_BCAST_SOURCE;
-import static com.android.bluetooth.bass_client.BassClientStateMachine.SELECT_BCAST_SOURCE;
 import static com.android.bluetooth.bass_client.BassClientStateMachine.SET_BCAST_CODE;
 import static com.android.bluetooth.bass_client.BassClientStateMachine.START_SCAN_OFFLOAD;
 import static com.android.bluetooth.bass_client.BassClientStateMachine.STOP_SCAN_OFFLOAD;
 import static com.android.bluetooth.bass_client.BassClientStateMachine.SWITCH_BCAST_SOURCE;
 import static com.android.bluetooth.bass_client.BassClientStateMachine.UPDATE_BCAST_SOURCE;
+import static com.android.bluetooth.bass_client.BassClientStateMachine.UPDATE_METADATA;
 import static com.android.bluetooth.bass_client.BassConstants.CLIENT_CHARACTERISTIC_CONFIG;
 
 import static com.google.common.truth.Truth.assertThat;
+import static com.google.common.truth.Truth.assertWithMessage;
 
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.after;
-import static org.mockito.Mockito.atLeast;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
@@ -78,47 +83,39 @@ import android.bluetooth.BluetoothLeBroadcastChannel;
 import android.bluetooth.BluetoothLeBroadcastMetadata;
 import android.bluetooth.BluetoothLeBroadcastReceiveState;
 import android.bluetooth.BluetoothLeBroadcastSubgroup;
-import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.BluetoothStatusCodes;
-import android.bluetooth.le.PeriodicAdvertisingCallback;
-import android.bluetooth.le.ScanRecord;
-import android.bluetooth.le.ScanResult;
-import android.content.Context;
+import android.bluetooth.le.PeriodicAdvertisingManager;
 import android.content.Intent;
-import android.os.Bundle;
-import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Message;
+import android.platform.test.annotations.EnableFlags;
 import android.platform.test.flag.junit.SetFlagsRule;
 
-import androidx.test.InstrumentationRegistry;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.MediumTest;
 
-import com.android.bluetooth.BluetoothMethodProxy;
-import com.android.bluetooth.TestUtils;
+import com.android.bluetooth.TestLooper;
 import com.android.bluetooth.Utils;
 import com.android.bluetooth.btservice.AdapterService;
+import com.android.bluetooth.btservice.MetricsLogger;
 import com.android.bluetooth.flags.Flags;
+import com.android.tests.bluetooth.MockitoRule;
 
 import com.google.common.primitives.Bytes;
 
 import org.hamcrest.Matcher;
 import org.hamcrest.core.AllOf;
-import org.hamcrest.core.IsInstanceOf;
 import org.junit.After;
-import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.hamcrest.MockitoHamcrest;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -126,99 +123,86 @@ import java.util.List;
 import java.util.Random;
 import java.util.UUID;
 
+/** Test cases for {@link BassClientStateMachine}. */
 @MediumTest
-@RunWith(JUnit4.class)
+@RunWith(AndroidJUnit4.class)
 public class BassClientStateMachineTest {
-    @Rule public final MockitoRule mockito = MockitoJUnit.rule();
-
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
     @Rule public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
 
-    private static final int CONNECTION_TIMEOUT_MS = 1_000;
-    private static final int TIMEOUT_MS = 2_000;
-    private static final int NO_TIMEOUT_MS = 0;
-    private static final int WAIT_MS = 1_200;
-    private static final String TEST_BROADCAST_NAME = "Test";
-    private static final String EMPTY_BLUETOOTH_DEVICE_ADDRESS = "00:00:00:00:00:00";
-    private Context mTargetContext;
-    private BluetoothAdapter mAdapter;
-    private HandlerThread mHandlerThread;
-    private StubBassClientStateMachine mBassClientStateMachine;
-    private BluetoothDevice mTestDevice;
-    private BluetoothDevice mSourceTestDevice;
-    private BluetoothDevice mEmptyTestDevice;
-
+    @Mock private PeriodicAdvertisingManager mPeriodicAdvertisingManager;
     @Mock private AdapterService mAdapterService;
     @Mock private BassClientService mBassClientService;
-    @Mock private BluetoothMethodProxy mMethodProxy;
+    @Mock private MetricsLogger mMetricsLogger;
+    @Mock private BassClientStateMachine.BluetoothGattTestableWrapper mBluetoothGatt;
+    @Mock private BluetoothGattCharacteristic mBroadcastScanControlPoint;
+
+    private static final int TEST_BROADCAST_ID = 42;
+    private static final int TEST_SOURCE_ID = 1;
+    private static final int TEST_CHANNEL_INDEX = 1;
+    private static final String EMPTY_BLUETOOTH_DEVICE_ADDRESS = "00:00:00:00:00:00";
+    private static final byte OPCODE_UPDATE_SOURCE = 0x03;
+    private static final int UPDATE_SOURCE_FIXED_LENGTH = 6;
+
+    private final BluetoothDevice mDevice = getTestDevice(0);
+    private final BluetoothDevice mEmptyTestDevice = getTestDevice(EMPTY_BLUETOOTH_DEVICE_ADDRESS);
+    private final BluetoothDevice mSourceTestDevice = getTestDevice(1);
+
+    private StubBassClientStateMachine mStateMachine;
+    private TestLooper mLooper;
+    private InOrder mInOrder;
 
     @Before
     public void setUp() throws Exception {
-        mTargetContext = InstrumentationRegistry.getTargetContext();
-        BluetoothManager manager = mTargetContext.getSystemService(BluetoothManager.class);
-        assertThat(manager).isNotNull();
-        mAdapter = manager.getAdapter();
+        mLooper = new TestLooper();
+        mInOrder = inOrder(mAdapterService);
 
-        mEmptyTestDevice = mAdapter.getRemoteDevice(EMPTY_BLUETOOTH_DEVICE_ADDRESS);
-        assertThat(mEmptyTestDevice).isNotNull();
-
-        TestUtils.setAdapterService(mAdapterService);
-
-        BluetoothMethodProxy.setInstanceForTesting(mMethodProxy);
-        doNothing()
-                .when(mMethodProxy)
-                .periodicAdvertisingManagerTransferSync(any(), any(), anyInt(), anyInt());
-
-        // Get a device for testing
-        mTestDevice = TestUtils.getTestDevice(mAdapter, 0);
-        mSourceTestDevice = TestUtils.getTestDevice(mAdapter, 1);
+        MetricsLogger.setInstanceForTesting(mMetricsLogger);
 
         doReturn(mEmptyTestDevice)
                 .when(mAdapterService)
                 .getDeviceFromByte(Utils.getBytesFromAddress(EMPTY_BLUETOOTH_DEVICE_ADDRESS));
+        doReturn(mAdapterService).when(mBassClientService).getBaseContext();
+        mockGetBluetoothManager(mAdapterService);
 
-        // Set up thread and looper
-        mHandlerThread = new HandlerThread("BassClientStateMachineTestHandlerThread");
-        mHandlerThread.start();
-        mBassClientStateMachine =
+        mStateMachine =
                 new StubBassClientStateMachine(
-                        mTestDevice,
+                        mDevice,
                         mBassClientService,
                         mAdapterService,
-                        mHandlerThread.getLooper(),
-                        CONNECTION_TIMEOUT_MS);
-        mBassClientStateMachine.start();
+                        mPeriodicAdvertisingManager,
+                        mLooper.getLooper());
+        mStateMachine.start();
     }
 
-    private int classTypeToConnectionState(Class type) {
+    private static int classTypeToConnectionState(Class type) {
         if (type == BassClientStateMachine.Disconnected.class) {
-            return BluetoothProfile.STATE_DISCONNECTED;
+            return STATE_DISCONNECTED;
         } else if (type == BassClientStateMachine.Connecting.class) {
-            return BluetoothProfile.STATE_CONNECTING;
+            return STATE_CONNECTING;
         } else if (type == BassClientStateMachine.Connected.class
                 || type == BassClientStateMachine.ConnectedProcessing.class) {
-            return BluetoothProfile.STATE_CONNECTED;
+            return STATE_CONNECTED;
         } else {
-            Assert.fail("Invalid class type given: " + type);
+            assertWithMessage("Invalid class type given: " + type).fail();
             return 0;
         }
     }
 
     @After
     public void tearDown() throws Exception {
-        if (mBassClientStateMachine == null) {
+        if (mStateMachine == null) {
             return;
         }
 
-        mBassClientStateMachine.doQuit();
-        mHandlerThread.quit();
-        TestUtils.clearAdapterService(mAdapterService);
+        MetricsLogger.setInstanceForTesting(null);
+        mStateMachine.doQuit();
     }
 
     /** Test that default state is disconnected */
     @Test
     public void testDefaultDisconnectedState() {
-        Assert.assertEquals(
-                BluetoothProfile.STATE_DISCONNECTED, mBassClientStateMachine.getConnectionState());
+        assertThat(mStateMachine.getConnectionState()).isEqualTo(STATE_DISCONNECTED);
     }
 
     /**
@@ -227,30 +211,11 @@ public class BassClientStateMachineTest {
      * @param allow if true, connection is allowed
      */
     private void allowConnection(boolean allow) {
-        when(mBassClientService.okToConnect(any(BluetoothDevice.class))).thenReturn(allow);
+        doReturn(allow).when(mBassClientService).okToConnect(any());
     }
 
     private void allowConnectGatt(boolean allow) {
-        mBassClientStateMachine.mShouldAllowGatt = allow;
-    }
-
-    /** Test that an incoming connection with policy forbidding connection is rejected */
-    @Test
-    public void testOkToConnectFails() {
-        allowConnection(false);
-        allowConnectGatt(true);
-
-        // Inject an event for when incoming connection is requested
-        mBassClientStateMachine.sendMessage(CONNECT);
-
-        // Verify that no connection state broadcast is executed
-        verify(mBassClientService, after(WAIT_MS).never())
-                .sendBroadcast(any(Intent.class), anyString());
-
-        // Check that we are in Disconnected state
-        Assert.assertThat(
-                mBassClientStateMachine.getCurrentState(),
-                IsInstanceOf.instanceOf(BassClientStateMachine.Disconnected.class));
+        mStateMachine.mShouldAllowGatt = allow;
     }
 
     @Test
@@ -258,18 +223,14 @@ public class BassClientStateMachineTest {
         allowConnection(true);
         allowConnectGatt(false);
 
-        // Inject an event for when incoming connection is requested
-        mBassClientStateMachine.sendMessage(CONNECT);
+        mStateMachine.sendMessage(CONNECT);
+        mLooper.dispatchAll();
 
-        // Verify that no connection state broadcast is executed
-        verify(mBassClientService, after(WAIT_MS).never())
-                .sendBroadcast(any(Intent.class), anyString());
+        verifyNoIntentSent();
 
-        // Check that we are in Disconnected state
-        Assert.assertThat(
-                mBassClientStateMachine.getCurrentState(),
-                IsInstanceOf.instanceOf(BassClientStateMachine.Disconnected.class));
-        assertNull(mBassClientStateMachine.mBluetoothGatt);
+        assertThat(mStateMachine.getCurrentState())
+                .isInstanceOf(BassClientStateMachine.Disconnected.class);
+        assertThat(mStateMachine.mBluetoothGatt).isNull();
     }
 
     @Test
@@ -277,207 +238,156 @@ public class BassClientStateMachineTest {
         allowConnection(true);
         allowConnectGatt(true);
 
-        // Inject an event for when incoming connection is requested
-        mBassClientStateMachine.sendMessage(CONNECT);
+        mStateMachine.sendMessage(CONNECT);
+        mLooper.dispatchAll();
+        verifyConnectionStateIntent(STATE_CONNECTING, STATE_DISCONNECTED);
+        assertThat(mStateMachine.mGattCallback).isNotNull();
 
-        // Verify that one connection state broadcast is executed
-        ArgumentCaptor<Intent> intentArgument1 = ArgumentCaptor.forClass(Intent.class);
-        verify(mBassClientService, timeout(TIMEOUT_MS).times(1))
-                .sendBroadcast(intentArgument1.capture(), anyString(), any(Bundle.class));
-        Assert.assertEquals(
-                BluetoothProfile.STATE_CONNECTING,
-                intentArgument1.getValue().getIntExtra(BluetoothProfile.EXTRA_STATE, -1));
-
-        Assert.assertThat(
-                mBassClientStateMachine.getCurrentState(),
-                IsInstanceOf.instanceOf(BassClientStateMachine.Connecting.class));
-
-        assertNotNull(mBassClientStateMachine.mGattCallback);
-        mBassClientStateMachine.notifyConnectionStateChanged(
-                GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED);
-
-        // Verify that the expected number of broadcasts are executed:
-        // - two calls to broadcastConnectionState(): Disconnected -> Connecting -> Connected
-        ArgumentCaptor<Intent> intentArgument2 = ArgumentCaptor.forClass(Intent.class);
-        verify(mBassClientService, timeout(TIMEOUT_MS).times(2))
-                .sendBroadcast(intentArgument2.capture(), anyString(), any(Bundle.class));
-
-        Assert.assertThat(
-                mBassClientStateMachine.getCurrentState(),
-                IsInstanceOf.instanceOf(BassClientStateMachine.Connected.class));
+        mStateMachine.notifyConnectionStateChanged(GATT_SUCCESS, STATE_CONNECTED);
+        mLooper.dispatchAll();
+        verifyConnectionStateIntent(STATE_CONNECTED, STATE_CONNECTING);
     }
 
     @Test
-    public void testConnectGattTimeout() {
+    public void timeout_whenConnecting_isDisconnected() {
         allowConnection(true);
         allowConnectGatt(true);
 
-        // Inject an event for when incoming connection is requested
-        mBassClientStateMachine.sendMessage(CONNECT);
+        mStateMachine.sendMessage(CONNECT);
+        mLooper.dispatchAll();
+        verifyConnectionStateIntent(STATE_CONNECTING, STATE_DISCONNECTED);
 
-        // Verify that one connection state broadcast is executed
-        ArgumentCaptor<Intent> intentArgument1 = ArgumentCaptor.forClass(Intent.class);
-        verify(mBassClientService, timeout(TIMEOUT_MS).times(1))
-                .sendBroadcast(intentArgument1.capture(), anyString(), any(Bundle.class));
-        Assert.assertEquals(
-                BluetoothProfile.STATE_CONNECTING,
-                intentArgument1.getValue().getIntExtra(BluetoothProfile.EXTRA_STATE, -1));
-
-        Assert.assertThat(
-                mBassClientStateMachine.getCurrentState(),
-                IsInstanceOf.instanceOf(BassClientStateMachine.Connecting.class));
-
-        // Verify that one connection state broadcast is executed
-        ArgumentCaptor<Intent> intentArgument2 = ArgumentCaptor.forClass(Intent.class);
-        verify(mBassClientService, timeout(TIMEOUT_MS).times(2))
-                .sendBroadcast(intentArgument2.capture(), anyString(), any(Bundle.class));
-        Assert.assertEquals(
-                BluetoothProfile.STATE_DISCONNECTED,
-                intentArgument2.getValue().getIntExtra(BluetoothProfile.EXTRA_STATE, -1));
-
-        Assert.assertThat(
-                mBassClientStateMachine.getCurrentState(),
-                IsInstanceOf.instanceOf(BassClientStateMachine.Disconnected.class));
+        mLooper.moveTimeForward(BassConstants.CONNECT_TIMEOUT_MS);
+        mLooper.dispatchAll();
+        verifyConnectionStateIntent(STATE_DISCONNECTED, STATE_CONNECTING);
     }
 
     @Test
-    public void testStatesChangesWithMessages() {
+    public void disconnect_whenConnecting_receiveConnected_isDisconnected() {
         allowConnection(true);
         allowConnectGatt(true);
 
-        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
-                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
-        // need this to ensure expected mock behavior for getActiveSyncedSource
-        when(mBassClientService.getActiveSyncedSources(any())).thenReturn(null);
+        mStateMachine.sendMessage(CONNECT);
+        mLooper.dispatchAll();
+        verifyConnectionStateIntent(STATE_CONNECTING, STATE_DISCONNECTED);
 
-        assertThat(mBassClientStateMachine.getCurrentState())
-                .isInstanceOf(BassClientStateMachine.Disconnected.class);
+        // Message is deferred
+        mStateMachine.sendMessage(DISCONNECT);
+        mLooper.dispatchAll();
 
-        // disconnected -> connecting ---timeout---> disconnected
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(CONNECT),
-                BassClientStateMachine.Connecting.class);
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(
-                        BassClientStateMachine.CONNECT_TIMEOUT, mTestDevice),
-                BassClientStateMachine.Disconnected.class);
+        mStateMachine.mBluetoothGatt = mBluetoothGatt;
+        mStateMachine.sendMessage(CONNECTION_STATE_CHANGED, Integer.valueOf(STATE_CONNECTED));
+        mLooper.dispatchNext();
+        verifyConnectionStateIntent(STATE_CONNECTED, STATE_CONNECTING);
+        mLooper.dispatchAll();
+        verifyConnectionStateIntent(STATE_DISCONNECTED, STATE_CONNECTED);
+    }
 
-        // disconnected -> connecting ---DISCONNECT---> CONNECTION_STATE_CHANGED(connected)
-        // --> connected -> disconnected
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(CONNECT),
-                BassClientStateMachine.Connecting.class);
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(BassClientStateMachine.DISCONNECT),
-                BassClientStateMachine.Connecting.class);
-        mBassClientStateMachine.sendMessage(
-                CONNECTION_STATE_CHANGED, Integer.valueOf(BluetoothProfile.STATE_CONNECTED));
+    @Test
+    public void receiveConnected_whenDisconnected_isConnected() {
+        allowConnection(true);
+        allowConnectGatt(true);
 
-        // disconnected -> connecting ---CONNECTION_STATE_CHANGED(connected)---> connected -->
-        // disconnected
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(CONNECT),
-                BassClientStateMachine.Connecting.class);
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(
-                        CONNECTION_STATE_CHANGED,
-                        Integer.valueOf(BluetoothProfile.STATE_CONNECTED)),
-                BassClientStateMachine.Connected.class);
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(
-                        CONNECTION_STATE_CHANGED,
-                        Integer.valueOf(BluetoothProfile.STATE_DISCONNECTED)),
-                BassClientStateMachine.Disconnected.class);
+        mStateMachine.sendMessage(CONNECTION_STATE_CHANGED, Integer.valueOf(STATE_CONNECTED));
+        mLooper.dispatchAll();
+        verifyConnectionStateIntent(STATE_CONNECTED, STATE_DISCONNECTED);
+    }
 
-        // disconnected -> connecting ---CONNECTION_STATE_CHANGED(non-connected) --> disconnected
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(CONNECT),
-                BassClientStateMachine.Connecting.class);
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(
-                        CONNECTION_STATE_CHANGED,
-                        Integer.valueOf(BluetoothProfile.STATE_DISCONNECTED)),
-                BassClientStateMachine.Disconnected.class);
+    @Test
+    public void receiveConnected_whenConnecting_isConnected() {
+        allowConnection(true);
+        allowConnectGatt(true);
 
-        // change default state to connected for the next tests
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(CONNECT),
-                BassClientStateMachine.Connecting.class);
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(
-                        CONNECTION_STATE_CHANGED,
-                        Integer.valueOf(BluetoothProfile.STATE_CONNECTED)),
-                BassClientStateMachine.Connected.class);
+        mStateMachine.sendMessage(CONNECT);
+        mLooper.dispatchAll();
+        verifyConnectionStateIntent(STATE_CONNECTING, STATE_DISCONNECTED);
 
-        // connected ----READ_BASS_CHARACTERISTICS---> connectedProcessing --GATT_TXN_PROCESSED
-        // --> connected
+        mStateMachine.sendMessage(CONNECTION_STATE_CHANGED, Integer.valueOf(STATE_CONNECTED));
+        mLooper.dispatchAll();
+        verifyConnectionStateIntent(STATE_CONNECTED, STATE_CONNECTING);
+    }
 
-        // Make bluetoothGatt non-null so state will transit
-        mBassClientStateMachine.mBluetoothGatt =
-                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBroadcastScanControlPoint =
-                new BluetoothGattCharacteristic(
-                        BassConstants.BASS_BCAST_AUDIO_SCAN_CTRL_POINT,
-                        BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE
-                                | BluetoothGattCharacteristic.PROPERTY_WRITE,
-                        BluetoothGattCharacteristic.PERMISSION_WRITE_ENCRYPTED);
+    @Test
+    public void receiveDisconnected_whenConnecting_isDisconnected() {
+        allowConnection(true);
+        allowConnectGatt(true);
 
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(
-                        READ_BASS_CHARACTERISTICS,
-                        new BluetoothGattCharacteristic(
-                                UUID.randomUUID(),
-                                BluetoothGattCharacteristic.PROPERTY_READ
-                                        | BluetoothGattCharacteristic.PROPERTY_NOTIFY,
-                                BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED)),
-                BassClientStateMachine.ConnectedProcessing.class);
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(GATT_TXN_PROCESSED),
-                BassClientStateMachine.Connected.class);
+        mStateMachine.sendMessage(CONNECT);
+        mLooper.dispatchAll();
+        verifyConnectionStateIntent(STATE_CONNECTING, STATE_DISCONNECTED);
 
-        // connected ----READ_BASS_CHARACTERISTICS---> connectedProcessing --GATT_TXN_TIMEOUT -->
-        // connected
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(
-                        READ_BASS_CHARACTERISTICS,
-                        new BluetoothGattCharacteristic(
-                                UUID.randomUUID(),
-                                BluetoothGattCharacteristic.PROPERTY_READ
-                                        | BluetoothGattCharacteristic.PROPERTY_NOTIFY,
-                                BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED)),
-                BassClientStateMachine.ConnectedProcessing.class);
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(GATT_TXN_TIMEOUT),
-                BassClientStateMachine.Connected.class);
+        mStateMachine.sendMessage(CONNECTION_STATE_CHANGED, Integer.valueOf(STATE_DISCONNECTED));
+        mLooper.dispatchAll();
+        verifyConnectionStateIntent(STATE_DISCONNECTED, STATE_CONNECTING);
+    }
 
-        // connected ----START_SCAN_OFFLOAD---> connectedProcessing --GATT_TXN_PROCESSED-->
-        // connected
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(BassClientStateMachine.START_SCAN_OFFLOAD),
-                BassClientStateMachine.ConnectedProcessing.class);
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(GATT_TXN_PROCESSED),
-                BassClientStateMachine.Connected.class);
+    @Test
+    public void readBassCharacteristics_whenConnected_isProcessing() {
+        receiveConnected_whenDisconnected_isConnected();
+        mStateMachine.mBluetoothGatt = mBluetoothGatt;
 
-        // connected ----STOP_SCAN_OFFLOAD---> connectedProcessing --GATT_TXN_PROCESSED--> connected
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(STOP_SCAN_OFFLOAD),
-                BassClientStateMachine.ConnectedProcessing.class);
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(GATT_TXN_PROCESSED),
-                BassClientStateMachine.Connected.class);
+        mStateMachine.sendMessage(READ_BASS_CHARACTERISTICS, null);
+        mLooper.dispatchAll();
+        verifyNoIntentSent();
+        assertThat(mStateMachine.getCurrentState())
+                .isInstanceOf(BassClientStateMachine.ConnectedProcessing.class);
+    }
+
+    @Test
+    public void gattTxnProcess_whenProcessing_isConnected() {
+        readBassCharacteristics_whenConnected_isProcessing();
+
+        mStateMachine.sendMessage(GATT_TXN_PROCESSED);
+        mLooper.dispatchAll();
+        verifyNoIntentSent();
+        assertThat(mStateMachine.getCurrentState())
+                .isInstanceOf(BassClientStateMachine.Connected.class);
+    }
+
+    @Test
+    public void gattTxnTimeout_whenProcessing_isConnected() {
+        readBassCharacteristics_whenConnected_isProcessing();
+
+        mStateMachine.sendMessage(GATT_TXN_TIMEOUT);
+        mLooper.dispatchAll();
+        verifyNoIntentSent();
+        assertThat(mStateMachine.getCurrentState())
+                .isInstanceOf(BassClientStateMachine.Connected.class);
+    }
+
+    @Test
+    public void startScanOffload_whenConnected_isProcessing() {
+        receiveConnected_whenDisconnected_isConnected();
+        mStateMachine.mBluetoothGatt = mBluetoothGatt;
+        mStateMachine.mBroadcastScanControlPoint = mBroadcastScanControlPoint;
+
+        mStateMachine.sendMessage(START_SCAN_OFFLOAD);
+        mLooper.dispatchAll();
+        verifyNoIntentSent();
+        assertThat(mStateMachine.getCurrentState())
+                .isInstanceOf(BassClientStateMachine.ConnectedProcessing.class);
+    }
+
+    @Test
+    public void stopScanOffload_whenConnected_isProcessing() {
+        receiveConnected_whenDisconnected_isConnected();
+        mStateMachine.mBluetoothGatt = mBluetoothGatt;
+        mStateMachine.mBroadcastScanControlPoint = mBroadcastScanControlPoint;
+
+        mStateMachine.sendMessage(STOP_SCAN_OFFLOAD);
+        mLooper.dispatchAll();
+        verifyNoIntentSent();
+        assertThat(mStateMachine.getCurrentState())
+                .isInstanceOf(BassClientStateMachine.ConnectedProcessing.class);
     }
 
     @Test
     public void acquireAllBassChars() {
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
         // Do nothing when mBluetoothGatt.getService returns null
-        mBassClientStateMachine.acquireAllBassChars();
+        mStateMachine.acquireAllBassChars();
 
         BluetoothGattService gattService = Mockito.mock(BluetoothGattService.class);
         when(btGatt.getService(BassConstants.BASS_UUID)).thenReturn(gattService);
@@ -500,248 +410,129 @@ public class BassClientStateMachineTest {
         characteristics.add(bassCharacteristic);
 
         when(gattService.getCharacteristics()).thenReturn(characteristics);
-        mBassClientStateMachine.acquireAllBassChars();
-        assertThat(mBassClientStateMachine.mBroadcastScanControlPoint).isEqualTo(scanControlPoint);
-        assertThat(mBassClientStateMachine.mBroadcastCharacteristics).contains(bassCharacteristic);
+        mStateMachine.acquireAllBassChars();
+        assertThat(mStateMachine.mBroadcastScanControlPoint).isEqualTo(scanControlPoint);
+        assertThat(mStateMachine.mBroadcastCharacteristics).contains(bassCharacteristic);
     }
 
     @Test
     public void simpleMethods() {
         // dump() shouldn't crash
         StringBuilder sb = new StringBuilder();
-        mBassClientStateMachine.dump(sb);
-
-        // log() shouldn't crash
-        String msg = "test-log-message";
-        mBassClientStateMachine.log(msg);
+        mStateMachine.dump(sb);
 
         // messageWhatToString() shouldn't crash
         for (int i = CONNECT; i <= CONNECT_TIMEOUT + 1; ++i) {
-            mBassClientStateMachine.messageWhatToString(i);
+            mStateMachine.messageWhatToString(i);
         }
 
         final int invalidSourceId = -100;
-        assertThat(mBassClientStateMachine.getCurrentBroadcastMetadata(invalidSourceId)).isNull();
-        assertThat(mBassClientStateMachine.getDevice()).isEqualTo(mTestDevice);
-        assertThat(mBassClientStateMachine.hasPendingSourceOperation()).isFalse();
-        assertThat(mBassClientStateMachine.hasPendingSourceOperation(1)).isFalse();
-        assertThat(mBassClientStateMachine.isEmpty(new byte[] {0})).isTrue();
-        assertThat(mBassClientStateMachine.isEmpty(new byte[] {1})).isFalse();
-        assertThat(mBassClientStateMachine.isPendingRemove(invalidSourceId)).isFalse();
-    }
-
-    @Test
-    public void parseScanRecord_withoutBaseData_callCancelActiveSync() {
-        mSetFlagsRule.disableFlags(
-                Flags.FLAG_LEAUDIO_BROADCAST_EXTRACT_PERIODIC_SCANNER_FROM_STATE_MACHINE);
-        byte[] scanRecord =
-                new byte[] {
-                    0x02,
-                    0x01,
-                    0x1a, // advertising flags
-                    0x05,
-                    0x02,
-                    0x0b,
-                    0x11,
-                    0x0a,
-                    0x11, // 16 bit service uuids
-                    0x04,
-                    0x09,
-                    0x50,
-                    0x65,
-                    0x64, // name
-                    0x02,
-                    0x0A,
-                    (byte) 0xec, // tx power level
-                    0x05,
-                    0x16,
-                    0x0b,
-                    0x11,
-                    0x50,
-                    0x64, // service data
-                    0x05,
-                    (byte) 0xff,
-                    (byte) 0xe0,
-                    0x00,
-                    0x02,
-                    0x15, // manufacturer specific data
-                    0x03,
-                    0x50,
-                    0x01,
-                    0x02, // an unknown data type won't cause trouble
-                };
-        // need this to ensure expected mock behavior for getActiveSyncedSource
-        when(mBassClientService.getActiveSyncedSources(any())).thenReturn(null);
-
-        ScanRecord data = ScanRecord.parseFromBytes(scanRecord);
-        mBassClientStateMachine.parseScanRecord(0, data);
-        // verify getActiveSyncedSource got called in CancelActiveSync
-        verify(mBassClientService).getActiveSyncedSources(any());
-    }
-
-    @Test
-    public void parseScanRecord_withBaseData_callsUpdateBase() {
-        mSetFlagsRule.disableFlags(
-                Flags.FLAG_LEAUDIO_BROADCAST_EXTRACT_PERIODIC_SCANNER_FROM_STATE_MACHINE);
-        byte[] scanRecordWithBaseData =
-                new byte[] {
-                    (byte) 0x02,
-                    (byte) 0x01,
-                    (byte) 0x1a, // advertising flags
-                    (byte) 0x05,
-                    (byte) 0x02,
-                    (byte) 0x51,
-                    (byte) 0x18,
-                    (byte) 0x0a,
-                    (byte) 0x11, // 16 bit service uuids
-                    (byte) 0x04,
-                    (byte) 0x09,
-                    (byte) 0x50,
-                    (byte) 0x65,
-                    (byte) 0x64, // name
-                    (byte) 0x02,
-                    (byte) 0x0A,
-                    (byte) 0xec, // tx power level
-                    (byte) 0x19,
-                    (byte) 0x16,
-                    (byte) 0x51,
-                    (byte) 0x18, // service data (base data with 18 bytes)
-                    // LEVEL 1
-                    (byte) 0x01,
-                    (byte) 0x02,
-                    (byte) 0x03, // presentationDelay
-                    (byte) 0x01, // numSubGroups
-                    // LEVEL 2
-                    (byte) 0x01, // numSubGroups
-                    (byte) 0x00,
-                    (byte) 0x00,
-                    (byte) 0x00,
-                    (byte) 0x00,
-                    (byte) 0x00, // UNKNOWN_CODEC
-                    (byte) 0x02, // codecConfigLength
-                    (byte) 0x01,
-                    (byte) 'A', // codecConfigInfo
-                    (byte) 0x03, // metaDataLength
-                    (byte) 0x06,
-                    (byte) 0x07,
-                    (byte) 0x08, // metaData
-                    // LEVEL 3
-                    (byte) 0x04, // index
-                    (byte) 0x03, // codecConfigLength
-                    (byte) 0x02,
-                    (byte) 'B',
-                    (byte) 'C', // codecConfigInfo
-                    (byte) 0x05,
-                    (byte) 0xff,
-                    (byte) 0xe0,
-                    (byte) 0x00,
-                    (byte) 0x02,
-                    (byte) 0x15, // manufacturer specific data
-                    (byte) 0x03,
-                    (byte) 0x50,
-                    (byte) 0x01,
-                    (byte) 0x02, // an unknown data type won't cause trouble
-                };
-        ScanRecord data = ScanRecord.parseFromBytes(scanRecordWithBaseData);
-        assertThat(data.getServiceUuids()).contains(BassConstants.BASIC_AUDIO_UUID);
-        assertThat(data.getServiceData(BassConstants.BASIC_AUDIO_UUID)).isNotNull();
-        mBassClientStateMachine.parseScanRecord(0, data);
-        verify(mBassClientService).updateBase(anyInt(), any());
+        assertThat(mStateMachine.getCurrentBroadcastMetadata(invalidSourceId)).isNull();
+        assertThat(mStateMachine.getDevice()).isEqualTo(mDevice);
+        assertThat(mStateMachine.hasPendingSourceOperation()).isFalse();
+        assertThat(mStateMachine.hasPendingSourceOperation(1)).isFalse();
+        assertThat(mStateMachine.isEmpty(new byte[] {0})).isTrue();
+        assertThat(mStateMachine.isEmpty(new byte[] {1})).isFalse();
+        assertThat(mStateMachine.isPendingRemove(invalidSourceId)).isFalse();
     }
 
     @Test
     public void gattCallbackOnConnectionStateChange_changedToConnected()
             throws InterruptedException {
-        mBassClientStateMachine.connectGatt(true);
-        BluetoothGattCallback cb = mBassClientStateMachine.mGattCallback;
+        mStateMachine.connectGatt(true);
+        BluetoothGattCallback cb = mStateMachine.mGattCallback;
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
 
         // disallow connection
         allowConnection(false);
-        int status = BluetoothProfile.STATE_CONNECTING;
-        int newState = BluetoothProfile.STATE_CONNECTED;
+        int status = STATE_CONNECTING;
+        int newState = STATE_CONNECTED;
         cb.onConnectionStateChange(null, status, newState);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mLooper.dispatchAll();
 
         verify(btGatt).disconnect();
         verify(btGatt).close();
-        assertThat(mBassClientStateMachine.mBluetoothGatt).isNull();
-        assertThat(mBassClientStateMachine.mMsgWhats).contains(CONNECTION_STATE_CHANGED);
-        mBassClientStateMachine.mMsgWhats.clear();
+        assertThat(mStateMachine.mBluetoothGatt).isNull();
+        assertThat(mStateMachine.mMsgWhats).contains(CONNECTION_STATE_CHANGED);
+        mStateMachine.mMsgWhats.clear();
 
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
         allowConnection(true);
-        mBassClientStateMachine.mDiscoveryInitiated = false;
-        status = BluetoothProfile.STATE_DISCONNECTED;
-        newState = BluetoothProfile.STATE_CONNECTED;
+        mStateMachine.mDiscoveryInitiated = false;
+        status = STATE_DISCONNECTED;
+        newState = STATE_CONNECTED;
         cb.onConnectionStateChange(null, status, newState);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mLooper.dispatchAll();
 
-        assertThat(mBassClientStateMachine.mDiscoveryInitiated).isTrue();
-        assertThat(mBassClientStateMachine.mMsgWhats).contains(CONNECTION_STATE_CHANGED);
-        assertThat(mBassClientStateMachine.mMsgObj).isEqualTo(newState);
-        mBassClientStateMachine.mMsgWhats.clear();
+        assertThat(mStateMachine.mDiscoveryInitiated).isTrue();
+        assertThat(mStateMachine.mMsgWhats).contains(CONNECTION_STATE_CHANGED);
+        assertThat(mStateMachine.mMsgObj).isEqualTo(newState);
+        mStateMachine.mMsgWhats.clear();
     }
 
     @Test
     public void gattCallbackOnConnectionStateChanged_changedToDisconnected()
             throws InterruptedException {
         initToConnectingState();
-        mBassClientStateMachine.connectGatt(true);
-        BluetoothGattCallback cb = mBassClientStateMachine.mGattCallback;
+        mStateMachine.connectGatt(true);
+        BluetoothGattCallback cb = mStateMachine.mGattCallback;
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
 
         allowConnection(false);
-        int status = BluetoothProfile.STATE_CONNECTING;
-        int newState = BluetoothProfile.STATE_DISCONNECTED;
+        int status = STATE_CONNECTING;
+        int newState = STATE_DISCONNECTED;
         cb.onConnectionStateChange(null, status, newState);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mLooper.dispatchAll();
 
-        assertThat(mBassClientStateMachine.mMsgWhats).contains(CONNECTION_STATE_CHANGED);
-        assertThat(mBassClientStateMachine.mMsgObj).isEqualTo(newState);
-        mBassClientStateMachine.mMsgWhats.clear();
+        assertThat(mStateMachine.mMsgWhats).contains(CONNECTION_STATE_CHANGED);
+        assertThat(mStateMachine.mMsgObj).isEqualTo(newState);
+        mStateMachine.mMsgWhats.clear();
     }
 
     @Test
     public void gattCallbackOnServicesDiscovered() {
-        mBassClientStateMachine.connectGatt(true);
-        BluetoothGattCallback cb = mBassClientStateMachine.mGattCallback;
+        mStateMachine.connectGatt(true);
+        BluetoothGattCallback cb = mStateMachine.mGattCallback;
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
+        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
+        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
 
         // Do nothing if mDiscoveryInitiated is false.
-        mBassClientStateMachine.mDiscoveryInitiated = false;
+        mStateMachine.mDiscoveryInitiated = false;
         int status = GATT_FAILURE;
         cb.onServicesDiscovered(null, status);
 
         verify(btGatt, never()).requestMtu(anyInt());
 
         // Do nothing if status is not GATT_SUCCESS.
-        mBassClientStateMachine.mDiscoveryInitiated = true;
+        mStateMachine.mDiscoveryInitiated = true;
         status = GATT_FAILURE;
         cb.onServicesDiscovered(null, status);
 
         verify(btGatt, never()).requestMtu(anyInt());
+        verify(callbacks).notifyBassStateSetupFailed(eq(mStateMachine.getDevice()));
+        assertThat(mStateMachine.isBassStateReady()).isFalse();
 
         // call requestMtu() if status is GATT_SUCCESS.
-        mBassClientStateMachine.mDiscoveryInitiated = true;
+        mStateMachine.mDiscoveryInitiated = true;
         status = GATT_SUCCESS;
         cb.onServicesDiscovered(null, status);
 
         verify(btGatt).requestMtu(anyInt());
     }
 
-    /** This also tests BassClientStateMachine#processBroadcastReceiverState. */
     @Test
     public void gattCallbackOnCharacteristicRead() {
-        mBassClientStateMachine.mShouldHandleMessage = false;
-        mBassClientStateMachine.connectGatt(true);
-        BluetoothGattCallback cb = mBassClientStateMachine.mGattCallback;
+        mStateMachine.mShouldHandleMessage = false;
+        mStateMachine.connectGatt(true);
+        mLooper.dispatchAll();
+        BluetoothGattCallback cb = mStateMachine.mGattCallback;
         BluetoothGattDescriptor desc = Mockito.mock(BluetoothGattDescriptor.class);
         BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
         BluetoothGattCharacteristic characteristic =
@@ -750,63 +541,64 @@ public class BassClientStateMachineTest {
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
         when(characteristic.getUuid()).thenReturn(BassConstants.BASS_BCAST_RECEIVER_STATE);
         when(mBassClientService.getCallbacks()).thenReturn(callbacks);
+        mStateMachine.mNumOfBroadcastReceiverStates = 2;
 
         // Characteristic read success with null value
         when(characteristic.getValue()).thenReturn(null);
         cb.onCharacteristicRead(null, characteristic, GATT_SUCCESS);
+        mLooper.dispatchAll();
+        InOrder inOrderCharacteristic = inOrder(characteristic);
+        inOrderCharacteristic.verify(characteristic).getUuid();
+        inOrderCharacteristic.verify(characteristic).getValue();
+        InOrder inOrderCallbacks = inOrder(callbacks);
+        inOrderCallbacks
+                .verify(callbacks, never())
+                .notifyReceiveStateChanged(any(), anyInt(), any());
         verify(characteristic, never()).getDescriptor(any());
 
         // Characteristic read failed and mBluetoothGatt is null.
-        mBassClientStateMachine.mBluetoothGatt = null;
+        mStateMachine.mBluetoothGatt = null;
         cb.onCharacteristicRead(null, characteristic, GATT_FAILURE);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-
-        assertThat(mBassClientStateMachine.mMsgWhats).contains(GATT_TXN_PROCESSED);
-        assertThat(mBassClientStateMachine.mMsgAgr1).isEqualTo(GATT_FAILURE);
-        mBassClientStateMachine.mMsgWhats.clear();
+        mLooper.dispatchAll();
+        inOrderCharacteristic.verify(characteristic, never()).getUuid();
+        inOrderCharacteristic.verify(characteristic, never()).getValue();
+        inOrderCallbacks
+                .verify(callbacks, never())
+                .notifyReceiveStateChanged(any(), anyInt(), any());
+        assertThat(mStateMachine.mMsgWhats).contains(GATT_TXN_PROCESSED);
+        assertThat(mStateMachine.mMsgAgr1).isEqualTo(GATT_FAILURE);
+        mStateMachine.mMsgWhats.clear();
 
         // Characteristic read failed and mBluetoothGatt is not null.
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
         when(characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG)).thenReturn(desc);
         cb.onCharacteristicRead(null, characteristic, GATT_FAILURE);
-
+        mLooper.dispatchAll();
+        inOrderCharacteristic.verify(characteristic, never()).getUuid();
+        inOrderCharacteristic.verify(characteristic, never()).getValue();
+        inOrderCallbacks
+                .verify(callbacks, never())
+                .notifyReceiveStateChanged(any(), anyInt(), any());
         verify(btGatt).setCharacteristicNotification(any(), anyBoolean());
         verify(btGatt).writeDescriptor(desc);
         verify(desc).setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
 
         // Tests for processBroadcastReceiverState
+
+        // Empty value without any previous read/change
+        when(characteristic.getValue()).thenReturn(new byte[] {});
+        cb.onCharacteristicRead(null, characteristic, GATT_SUCCESS);
+        mLooper.dispatchAll();
+        inOrderCharacteristic.verify(characteristic).getUuid();
+        inOrderCharacteristic.verify(characteristic, times(4)).getValue();
+        inOrderCallbacks
+                .verify(callbacks, never())
+                .notifyReceiveStateChanged(any(), anyInt(), any());
+
+        // Read first time first characteristic
         int sourceId = 1;
-        byte[] value = new byte[] {};
-        mBassClientStateMachine.mNumOfBroadcastReceiverStates = 2;
-        mBassClientStateMachine.mPendingOperation = REMOVE_BCAST_SOURCE;
-        mBassClientStateMachine.mPendingSourceId = (byte) sourceId;
-        when(characteristic.getValue()).thenReturn(value);
-        when(characteristic.getInstanceId()).thenReturn(sourceId);
-
-        cb.onCharacteristicRead(null, characteristic, GATT_SUCCESS);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-
-        ArgumentCaptor<BluetoothLeBroadcastReceiveState> receiveStateCaptor =
-                ArgumentCaptor.forClass(BluetoothLeBroadcastReceiveState.class);
-        verify(callbacks)
-                .notifyReceiveStateChanged(any(), eq(sourceId), receiveStateCaptor.capture());
-        Assert.assertEquals(receiveStateCaptor.getValue().getSourceDevice(), mEmptyTestDevice);
-
-        mBassClientStateMachine.mPendingOperation = 0;
-        mBassClientStateMachine.mPendingSourceId = 0;
-        sourceId = 2; // mNextId would become 2
-        when(characteristic.getInstanceId()).thenReturn(sourceId);
-
-        Mockito.clearInvocations(callbacks);
-        cb.onCharacteristicRead(null, characteristic, GATT_SUCCESS);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        verify(callbacks)
-                .notifyReceiveStateChanged(any(), eq(sourceId), receiveStateCaptor.capture());
-        Assert.assertEquals(receiveStateCaptor.getValue().getSourceDevice(), mEmptyTestDevice);
-
-        mBassClientStateMachine.mPendingMetadata = createBroadcastMetadata();
-        sourceId = 1;
-        value =
+        int instanceId = 1234;
+        byte[] value =
                 new byte[] {
                     (byte) sourceId, // sourceId
                     (byte) (mSourceTestDevice.getAddressType() & 0xFF), // sourceAddressType
@@ -817,10 +609,10 @@ public class BassClientStateMachineTest {
                     Utils.getByteAddress(mSourceTestDevice)[1],
                     Utils.getByteAddress(mSourceTestDevice)[0], // sourceAddress
                     0x00, // sourceAdvSid
-                    0x00,
+                    (byte) (TEST_BROADCAST_ID & 0xFF),
                     0x00,
                     0x00, // broadcastIdBytes
-                    (byte) BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_NO_PAST,
+                    (byte) BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_IDLE,
                     (byte) BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_BAD_CODE,
                     // 16 bytes badBroadcastCode
                     0x00,
@@ -850,139 +642,371 @@ public class BassClientStateMachineTest {
                     0x00, // metadata
                 };
         when(characteristic.getValue()).thenReturn(value);
-        when(characteristic.getInstanceId()).thenReturn(sourceId);
-
-        Mockito.clearInvocations(callbacks);
+        when(characteristic.getInstanceId()).thenReturn(instanceId);
         cb.onCharacteristicRead(null, characteristic, GATT_SUCCESS);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-
-        verify(callbacks).notifySourceAdded(any(), any(), anyInt());
-        verify(callbacks)
+        mLooper.dispatchAll();
+        inOrderCharacteristic.verify(characteristic).getUuid();
+        inOrderCharacteristic.verify(characteristic, times(4)).getValue();
+        ArgumentCaptor<BluetoothLeBroadcastReceiveState> receiveStateCaptor =
+                ArgumentCaptor.forClass(BluetoothLeBroadcastReceiveState.class);
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifySourceAdded(any(), any(), eq(BluetoothStatusCodes.REASON_REMOTE_REQUEST));
+        inOrderCallbacks
+                .verify(callbacks)
                 .notifyReceiveStateChanged(any(), eq(sourceId), receiveStateCaptor.capture());
-        Assert.assertEquals(receiveStateCaptor.getValue().getSourceDevice(), mSourceTestDevice);
+        assertThat(receiveStateCaptor.getValue().getSourceDevice()).isEqualTo(mSourceTestDevice);
 
-        // set some values for covering more lines of processPASyncState()
-        mBassClientStateMachine.mPendingMetadata = null;
-        mBassClientStateMachine.mSetBroadcastCodePending = true;
-        mBassClientStateMachine.mIsPendingRemove = true;
-        value[BassConstants.BCAST_RCVR_STATE_PA_SYNC_IDX] =
-                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_SYNCINFO_REQUEST;
-        value[BassConstants.BCAST_RCVR_STATE_ENC_STATUS_IDX] =
-                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_CODE_REQUIRED;
-        value[35] = 0; // set metaDataLength of subgroup #1 0
-        PeriodicAdvertisementResult paResult = Mockito.mock(PeriodicAdvertisementResult.class);
-        when(characteristic.getValue()).thenReturn(value);
-        when(mBassClientService.getPeriodicAdvertisementResult(any(), anyInt()))
-                .thenReturn(paResult);
-        when(paResult.getSyncHandle()).thenReturn(100);
-
-        Mockito.clearInvocations(callbacks);
+        // Read first time second (last) characteristic
+        int sourceId2 = 2;
+        int instanceId2 = 4321;
+        value[BassConstants.BCAST_RCVR_STATE_SRC_ID_IDX] = (byte) sourceId2;
+        when(characteristic.getInstanceId()).thenReturn(instanceId2);
         cb.onCharacteristicRead(null, characteristic, GATT_SUCCESS);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-
-        verify(callbacks)
-                .notifyReceiveStateChanged(any(), eq(sourceId), receiveStateCaptor.capture());
-        Assert.assertEquals(receiveStateCaptor.getValue().getSourceDevice(), mSourceTestDevice);
-        assertThat(mBassClientStateMachine.mMsgWhats).contains(REMOVE_BCAST_SOURCE);
-
-        mBassClientStateMachine.mIsPendingRemove = null;
-        // set some values for covering more lines of processPASyncState()
-        mBassClientStateMachine.mPendingMetadata = createBroadcastMetadata();
-        for (int i = 0; i < BassConstants.BCAST_RCVR_STATE_SRC_ADDR_SIZE; ++i) {
-            value[BassConstants.BCAST_RCVR_STATE_SRC_ADDR_START_IDX + i] = 0x00;
-        }
-        when(mBassClientService.getPeriodicAdvertisementResult(any(), anyInt())).thenReturn(null);
-        when(mBassClientService.isLocalBroadcast(any(BluetoothLeBroadcastMetadata.class)))
-                .thenReturn(true);
-        when(characteristic.getValue()).thenReturn(value);
-        mBassClientStateMachine.mPendingSourceToSwitch = mBassClientStateMachine.mPendingMetadata;
-
-        Mockito.clearInvocations(callbacks);
-        cb.onCharacteristicRead(null, characteristic, GATT_SUCCESS);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-
-        verify(callbacks)
-                .notifySourceRemoved(
-                        any(), anyInt(), eq(BluetoothStatusCodes.REASON_LOCAL_STACK_REQUEST));
-        verify(callbacks)
-                .notifyReceiveStateChanged(any(), eq(sourceId), receiveStateCaptor.capture());
-        Assert.assertEquals(receiveStateCaptor.getValue().getSourceDevice(), mEmptyTestDevice);
-        assertThat(mBassClientStateMachine.mPendingSourceToSwitch).isEqualTo(null);
+        mLooper.dispatchAll();
+        inOrderCharacteristic.verify(characteristic).getUuid();
+        inOrderCharacteristic.verify(characteristic, times(4)).getValue();
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifySourceAdded(any(), any(), eq(BluetoothStatusCodes.REASON_REMOTE_REQUEST));
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifyReceiveStateChanged(any(), eq(sourceId2), receiveStateCaptor.capture());
+        assertThat(receiveStateCaptor.getValue().getSourceDevice()).isEqualTo(mSourceTestDevice);
     }
 
+    /** This also tests BassClientStateMachine#processBroadcastReceiverState. */
     @Test
     public void gattCallbackOnCharacteristicChanged() {
-        mBassClientStateMachine.connectGatt(true);
-        BluetoothGattCallback cb = mBassClientStateMachine.mGattCallback;
-        mBassClientStateMachine.mNumOfBroadcastReceiverStates = 1;
+        mStateMachine.connectGatt(true);
+        mLooper.dispatchAll();
+        BluetoothGattCallback cb = mStateMachine.mGattCallback;
+        mStateMachine.mNumOfBroadcastReceiverStates = 1;
         BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
         when(mBassClientService.getCallbacks()).thenReturn(callbacks);
 
         BluetoothGattCharacteristic characteristic =
                 Mockito.mock(BluetoothGattCharacteristic.class);
         when(characteristic.getUuid()).thenReturn(BassConstants.BASS_BCAST_RECEIVER_STATE);
+
+        // Null value
         when(characteristic.getValue()).thenReturn(null);
-
         cb.onCharacteristicChanged(null, characteristic);
-        verify(characteristic, atLeast(1)).getUuid();
-        verify(characteristic).getValue();
-        verify(callbacks, never()).notifyReceiveStateChanged(any(), anyInt(), any());
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mLooper.dispatchAll();
+        InOrder inOrderCharacteristic = inOrder(characteristic);
+        inOrderCharacteristic.verify(characteristic).getUuid();
+        inOrderCharacteristic.verify(characteristic).getValue();
+        InOrder inOrderCallbacks = inOrder(callbacks);
+        inOrderCallbacks
+                .verify(callbacks, never())
+                .notifyReceiveStateChanged(any(), anyInt(), any());
 
-        mBassClientStateMachine.mNumOfBroadcastReceiverStates = 1;
-        Mockito.clearInvocations(characteristic);
+        // Empty value without any previous read/change
         when(characteristic.getValue()).thenReturn(new byte[] {});
         cb.onCharacteristicChanged(null, characteristic);
-        verify(characteristic, atLeast(1)).getUuid();
-        verify(characteristic, atLeast(1)).getValue();
+        mLooper.dispatchAll();
+        inOrderCharacteristic.verify(characteristic).getUuid();
+        inOrderCharacteristic.verify(characteristic, times(2)).getValue();
+        inOrderCallbacks
+                .verify(callbacks, never())
+                .notifyReceiveStateChanged(any(), anyInt(), any());
 
+        // Sync value, first time
+        int sourceId = 1;
+        byte[] value =
+                new byte[] {
+                    (byte) sourceId, // sourceId
+                    (byte) (mSourceTestDevice.getAddressType() & 0xFF), // sourceAddressType
+                    Utils.getByteAddress(mSourceTestDevice)[5],
+                    Utils.getByteAddress(mSourceTestDevice)[4],
+                    Utils.getByteAddress(mSourceTestDevice)[3],
+                    Utils.getByteAddress(mSourceTestDevice)[2],
+                    Utils.getByteAddress(mSourceTestDevice)[1],
+                    Utils.getByteAddress(mSourceTestDevice)[0], // sourceAddress
+                    0x00, // sourceAdvSid
+                    (byte) (TEST_BROADCAST_ID & 0xFF),
+                    0x00,
+                    0x00, // broadcastIdBytes
+                    (byte) BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_IDLE,
+                    (byte) BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_BAD_CODE,
+                    // 16 bytes badBroadcastCode
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x01, // numSubGroups
+                    // SubGroup #1
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00, // audioSyncIndex
+                    0x02, // metaDataLength
+                    0x00,
+                    0x00, // metadata
+                };
+        when(characteristic.getValue()).thenReturn(value);
+        cb.onCharacteristicChanged(null, characteristic);
+        mLooper.dispatchAll();
+        inOrderCharacteristic.verify(characteristic).getUuid();
+        inOrderCharacteristic.verify(characteristic, times(2)).getValue();
         ArgumentCaptor<BluetoothLeBroadcastReceiveState> receiveStateCaptor =
                 ArgumentCaptor.forClass(BluetoothLeBroadcastReceiveState.class);
-        verify(callbacks).notifyReceiveStateChanged(any(), anyInt(), receiveStateCaptor.capture());
-        Assert.assertEquals(receiveStateCaptor.getValue().getSourceDevice(), mEmptyTestDevice);
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifySourceAdded(any(), any(), eq(BluetoothStatusCodes.REASON_REMOTE_REQUEST));
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifyReceiveStateChanged(any(), eq(sourceId), receiveStateCaptor.capture());
+        assertThat(receiveStateCaptor.getValue().getSourceDevice()).isEqualTo(mSourceTestDevice);
+
+        // Empty value to indicates removing source from device by remote
+        when(characteristic.getValue()).thenReturn(new byte[] {});
+        cb.onCharacteristicChanged(null, characteristic);
+        mLooper.dispatchAll();
+        inOrderCharacteristic.verify(characteristic).getUuid();
+        inOrderCharacteristic.verify(characteristic, times(2)).getValue();
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifySourceRemoved(
+                        any(), eq(sourceId), eq(BluetoothStatusCodes.REASON_REMOTE_REQUEST));
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifyReceiveStateChanged(any(), eq(sourceId), receiveStateCaptor.capture());
+        assertThat(receiveStateCaptor.getValue().getSourceDevice()).isEqualTo(mEmptyTestDevice);
+
+        // Sync value again
+        mStateMachine.mPendingOperation = ADD_BCAST_SOURCE;
+        BluetoothLeBroadcastMetadata metadata = createBroadcastMetadata();
+        mStateMachine.mPendingMetadata = metadata;
+        when(characteristic.getValue()).thenReturn(value);
+        cb.onCharacteristicChanged(null, characteristic);
+        mLooper.dispatchAll();
+        inOrderCharacteristic.verify(characteristic).getUuid();
+        inOrderCharacteristic.verify(characteristic, times(2)).getValue();
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifySourceAdded(any(), any(), eq(BluetoothStatusCodes.REASON_LOCAL_APP_REQUEST));
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifyReceiveStateChanged(any(), eq(sourceId), receiveStateCaptor.capture());
+        assertThat(receiveStateCaptor.getValue().getSourceDevice()).isEqualTo(mSourceTestDevice);
+
+        // Empty value to indicates removing source from device by local app
+        mStateMachine.mPendingOperation = REMOVE_BCAST_SOURCE;
+        when(characteristic.getValue()).thenReturn(new byte[] {});
+        cb.onCharacteristicChanged(null, characteristic);
+        mLooper.dispatchAll();
+        inOrderCharacteristic.verify(characteristic).getUuid();
+        inOrderCharacteristic.verify(characteristic, times(2)).getValue();
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifySourceRemoved(
+                        any(), eq(sourceId), eq(BluetoothStatusCodes.REASON_LOCAL_APP_REQUEST));
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifyReceiveStateChanged(any(), eq(sourceId), receiveStateCaptor.capture());
+        assertThat(receiveStateCaptor.getValue().getSourceDevice()).isEqualTo(mEmptyTestDevice);
+
+        // Sync value again
+        mStateMachine.mPendingOperation = ADD_BCAST_SOURCE;
+        mStateMachine.mPendingMetadata = metadata;
+        when(characteristic.getValue()).thenReturn(value);
+        cb.onCharacteristicChanged(null, characteristic);
+        mLooper.dispatchAll();
+        inOrderCharacteristic.verify(characteristic).getUuid();
+        inOrderCharacteristic.verify(characteristic, times(2)).getValue();
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifySourceAdded(any(), any(), eq(BluetoothStatusCodes.REASON_LOCAL_APP_REQUEST));
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifyReceiveStateChanged(any(), eq(sourceId), receiveStateCaptor.capture());
+        assertThat(receiveStateCaptor.getValue().getSourceDevice()).isEqualTo(mSourceTestDevice);
+
+        // Empty value to indicates removing source from device by stack (source switch)
+        mStateMachine.mPendingSourceToSwitch = metadata;
+        when(characteristic.getValue()).thenReturn(new byte[] {});
+        cb.onCharacteristicChanged(null, characteristic);
+        mLooper.dispatchAll();
+        inOrderCharacteristic.verify(characteristic).getUuid();
+        inOrderCharacteristic.verify(characteristic, times(2)).getValue();
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifySourceRemoved(
+                        any(), eq(sourceId), eq(BluetoothStatusCodes.REASON_LOCAL_STACK_REQUEST));
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifyReceiveStateChanged(any(), eq(sourceId), receiveStateCaptor.capture());
+        assertThat(receiveStateCaptor.getValue().getSourceDevice()).isEqualTo(mEmptyTestDevice);
+        assertThat(mStateMachine.mMsgWhats).contains(ADD_BCAST_SOURCE);
+        assertThat(mStateMachine.mMsgObj).isEqualTo(metadata);
+
+        // Sync value again
+        mStateMachine.mPendingOperation = ADD_BCAST_SOURCE;
+        mStateMachine.mPendingMetadata = metadata;
+        when(characteristic.getValue()).thenReturn(value);
+        cb.onCharacteristicChanged(null, characteristic);
+        mLooper.dispatchAll();
+        inOrderCharacteristic.verify(characteristic).getUuid();
+        inOrderCharacteristic.verify(characteristic, times(2)).getValue();
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifySourceAdded(any(), any(), eq(BluetoothStatusCodes.REASON_LOCAL_APP_REQUEST));
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifyReceiveStateChanged(any(), eq(sourceId), receiveStateCaptor.capture());
+        assertThat(receiveStateCaptor.getValue().getSourceDevice()).isEqualTo(mSourceTestDevice);
+
+        // Update value - PA SyncInfo Request
+        value[BassConstants.BCAST_RCVR_STATE_PA_SYNC_IDX] =
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_SYNCINFO_REQUEST;
+        PeriodicAdvertisementResult paResult = Mockito.mock(PeriodicAdvertisementResult.class);
+        when(mBassClientService.getPeriodicAdvertisementResult(any(), anyInt()))
+                .thenReturn(paResult);
+        int syncHandle = 100;
+        when(paResult.getSyncHandle()).thenReturn(syncHandle);
+        cb.onCharacteristicChanged(null, characteristic);
+        mLooper.dispatchAll();
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifySourceModified(
+                        any(), eq(sourceId), eq(BluetoothStatusCodes.REASON_LOCAL_APP_REQUEST));
+        int serviceData = 0x000000FF & sourceId;
+        serviceData = serviceData << 8;
+        // advA matches EXT_ADV_ADDRESS
+        // also matches source address (as we would have written)
+        serviceData = serviceData & (~BassConstants.ADV_ADDRESS_DONT_MATCHES_EXT_ADV_ADDRESS);
+        serviceData = serviceData & (~BassConstants.ADV_ADDRESS_DONT_MATCHES_SOURCE_ADV_ADDRESS);
+        verify(mPeriodicAdvertisingManager).transferSync(any(), eq(serviceData), eq(syncHandle));
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifyReceiveStateChanged(any(), eq(sourceId), receiveStateCaptor.capture());
+        assertThat(receiveStateCaptor.getValue().getSourceDevice()).isEqualTo(mSourceTestDevice);
+
+        // Update value - PA SyncInfo Request, local broadcast
+        mStateMachine.mPendingMetadata = metadata;
+        when(mBassClientService.isLocalBroadcast(any(BluetoothLeBroadcastReceiveState.class)))
+                .thenReturn(true);
+        cb.onCharacteristicChanged(null, characteristic);
+        mLooper.dispatchAll();
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifySourceModified(
+                        any(), eq(sourceId), eq(BluetoothStatusCodes.REASON_LOCAL_APP_REQUEST));
+        serviceData = 0x000000FF & sourceId;
+        serviceData = serviceData << 8;
+        // Address we set in the Source Address can differ from the address in the air
+        serviceData = serviceData | BassConstants.ADV_ADDRESS_DONT_MATCHES_SOURCE_ADV_ADDRESS;
+        verify(mPeriodicAdvertisingManager)
+                .transferSetInfo(any(), eq(serviceData), anyInt(), any());
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifyReceiveStateChanged(any(), eq(sourceId), receiveStateCaptor.capture());
+        assertThat(receiveStateCaptor.getValue().getSourceDevice()).isEqualTo(mSourceTestDevice);
+
+        // Update value - Broadcast Code
+        value[BassConstants.BCAST_RCVR_STATE_PA_SYNC_IDX] =
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_SYNCHRONIZED;
+        value[BassConstants.BCAST_RCVR_STATE_ENC_STATUS_IDX] =
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_CODE_REQUIRED;
+        if (!Flags.leaudioBroadcastSimplifySetBcastCode()) {
+            mStateMachine.mSetBroadcastCodePending = true;
+        }
+        cb.onCharacteristicChanged(null, characteristic);
+        mLooper.dispatchAll();
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifySourceModified(
+                        any(), eq(sourceId), eq(BluetoothStatusCodes.REASON_LOCAL_APP_REQUEST));
+        assertThat(mStateMachine.mMsgWhats).contains(SET_BCAST_CODE);
+        if (!Flags.leaudioBroadcastSimplifySetBcastCode()) {
+            assertThat(mStateMachine.mMsgAgr1).isEqualTo(BassClientStateMachine.ARGTYPE_RCVSTATE);
+        }
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifyReceiveStateChanged(any(), eq(sourceId), receiveStateCaptor.capture());
+        assertThat(receiveStateCaptor.getValue().getSourceDevice()).isEqualTo(mSourceTestDevice);
+
+        // Update value - Pending Remove
+        value[BassConstants.BCAST_RCVR_STATE_PA_SYNC_IDX] =
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_IDLE;
+        mStateMachine.mIsPendingRemove = true;
+        cb.onCharacteristicChanged(null, characteristic);
+        mLooper.dispatchAll();
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifySourceModified(
+                        any(), eq(sourceId), eq(BluetoothStatusCodes.REASON_LOCAL_APP_REQUEST));
+        assertThat(mStateMachine.mMsgWhats).contains(REMOVE_BCAST_SOURCE);
+        assertThat(mStateMachine.mMsgAgr1).isEqualTo(sourceId);
+        inOrderCallbacks
+                .verify(callbacks)
+                .notifyReceiveStateChanged(any(), eq(sourceId), receiveStateCaptor.capture());
+        assertThat(receiveStateCaptor.getValue().getSourceDevice()).isEqualTo(mSourceTestDevice);
     }
 
     @Test
     public void gattCharacteristicWrite() {
-        mBassClientStateMachine.connectGatt(true);
-        BluetoothGattCallback cb = mBassClientStateMachine.mGattCallback;
+        mStateMachine.connectGatt(true);
+        BluetoothGattCallback cb = mStateMachine.mGattCallback;
 
         BluetoothGattCharacteristic characteristic =
                 Mockito.mock(BluetoothGattCharacteristic.class);
         when(characteristic.getUuid()).thenReturn(BassConstants.BASS_BCAST_AUDIO_SCAN_CTRL_POINT);
 
         cb.onCharacteristicWrite(null, characteristic, GATT_SUCCESS);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        assertThat(mBassClientStateMachine.mMsgWhats).contains(GATT_TXN_PROCESSED);
+        mLooper.dispatchAll();
+        assertThat(mStateMachine.mMsgWhats).contains(GATT_TXN_PROCESSED);
     }
 
     @Test
     public void gattCallbackOnDescriptorWrite() {
-        mBassClientStateMachine.connectGatt(true);
-        BluetoothGattCallback cb = mBassClientStateMachine.mGattCallback;
+        mStateMachine.connectGatt(true);
+        BluetoothGattCallback cb = mStateMachine.mGattCallback;
         BluetoothGattDescriptor descriptor = Mockito.mock(BluetoothGattDescriptor.class);
         when(descriptor.getUuid()).thenReturn(BassConstants.CLIENT_CHARACTERISTIC_CONFIG);
 
         cb.onDescriptorWrite(null, descriptor, GATT_SUCCESS);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        assertThat(mBassClientStateMachine.mMsgWhats).contains(GATT_TXN_PROCESSED);
+        mLooper.dispatchAll();
+        assertThat(mStateMachine.mMsgWhats).contains(GATT_TXN_PROCESSED);
     }
 
     @Test
     public void gattCallbackOnMtuChanged() {
-        mBassClientStateMachine.connectGatt(true);
-        BluetoothGattCallback cb = mBassClientStateMachine.mGattCallback;
-        mBassClientStateMachine.mMTUChangeRequested = true;
+        mStateMachine.connectGatt(true);
+        BluetoothGattCallback cb = mStateMachine.mGattCallback;
+        mStateMachine.mMTUChangeRequested = true;
+
+        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
+        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
+
+        // Verify notifyBassStateSetupFailed is called
+        cb.onMtuChanged(null, 10, GATT_FAILURE);
+        verify(callbacks).notifyBassStateSetupFailed(eq(mStateMachine.getDevice()));
+        assertThat(mStateMachine.mMTUChangeRequested).isTrue();
+        assertThat(mStateMachine.isBassStateReady()).isFalse();
 
         cb.onMtuChanged(null, 10, GATT_SUCCESS);
-        assertThat(mBassClientStateMachine.mMTUChangeRequested).isTrue();
+        assertThat(mStateMachine.mMTUChangeRequested).isTrue();
 
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
 
         cb.onMtuChanged(null, 10, GATT_SUCCESS);
-        assertThat(mBassClientStateMachine.mMTUChangeRequested).isFalse();
+        assertThat(mStateMachine.mMTUChangeRequested).isFalse();
     }
 
     @Test
@@ -991,11 +1015,10 @@ public class BassClientStateMachineTest {
 
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
 
         sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(CONNECT),
-                BassClientStateMachine.Connecting.class);
+                mStateMachine.obtainMessage(CONNECT), BassClientStateMachine.Connecting.class);
         verify(btGatt).disconnect();
         verify(btGatt).close();
     }
@@ -1006,10 +1029,10 @@ public class BassClientStateMachineTest {
 
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
 
-        mBassClientStateMachine.sendMessage(DISCONNECT);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(DISCONNECT);
+        mLooper.dispatchAll();
         verify(btGatt).disconnect();
         verify(btGatt).close();
     }
@@ -1020,19 +1043,17 @@ public class BassClientStateMachineTest {
 
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
 
-        Message msgToConnectingState =
-                mBassClientStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
-        msgToConnectingState.obj = BluetoothProfile.STATE_CONNECTING;
+        Message msgToConnectingState = mStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
+        msgToConnectingState.obj = STATE_CONNECTING;
 
-        mBassClientStateMachine.sendMessage(msgToConnectingState);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(msgToConnectingState);
+        mLooper.dispatchAll();
         verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
 
-        Message msgToConnectedState =
-                mBassClientStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
-        msgToConnectedState.obj = BluetoothProfile.STATE_CONNECTED;
+        Message msgToConnectedState = mStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
+        msgToConnectedState.obj = STATE_CONNECTED;
         sendMessageAndVerifyTransition(msgToConnectedState, BassClientStateMachine.Connected.class);
     }
 
@@ -1040,15 +1061,12 @@ public class BassClientStateMachineTest {
     public void sendOtherMessages_inDisconnectedState_doesNotChangeState() {
         initToDisconnectedState();
 
-        // need this to ensure expected mock behavior for getActiveSyncedSource
-        when(mBassClientService.getActiveSyncedSources(any())).thenReturn(null);
-
-        mBassClientStateMachine.sendMessage(STOP_SCAN_OFFLOAD);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(STOP_SCAN_OFFLOAD);
+        mLooper.dispatchAll();
         verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
 
-        mBassClientStateMachine.sendMessage(-1);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(-1);
+        mLooper.dispatchAll();
         verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
     }
 
@@ -1056,8 +1074,8 @@ public class BassClientStateMachineTest {
     public void sendConnectMessages_inConnectingState_doesNotChangeState() {
         initToConnectingState();
 
-        mBassClientStateMachine.sendMessage(CONNECT);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(CONNECT);
+        mLooper.dispatchAll();
         verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
     }
 
@@ -1065,50 +1083,40 @@ public class BassClientStateMachineTest {
     public void sendDisconnectMessages_inConnectingState_defersMessage() {
         initToConnectingState();
 
-        mBassClientStateMachine.sendMessage(DISCONNECT);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        assertThat(mBassClientStateMachine.hasDeferredMessagesSuper(DISCONNECT)).isTrue();
+        mStateMachine.sendMessage(DISCONNECT);
+        mLooper.dispatchAll();
+        assertThat(mStateMachine.hasDeferredMessagesSuper(DISCONNECT)).isTrue();
     }
 
     @Test
     public void sendReadBassCharacteristicsMessage_inConnectingState_defersMessage() {
         initToConnectingState();
 
-        mBassClientStateMachine.sendMessage(READ_BASS_CHARACTERISTICS);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        assertThat(mBassClientStateMachine.hasDeferredMessagesSuper(READ_BASS_CHARACTERISTICS))
-                .isTrue();
-    }
-
-    @Test
-    public void sendPsyncActiveTimeoutMessage_inConnectingState_defersMessage() {
-        initToConnectingState();
-
-        mBassClientStateMachine.sendMessage(PSYNC_ACTIVE_TIMEOUT);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        assertThat(mBassClientStateMachine.hasDeferredMessagesSuper(PSYNC_ACTIVE_TIMEOUT)).isTrue();
+        mStateMachine.sendMessage(READ_BASS_CHARACTERISTICS);
+        mLooper.dispatchAll();
+        assertThat(mStateMachine.hasDeferredMessagesSuper(READ_BASS_CHARACTERISTICS)).isTrue();
     }
 
     @Test
     public void sendStateChangedToNonConnectedMessage_inConnectingState_movesToDisconnected() {
         initToConnectingState();
 
-        Message msg = mBassClientStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
-        msg.obj = BluetoothProfile.STATE_CONNECTING;
+        Message msg = mStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
+        msg.obj = STATE_CONNECTING;
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
         sendMessageAndVerifyTransition(msg, BassClientStateMachine.Disconnected.class);
         verify(btGatt).close();
-        assertNull(mBassClientStateMachine.mBluetoothGatt);
+        assertThat(mStateMachine.mBluetoothGatt).isNull();
     }
 
     @Test
     public void sendStateChangedToConnectedMessage_inConnectingState_movesToConnected() {
         initToConnectingState();
 
-        Message msg = mBassClientStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
-        msg.obj = BluetoothProfile.STATE_CONNECTED;
+        Message msg = mStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
+        msg.obj = STATE_CONNECTED;
         sendMessageAndVerifyTransition(msg, BassClientStateMachine.Connected.class);
     }
 
@@ -1117,26 +1125,25 @@ public class BassClientStateMachineTest {
         initToConnectingState();
 
         Message timeoutWithDifferentDevice =
-                mBassClientStateMachine.obtainMessage(
-                        CONNECT_TIMEOUT, mAdapter.getRemoteDevice("00:00:00:00:00:00"));
-        mBassClientStateMachine.sendMessage(timeoutWithDifferentDevice);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+                mStateMachine.obtainMessage(CONNECT_TIMEOUT, getTestDevice(230));
+        mStateMachine.sendMessage(timeoutWithDifferentDevice);
+        mLooper.dispatchAll();
         verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
 
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
-        Message msg = mBassClientStateMachine.obtainMessage(CONNECT_TIMEOUT, mTestDevice);
+        mStateMachine.mBluetoothGatt = btGatt;
+        Message msg = mStateMachine.obtainMessage(CONNECT_TIMEOUT, mDevice);
         sendMessageAndVerifyTransition(msg, BassClientStateMachine.Disconnected.class);
         verify(btGatt).close();
-        assertNull(mBassClientStateMachine.mBluetoothGatt);
+        assertThat(mStateMachine.mBluetoothGatt).isNull();
     }
 
     @Test
     public void sendInvalidMessage_inConnectingState_doesNotChangeState() {
         initToConnectingState();
-        mBassClientStateMachine.sendMessage(-1);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(-1);
+        mLooper.dispatchAll();
         verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
     }
 
@@ -1144,8 +1151,8 @@ public class BassClientStateMachineTest {
     public void sendConnectMessage_inConnectedState() {
         initToConnectedState();
 
-        mBassClientStateMachine.sendMessage(CONNECT);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(CONNECT);
+        mLooper.dispatchAll();
         verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
     }
 
@@ -1153,20 +1160,17 @@ public class BassClientStateMachineTest {
     public void sendDisconnectMessage_inConnectedState() {
         initToConnectedState();
 
-        mBassClientStateMachine.mBluetoothGatt = null;
-        // need this to ensure expected mock behavior for getActiveSyncedSource
-        when(mBassClientService.getActiveSyncedSources(any())).thenReturn(null);
+        mStateMachine.mBluetoothGatt = null;
 
-        mBassClientStateMachine.sendMessage(DISCONNECT);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(DISCONNECT);
+        mLooper.dispatchAll();
         verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
 
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
         sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(DISCONNECT),
-                BassClientStateMachine.Disconnected.class);
+                mStateMachine.obtainMessage(DISCONNECT), BassClientStateMachine.Disconnected.class);
         verify(btGatt).disconnect();
         verify(btGatt).close();
     }
@@ -1175,24 +1179,21 @@ public class BassClientStateMachineTest {
     public void sendStateChangedMessage_inConnectedState() {
         initToConnectedState();
 
-        Message connectedMsg = mBassClientStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
-        connectedMsg.obj = BluetoothProfile.STATE_CONNECTED;
+        Message connectedMsg = mStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
+        connectedMsg.obj = STATE_CONNECTED;
 
-        // need this to ensure expected mock behavior for getActiveSyncedSource
-        when(mBassClientService.getActiveSyncedSources(any())).thenReturn(null);
-
-        mBassClientStateMachine.sendMessage(connectedMsg);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(connectedMsg);
+        mLooper.dispatchAll();
         verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
 
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
-        Message noneConnectedMsg = mBassClientStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
-        noneConnectedMsg.obj = BluetoothProfile.STATE_DISCONNECTING;
+        mStateMachine.mBluetoothGatt = btGatt;
+        Message noneConnectedMsg = mStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
+        noneConnectedMsg.obj = STATE_DISCONNECTING;
         sendMessageAndVerifyTransition(noneConnectedMsg, BassClientStateMachine.Disconnected.class);
         verify(btGatt).close();
-        assertNull(mBassClientStateMachine.mBluetoothGatt);
+        assertThat(mStateMachine.mBluetoothGatt).isNull();
     }
 
     @Test
@@ -1201,16 +1202,15 @@ public class BassClientStateMachineTest {
         BluetoothGattCharacteristic gattCharacteristic =
                 Mockito.mock(BluetoothGattCharacteristic.class);
 
-        mBassClientStateMachine.sendMessage(READ_BASS_CHARACTERISTICS, gattCharacteristic);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(READ_BASS_CHARACTERISTICS, gattCharacteristic);
+        mLooper.dispatchAll();
         verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
 
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
         sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(
-                        READ_BASS_CHARACTERISTICS, gattCharacteristic),
+                mStateMachine.obtainMessage(READ_BASS_CHARACTERISTICS, gattCharacteristic),
                 BassClientStateMachine.ConnectedProcessing.class);
     }
 
@@ -1219,18 +1219,18 @@ public class BassClientStateMachineTest {
         initToConnectedState();
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
 
-        mBassClientStateMachine.sendMessage(START_SCAN_OFFLOAD);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(START_SCAN_OFFLOAD);
+        mLooper.dispatchAll();
         verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
 
         BluetoothGattCharacteristic scanControlPoint =
                 Mockito.mock(BluetoothGattCharacteristic.class);
-        mBassClientStateMachine.mBroadcastScanControlPoint = scanControlPoint;
+        mStateMachine.mBroadcastScanControlPoint = scanControlPoint;
 
         sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(START_SCAN_OFFLOAD),
+                mStateMachine.obtainMessage(START_SCAN_OFFLOAD),
                 BassClientStateMachine.ConnectedProcessing.class);
         verify(btGatt).writeCharacteristic(scanControlPoint);
         verify(scanControlPoint).setValue(REMOTE_SCAN_START);
@@ -1241,125 +1241,30 @@ public class BassClientStateMachineTest {
         initToConnectedState();
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
 
-        mBassClientStateMachine.sendMessage(STOP_SCAN_OFFLOAD);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(STOP_SCAN_OFFLOAD);
+        mLooper.dispatchAll();
         verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
 
         BluetoothGattCharacteristic scanControlPoint =
                 Mockito.mock(BluetoothGattCharacteristic.class);
-        mBassClientStateMachine.mBroadcastScanControlPoint = scanControlPoint;
+        mStateMachine.mBroadcastScanControlPoint = scanControlPoint;
 
         sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(STOP_SCAN_OFFLOAD),
+                mStateMachine.obtainMessage(STOP_SCAN_OFFLOAD),
                 BassClientStateMachine.ConnectedProcessing.class);
         verify(btGatt).writeCharacteristic(scanControlPoint);
         verify(scanControlPoint).setValue(REMOTE_SCAN_STOP);
     }
 
     @Test
-    public void sendPsyncActiveMessage_inConnectedState() {
-        mSetFlagsRule.disableFlags(
-                Flags.FLAG_LEAUDIO_BROADCAST_EXTRACT_PERIODIC_SCANNER_FROM_STATE_MACHINE);
-        initToConnectedState();
-        // need this to ensure expected mock behavior for getActiveSyncedSource
-        when(mBassClientService.getActiveSyncedSources(any())).thenReturn(null);
-
-        mBassClientStateMachine.sendMessage(PSYNC_ACTIVE_TIMEOUT);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        // verify getActiveSyncedSource got called in CancelActiveSync
-        verify(mBassClientService).getActiveSyncedSources(any());
-    }
-
-    @Test
     public void sendInvalidMessage_inConnectedState_doesNotChangeState() {
         initToConnectedState();
 
-        mBassClientStateMachine.sendMessage(-1);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(-1);
+        mLooper.dispatchAll();
         verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
-    }
-
-    @Test
-    public void sendSelectBcastSourceMessage_inConnectedState() {
-        mSetFlagsRule.disableFlags(
-                Flags.FLAG_LEAUDIO_BROADCAST_EXTRACT_PERIODIC_SCANNER_FROM_STATE_MACHINE);
-        initToConnectedState();
-
-        byte[] scanRecord =
-                new byte[] {
-                    0x02,
-                    0x01,
-                    0x1a, // advertising flags
-                    0x05,
-                    0x02,
-                    0x52,
-                    0x18,
-                    0x0a,
-                    0x11, // 16 bit service uuids
-                    0x04,
-                    0x09,
-                    0x50,
-                    0x65,
-                    0x64, // name
-                    0x02,
-                    0x0A,
-                    (byte) 0xec, // tx power level
-                    0x05,
-                    0x30,
-                    0x54,
-                    0x65,
-                    0x73,
-                    0x74, // broadcast name: Test
-                    0x06,
-                    0x16,
-                    0x52,
-                    0x18,
-                    0x50,
-                    0x64,
-                    0x65, // service data
-                    0x08,
-                    0x16,
-                    0x56,
-                    0x18,
-                    0x07,
-                    0x03,
-                    0x06,
-                    0x07,
-                    0x08,
-                    // service data - public broadcast,
-                    // feature - 0x7, metadata len - 0x3, metadata - 0x6, 0x7, 0x8
-                    0x05,
-                    (byte) 0xff,
-                    (byte) 0xe0,
-                    0x00,
-                    0x02,
-                    0x15, // manufacturer specific data
-                    0x03,
-                    0x50,
-                    0x01,
-                    0x02, // an unknown data type won't cause trouble
-                };
-        ScanRecord record = ScanRecord.parseFromBytes(scanRecord);
-
-        doNothing()
-                .when(mMethodProxy)
-                .periodicAdvertisingManagerRegisterSync(
-                        any(), any(), anyInt(), anyInt(), any(), any());
-        ScanResult scanResult = new ScanResult(mTestDevice, 0, 0, 0, 0, 0, 0, 0, record, 0);
-        mBassClientStateMachine.sendMessage(SELECT_BCAST_SOURCE, BassConstants.AUTO, 0, scanResult);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        verify(mBassClientService)
-                .updatePeriodicAdvertisementResultMap(
-                        any(),
-                        anyInt(),
-                        anyInt(),
-                        anyInt(),
-                        anyInt(),
-                        anyInt(),
-                        any(),
-                        eq(TEST_BROADCAST_NAME));
     }
 
     @Test
@@ -1373,38 +1278,26 @@ public class BassClientStateMachineTest {
         // verify local broadcast doesn't require active synced source
         when(mBassClientService.isLocalBroadcast(any(BluetoothLeBroadcastMetadata.class)))
                 .thenReturn(true);
-        mBassClientStateMachine.sendMessage(ADD_BCAST_SOURCE, metadata);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(ADD_BCAST_SOURCE, metadata);
+        mLooper.dispatchAll();
 
         verify(mBassClientService).getCallbacks();
         verify(callbacks).notifySourceAddFailed(any(), any(), anyInt());
 
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
         BluetoothGattCharacteristic scanControlPoint =
                 Mockito.mock(BluetoothGattCharacteristic.class);
-        mBassClientStateMachine.mBroadcastScanControlPoint = scanControlPoint;
+        mStateMachine.mBroadcastScanControlPoint = scanControlPoint;
 
+        mStateMachine.mPendingSourceToSwitch = metadata;
         sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(ADD_BCAST_SOURCE, metadata),
+                mStateMachine.obtainMessage(ADD_BCAST_SOURCE, metadata),
                 BassClientStateMachine.ConnectedProcessing.class);
         verify(scanControlPoint).setValue(any(byte[].class));
         verify(btGatt).writeCharacteristic(any());
-    }
-
-    @Test
-    public void sendReachedMaxSourceLimitMessage_inConnectedState() {
-        mSetFlagsRule.disableFlags(
-                Flags.FLAG_LEAUDIO_BROADCAST_EXTRACT_PERIODIC_SCANNER_FROM_STATE_MACHINE);
-        initToConnectedState();
-        // need this to ensure expected mock behavior for getActiveSyncedSource
-        when(mBassClientService.getActiveSyncedSources(any())).thenReturn(null);
-
-        mBassClientStateMachine.sendMessage(REACHED_MAX_SOURCE_LIMIT);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        // verify getActiveSyncedSource got called in CancelActiveSync
-        verify(mBassClientService).getActiveSyncedSources(any());
+        assertThat(mStateMachine.mPendingSourceToSwitch).isNull();
     }
 
     @Test
@@ -1415,21 +1308,21 @@ public class BassClientStateMachineTest {
 
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
         BluetoothGattCharacteristic scanControlPoint =
                 Mockito.mock(BluetoothGattCharacteristic.class);
-        mBassClientStateMachine.mBroadcastScanControlPoint = scanControlPoint;
+        mStateMachine.mBroadcastScanControlPoint = scanControlPoint;
 
-        mBassClientStateMachine.sendMessage(SWITCH_BCAST_SOURCE, sourceId, 0, metadata);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        assertThat(mBassClientStateMachine.mPendingSourceToSwitch).isEqualTo(metadata);
+        mStateMachine.sendMessage(SWITCH_BCAST_SOURCE, sourceId, 0, metadata);
+        mLooper.dispatchAll();
+        assertThat(mStateMachine.mPendingSourceToSwitch).isEqualTo(metadata);
     }
 
     @Test
     public void sendUpdateBcastSourceMessage_inConnectedState() {
         initToConnectedState();
-        mBassClientStateMachine.connectGatt(true);
-        mBassClientStateMachine.mNumOfBroadcastReceiverStates = 2;
+        mStateMachine.connectGatt(true);
+        mStateMachine.mNumOfBroadcastReceiverStates = 2;
 
         // Prepare mBluetoothLeBroadcastReceiveStates for test
         BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
@@ -1447,7 +1340,7 @@ public class BassClientStateMachineTest {
                     Utils.getByteAddress(mSourceTestDevice)[1],
                     Utils.getByteAddress(mSourceTestDevice)[0], // sourceAddress
                     0x00, // sourceAdvSid
-                    0x00,
+                    (byte) (TEST_BROADCAST_ID & 0xFF),
                     0x00,
                     0x00, // broadcastIdBytes
                     (byte) paSync,
@@ -1484,15 +1377,14 @@ public class BassClientStateMachineTest {
         when(characteristic.getValue()).thenReturn(value);
         when(characteristic.getInstanceId()).thenReturn(sourceId);
         when(characteristic.getUuid()).thenReturn(BassConstants.BASS_BCAST_RECEIVER_STATE);
-        mBassClientStateMachine.mGattCallback.onCharacteristicRead(
-                null, characteristic, GATT_SUCCESS);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.mGattCallback.onCharacteristicRead(null, characteristic, GATT_SUCCESS);
+        mLooper.dispatchAll();
 
         BluetoothLeBroadcastMetadata metadata = createBroadcastMetadata();
         when(mBassClientService.getPeriodicAdvertisementResult(any(), anyInt())).thenReturn(null);
 
-        mBassClientStateMachine.sendMessage(UPDATE_BCAST_SOURCE, sourceId, paSync, metadata);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(UPDATE_BCAST_SOURCE, sourceId, paSync, metadata);
+        mLooper.dispatchAll();
 
         PeriodicAdvertisementResult paResult = Mockito.mock(PeriodicAdvertisementResult.class);
         when(mBassClientService.getPeriodicAdvertisementResult(any(), anyInt()))
@@ -1500,48 +1392,67 @@ public class BassClientStateMachineTest {
         when(mBassClientService.getBase(anyInt())).thenReturn(null);
         Mockito.clearInvocations(callbacks);
 
-        mBassClientStateMachine.sendMessage(UPDATE_BCAST_SOURCE, sourceId, paSync, metadata);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(UPDATE_BCAST_SOURCE, sourceId, paSync, metadata);
+        mLooper.dispatchAll();
 
-        BaseData data = Mockito.mock(BaseData.class);
+        byte[] serviceData =
+                new byte[] {
+                    // LEVEL 1
+                    (byte) 0x01,
+                    (byte) 0x02,
+                    (byte) 0x03, // mPresentationDelay
+                    (byte) 0x01, // mNumSubGroups
+                    // LEVEL 2
+                    (byte) 0x01, // numBIS
+                    (byte) 0xFF, // VENDOR_CODEC
+                    (byte) 0x0A,
+                    (byte) 0xAB,
+                    (byte) 0xBC,
+                    (byte) 0xCD,
+                    (byte) 0x00, // mCodecConfigLength
+                    (byte) 0x00, // mMetaDataLength
+                    // LEVEL 3
+                    (byte) 0x04, // mIndex
+                    (byte) 0x00, // mCodecConfigLength
+                };
+
+        BaseData data = BaseData.parseBaseData(serviceData);
         when(mBassClientService.getBase(anyInt())).thenReturn(data);
-        when(data.getNumberOfSubgroupsofBIG()).thenReturn((byte) 1);
         Mockito.clearInvocations(callbacks);
 
-        mBassClientStateMachine.sendMessage(UPDATE_BCAST_SOURCE, sourceId, paSync, metadata);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(UPDATE_BCAST_SOURCE, sourceId, paSync, metadata);
+        mLooper.dispatchAll();
         verify(callbacks).notifySourceModifyFailed(any(), anyInt(), anyInt());
 
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
         BluetoothGattCharacteristic scanControlPoint =
                 Mockito.mock(BluetoothGattCharacteristic.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
-        mBassClientStateMachine.mBroadcastScanControlPoint = scanControlPoint;
-        mBassClientStateMachine.mPendingOperation = 0;
-        mBassClientStateMachine.mPendingSourceId = 0;
-        mBassClientStateMachine.mPendingMetadata = null;
+        mStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBroadcastScanControlPoint = scanControlPoint;
+        mStateMachine.mPendingOperation = 0;
+        mStateMachine.mPendingSourceId = 0;
+        mStateMachine.mPendingMetadata = null;
         Mockito.clearInvocations(callbacks);
 
         sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(
-                        UPDATE_BCAST_SOURCE, sourceId, paSync, metadata),
+                mStateMachine.obtainMessage(UPDATE_BCAST_SOURCE, sourceId, paSync, metadata),
                 BassClientStateMachine.ConnectedProcessing.class);
-        assertThat(mBassClientStateMachine.mPendingOperation).isEqualTo(UPDATE_BCAST_SOURCE);
-        assertThat(mBassClientStateMachine.mPendingSourceId).isEqualTo(sourceId);
-        assertThat(mBassClientStateMachine.mPendingMetadata).isEqualTo(metadata);
+        assertThat(mStateMachine.mPendingOperation).isEqualTo(UPDATE_BCAST_SOURCE);
+        assertThat(mStateMachine.mPendingSourceId).isEqualTo(sourceId);
+        assertThat(mStateMachine.mPendingMetadata).isEqualTo(metadata);
     }
 
     @Test
     public void sendSetBcastCodeMessage_inConnectedState() {
         initToConnectedState();
-        mBassClientStateMachine.connectGatt(true);
-        mBassClientStateMachine.mNumOfBroadcastReceiverStates = 2;
+        mStateMachine.connectGatt(true);
+        mStateMachine.mNumOfBroadcastReceiverStates = 2;
         BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
         when(mBassClientService.getCallbacks()).thenReturn(callbacks);
 
         // Prepare mBluetoothLeBroadcastReceiveStates with metadata for test
-        mBassClientStateMachine.mShouldHandleMessage = false;
+        mStateMachine.mShouldHandleMessage = false;
         int sourceId = 1;
         byte[] value =
                 new byte[] {
@@ -1554,11 +1465,511 @@ public class BassClientStateMachineTest {
                     Utils.getByteAddress(mSourceTestDevice)[1],
                     Utils.getByteAddress(mSourceTestDevice)[0], // sourceAddress
                     0x00, // sourceAdvSid
-                    0x00,
+                    (byte) (TEST_BROADCAST_ID & 0xFF),
                     0x00,
                     0x00, // broadcastIdBytes
                     (byte) BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_IDLE,
                     (byte) BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_CODE_REQUIRED,
+                    0x01, // numSubGroups
+                    // SubGroup #1
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00, // audioSyncIndex
+                    0x02, // metaDataLength
+                    0x00,
+                    0x00, // metadata
+                };
+        mStateMachine.mPendingOperation = REMOVE_BCAST_SOURCE;
+        mStateMachine.mPendingSourceId = (byte) sourceId;
+        BluetoothGattCharacteristic characteristic =
+                Mockito.mock(BluetoothGattCharacteristic.class);
+        when(characteristic.getValue()).thenReturn(value);
+        when(characteristic.getInstanceId()).thenReturn(sourceId);
+        when(characteristic.getUuid()).thenReturn(BassConstants.BASS_BCAST_RECEIVER_STATE);
+
+        mStateMachine.mGattCallback.onCharacteristicRead(null, characteristic, GATT_SUCCESS);
+        mLooper.dispatchAll();
+
+        mStateMachine.mPendingMetadata = createBroadcastMetadata();
+        mStateMachine.mGattCallback.onCharacteristicRead(null, characteristic, GATT_SUCCESS);
+        mLooper.dispatchAll();
+        mStateMachine.mShouldHandleMessage = true;
+
+        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
+                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
+        mStateMachine.mBluetoothGatt = btGatt;
+        BluetoothGattCharacteristic scanControlPoint =
+                Mockito.mock(BluetoothGattCharacteristic.class);
+        mStateMachine.mBroadcastScanControlPoint = scanControlPoint;
+
+        // Not set bcast code as source id is different
+        BluetoothLeBroadcastReceiveState recvState =
+                new BluetoothLeBroadcastReceiveState(
+                        2,
+                        BluetoothDevice.ADDRESS_TYPE_PUBLIC,
+                        getRealDevice("00:00:00:00:00:00"),
+                        0,
+                        0,
+                        BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_IDLE,
+                        BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_CODE_REQUIRED,
+                        null,
+                        0,
+                        Arrays.asList(new Long[0]),
+                        Arrays.asList(new BluetoothLeAudioContentMetadata[0]));
+        if (!Flags.leaudioBroadcastSimplifySetBcastCode()) {
+            mStateMachine.mSetBroadcastCodePending = false;
+        }
+        mStateMachine.sendMessage(SET_BCAST_CODE, recvState);
+        mLooper.dispatchAll();
+        if (!Flags.leaudioBroadcastSimplifySetBcastCode()) {
+            assertThat(mStateMachine.mSetBroadcastCodePending).isTrue();
+        } else {
+            verify(btGatt, never()).writeCharacteristic(any());
+            verify(scanControlPoint, never()).setValue(any(byte[].class));
+        }
+
+        recvState =
+                new BluetoothLeBroadcastReceiveState(
+                        sourceId,
+                        BluetoothDevice.ADDRESS_TYPE_PUBLIC,
+                        getRealDevice("00:00:00:00:00:00"),
+                        0,
+                        0,
+                        BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_IDLE,
+                        BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_CODE_REQUIRED,
+                        null,
+                        0,
+                        Arrays.asList(new Long[0]),
+                        Arrays.asList(new BluetoothLeAudioContentMetadata[0]));
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(SET_BCAST_CODE, recvState),
+                BassClientStateMachine.ConnectedProcessing.class);
+        assertThat(mStateMachine.mPendingOperation).isEqualTo(SET_BCAST_CODE);
+        assertThat(mStateMachine.mPendingSourceId).isEqualTo(sourceId);
+        verify(btGatt).writeCharacteristic(any());
+        verify(scanControlPoint).setValue(any(byte[].class));
+    }
+
+    @Test
+    public void receiveSinkReceiveState_inConnectedState() {
+        int sourceId = 1;
+
+        initToConnectedState();
+        mStateMachine.connectGatt(true);
+        mStateMachine.mNumOfBroadcastReceiverStates = 2;
+        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
+        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
+
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                sourceId,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_IDLE,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_CODE_REQUIRED,
+                0x0L);
+    }
+
+    @Test
+    public void sendRemoveBcastSourceMessage_inConnectedState() {
+        initToConnectedState();
+        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
+        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
+
+        int sid = 10;
+        mStateMachine.sendMessage(REMOVE_BCAST_SOURCE, sid);
+        mLooper.dispatchAll();
+        verify(callbacks).notifySourceRemoveFailed(any(), anyInt(), anyInt());
+
+        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
+                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
+        mStateMachine.mBluetoothGatt = btGatt;
+        BluetoothGattCharacteristic scanControlPoint =
+                Mockito.mock(BluetoothGattCharacteristic.class);
+        mStateMachine.mBroadcastScanControlPoint = scanControlPoint;
+
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(REMOVE_BCAST_SOURCE, sid),
+                BassClientStateMachine.ConnectedProcessing.class);
+        verify(scanControlPoint).setValue(any(byte[].class));
+        verify(btGatt).writeCharacteristic(any());
+        assertThat(mStateMachine.mPendingOperation).isEqualTo(REMOVE_BCAST_SOURCE);
+        assertThat(mStateMachine.mPendingSourceId).isEqualTo(sid);
+    }
+
+    @Test
+    public void syncRequestForPast_initiatePaSyncTransferMessage() {
+        prepareInitialReceiveStateForGatt();
+
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_SYNCINFO_REQUEST,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_NOT_ENCRYPTED,
+                0x0L);
+
+        verify(mBassClientService).syncRequestForPast(mDevice, TEST_BROADCAST_ID, TEST_SOURCE_ID);
+
+        int syncHandle = 1234;
+        mStateMachine.sendMessage(INITIATE_PA_SYNC_TRANSFER, syncHandle, TEST_SOURCE_ID);
+        mLooper.dispatchAll();
+
+        int serviceData = 0x000000FF & TEST_SOURCE_ID;
+        serviceData = serviceData << 8;
+        // advA matches EXT_ADV_ADDRESS
+        // also matches source address (as we would have written)
+        serviceData = serviceData & (~BassConstants.ADV_ADDRESS_DONT_MATCHES_EXT_ADV_ADDRESS);
+        serviceData = serviceData & (~BassConstants.ADV_ADDRESS_DONT_MATCHES_SOURCE_ADV_ADDRESS);
+        verify(mPeriodicAdvertisingManager).transferSync(any(), eq(serviceData), eq(syncHandle));
+    }
+
+    @Test
+    public void syncRequestForMetadata_updateMetadataMessage() {
+        initToConnectedState();
+        mStateMachine.connectGatt(true);
+        mStateMachine.mNumOfBroadcastReceiverStates = 2;
+        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
+        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
+
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_SYNCHRONIZED,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_DECRYPTING,
+                0x1L);
+
+        verify(callbacks)
+                .notifySourceAdded(any(), any(), eq(BluetoothStatusCodes.REASON_REMOTE_REQUEST));
+
+        assertThat(mStateMachine.getCurrentBroadcastMetadata(TEST_SOURCE_ID)).isNull();
+
+        BluetoothLeBroadcastMetadata metadata = createBroadcastMetadata();
+        Message msg = mStateMachine.obtainMessage(UPDATE_METADATA);
+        msg.arg1 = TEST_SOURCE_ID;
+        msg.obj = metadata;
+        mStateMachine.sendMessage(msg);
+        mLooper.dispatchAll();
+
+        assertThat(mStateMachine.getCurrentBroadcastMetadata(TEST_SOURCE_ID)).isEqualTo(metadata);
+    }
+
+    @Test
+    public void sendConnectMessage_inConnectedProcessingState_doesNotChangeState() {
+        initToConnectedProcessingState();
+
+        mStateMachine.sendMessage(CONNECT);
+        mLooper.dispatchAll();
+        verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
+    }
+
+    @Test
+    public void sendDisconnectMessage_inConnectedProcessingState_doesNotChangeState() {
+        initToConnectedProcessingState();
+
+        // Mock instance of btGatt was created in initToConnectedProcessingState().
+        BassClientStateMachine.BluetoothGattTestableWrapper btGatt = mStateMachine.mBluetoothGatt;
+
+        mStateMachine.mBluetoothGatt = null;
+        mStateMachine.sendMessage(DISCONNECT);
+        mLooper.dispatchAll();
+        verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
+
+        mStateMachine.mBluetoothGatt = btGatt;
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(DISCONNECT), BassClientStateMachine.Disconnected.class);
+        verify(btGatt).disconnect();
+        verify(btGatt).close();
+    }
+
+    @Test
+    public void sendStateChangedMessage_inConnectedProcessingState() {
+        initToConnectedProcessingState();
+
+        Message msgToConnectedState = mStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
+        msgToConnectedState.obj = STATE_CONNECTED;
+
+        mStateMachine.sendMessage(msgToConnectedState);
+        mLooper.dispatchAll();
+        verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
+
+        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
+                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
+        mStateMachine.mBluetoothGatt = btGatt;
+        Message msgToNoneConnectedState = mStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
+        msgToNoneConnectedState.obj = STATE_DISCONNECTING;
+        sendMessageAndVerifyTransition(
+                msgToNoneConnectedState, BassClientStateMachine.Disconnected.class);
+        verify(btGatt).close();
+        assertThat(mStateMachine.mBluetoothGatt).isNull();
+    }
+
+    /** This also tests BassClientStateMachine#sendPendingCallbacks */
+    @Test
+    public void sendGattTxnProcessedMessage_inConnectedProcessingState() {
+        initToConnectedProcessingState();
+        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
+        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
+
+        // Test sendPendingCallbacks(START_SCAN_OFFLOAD, ERROR_UNKNOWN)
+        mStateMachine.mPendingOperation = START_SCAN_OFFLOAD;
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(GATT_TXN_PROCESSED, GATT_FAILURE),
+                BassClientStateMachine.Connected.class);
+
+        // Test sendPendingCallbacks(ADD_BCAST_SOURCE, ERROR_UNKNOWN)
+        moveConnectedStateToConnectedProcessingState();
+        mStateMachine.mPendingMetadata = createBroadcastMetadata();
+        mStateMachine.mPendingOperation = ADD_BCAST_SOURCE;
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(GATT_TXN_PROCESSED, GATT_FAILURE),
+                BassClientStateMachine.Connected.class);
+        verify(callbacks).notifySourceAddFailed(any(), any(), anyInt());
+
+        // Test sendPendingCallbacks(UPDATE_BCAST_SOURCE, ERROR_UNKNOWN)
+        moveConnectedStateToConnectedProcessingState();
+        mStateMachine.mPendingOperation = UPDATE_BCAST_SOURCE;
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(GATT_TXN_PROCESSED, GATT_FAILURE),
+                BassClientStateMachine.Connected.class);
+        verify(callbacks).notifySourceModifyFailed(any(), anyInt(), anyInt());
+
+        // Test sendPendingCallbacks(REMOVE_BCAST_SOURCE, ERROR_UNKNOWN)
+        moveConnectedStateToConnectedProcessingState();
+        mStateMachine.mPendingOperation = REMOVE_BCAST_SOURCE;
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(GATT_TXN_PROCESSED, GATT_FAILURE),
+                BassClientStateMachine.Connected.class);
+        verify(callbacks).notifySourceRemoveFailed(any(), anyInt(), anyInt());
+
+        // Test sendPendingCallbacks(SET_BCAST_CODE, REASON_LOCAL_APP_REQUEST)
+        moveConnectedStateToConnectedProcessingState();
+        mStateMachine.mPendingOperation = REMOVE_BCAST_SOURCE;
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(GATT_TXN_PROCESSED, GATT_FAILURE),
+                BassClientStateMachine.Connected.class);
+        // Nothing to verify more
+
+        // Test sendPendingCallbacks(SET_BCAST_CODE, REASON_LOCAL_APP_REQUEST)
+        moveConnectedStateToConnectedProcessingState();
+        mStateMachine.mPendingOperation = -1;
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(GATT_TXN_PROCESSED, GATT_FAILURE),
+                BassClientStateMachine.Connected.class);
+        // Nothing to verify more
+    }
+
+    @Test
+    public void sendGattTxnTimeoutMessage_inConnectedProcessingState_doesNotChangeState() {
+        initToConnectedProcessingState();
+
+        mStateMachine.mPendingOperation = SET_BCAST_CODE;
+        mStateMachine.mPendingSourceId = 0;
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(GATT_TXN_TIMEOUT, GATT_FAILURE),
+                BassClientStateMachine.Connected.class);
+        assertThat(mStateMachine.mPendingOperation).isEqualTo(-1);
+        assertThat(mStateMachine.mPendingSourceId).isEqualTo(-1);
+    }
+
+    @Test
+    public void sendMessageForDeferring_inConnectedProcessingState_defersMessage() {
+        initToConnectedProcessingState();
+
+        mStateMachine.sendMessage(READ_BASS_CHARACTERISTICS);
+        mLooper.dispatchAll();
+        assertThat(mStateMachine.hasDeferredMessagesSuper(READ_BASS_CHARACTERISTICS)).isTrue();
+
+        mStateMachine.sendMessage(START_SCAN_OFFLOAD);
+        mLooper.dispatchAll();
+        assertThat(mStateMachine.hasDeferredMessagesSuper(START_SCAN_OFFLOAD)).isTrue();
+
+        mStateMachine.sendMessage(STOP_SCAN_OFFLOAD);
+        mLooper.dispatchAll();
+        assertThat(mStateMachine.hasDeferredMessagesSuper(STOP_SCAN_OFFLOAD)).isTrue();
+
+        mStateMachine.sendMessage(ADD_BCAST_SOURCE);
+        mLooper.dispatchAll();
+        assertThat(mStateMachine.hasDeferredMessagesSuper(ADD_BCAST_SOURCE)).isTrue();
+
+        mStateMachine.sendMessage(SET_BCAST_CODE);
+        mLooper.dispatchAll();
+        assertThat(mStateMachine.hasDeferredMessagesSuper(SET_BCAST_CODE)).isTrue();
+
+        mStateMachine.sendMessage(REMOVE_BCAST_SOURCE);
+        mLooper.dispatchAll();
+        assertThat(mStateMachine.hasDeferredMessagesSuper(REMOVE_BCAST_SOURCE)).isTrue();
+
+        mStateMachine.sendMessage(SWITCH_BCAST_SOURCE);
+        mLooper.dispatchAll();
+        assertThat(mStateMachine.hasDeferredMessagesSuper(SWITCH_BCAST_SOURCE)).isTrue();
+
+        mStateMachine.sendMessage(INITIATE_PA_SYNC_TRANSFER);
+        mLooper.dispatchAll();
+        assertThat(mStateMachine.hasDeferredMessagesSuper(INITIATE_PA_SYNC_TRANSFER)).isTrue();
+
+        mStateMachine.sendMessage(UPDATE_METADATA);
+        mLooper.dispatchAll();
+        assertThat(mStateMachine.hasDeferredMessagesSuper(UPDATE_METADATA)).isTrue();
+    }
+
+    @Test
+    public void sendInvalidMessage_inConnectedProcessingState_doesNotChangeState() {
+        initToConnectedProcessingState();
+
+        mStateMachine.sendMessage(-1);
+        mLooper.dispatchAll();
+        verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
+    }
+
+    @Test
+    public void dump_doesNotCrash() {
+        mStateMachine.dump(new StringBuilder());
+    }
+
+    @Test
+    public void sendAddBcastSourceMessage_NoResponseWrite() {
+        mStateMachine.connectGatt(true);
+        BluetoothGattCallback cb = mStateMachine.mGattCallback;
+        cb.onMtuChanged(null, 250, GATT_SUCCESS);
+        initToConnectedState();
+
+        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
+        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
+
+        BluetoothLeBroadcastMetadata metadata = createBroadcastMetadata();
+        // verify local broadcast doesn't require active synced source
+        when(mBassClientService.isLocalBroadcast(any(BluetoothLeBroadcastMetadata.class)))
+                .thenReturn(true);
+        mStateMachine.sendMessage(ADD_BCAST_SOURCE, metadata);
+        mLooper.dispatchAll();
+
+        verify(mBassClientService).getCallbacks();
+        verify(callbacks).notifySourceAddFailed(any(), any(), anyInt());
+
+        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
+                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
+        mStateMachine.mBluetoothGatt = btGatt;
+        BluetoothGattCharacteristic scanControlPoint =
+                Mockito.mock(BluetoothGattCharacteristic.class);
+        mStateMachine.mBroadcastScanControlPoint = scanControlPoint;
+
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(ADD_BCAST_SOURCE, metadata),
+                BassClientStateMachine.ConnectedProcessing.class);
+        verify(scanControlPoint).setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
+        verify(scanControlPoint).setValue(any(byte[].class));
+        verify(btGatt).writeCharacteristic(any());
+    }
+
+    @Test
+    public void sendAddBcastSourceMessage_LongWrite() {
+        mStateMachine.connectGatt(true);
+        BluetoothGattCallback cb = mStateMachine.mGattCallback;
+        cb.onMtuChanged(null, 23, GATT_SUCCESS);
+        initToConnectedState();
+
+        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
+        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
+
+        BluetoothLeBroadcastMetadata metadata = createBroadcastMetadata();
+        // verify local broadcast doesn't require active synced source
+        when(mBassClientService.isLocalBroadcast(any(BluetoothLeBroadcastMetadata.class)))
+                .thenReturn(true);
+        mStateMachine.sendMessage(ADD_BCAST_SOURCE, metadata);
+        mLooper.dispatchAll();
+
+        verify(mBassClientService).getCallbacks();
+        verify(callbacks).notifySourceAddFailed(any(), any(), anyInt());
+
+        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
+                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
+        mStateMachine.mBluetoothGatt = btGatt;
+        BluetoothGattCharacteristic scanControlPoint =
+                Mockito.mock(BluetoothGattCharacteristic.class);
+        mStateMachine.mBroadcastScanControlPoint = scanControlPoint;
+
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(ADD_BCAST_SOURCE, metadata),
+                BassClientStateMachine.ConnectedProcessing.class);
+        verify(scanControlPoint).setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+        verify(scanControlPoint).setValue(any(byte[].class));
+        verify(btGatt).writeCharacteristic(any());
+    }
+
+    private void initToDisconnectedState() {
+        allowConnection(true);
+        allowConnectGatt(true);
+        assertThat(mStateMachine.getCurrentState())
+                .isInstanceOf(BassClientStateMachine.Disconnected.class);
+    }
+
+    @Test
+    public void cancelPendingAddBcastSourceMessage_inConnectedState() {
+        initToConnectedState();
+
+        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
+        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
+
+        BluetoothLeBroadcastMetadata metadata = createBroadcastMetadata();
+        // verify local broadcast doesn't require active synced source
+        when(mBassClientService.isLocalBroadcast(any(BluetoothLeBroadcastMetadata.class)))
+                .thenReturn(true);
+
+        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
+                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
+        mStateMachine.mBluetoothGatt = btGatt;
+        BluetoothGattCharacteristic scanControlPoint =
+                Mockito.mock(BluetoothGattCharacteristic.class);
+        mStateMachine.mBroadcastScanControlPoint = scanControlPoint;
+
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(ADD_BCAST_SOURCE, metadata),
+                BassClientStateMachine.ConnectedProcessing.class);
+        verify(scanControlPoint).setValue(any(byte[].class));
+        verify(btGatt).writeCharacteristic(any());
+
+        /* Verify if there is pending add source operation */
+        assertThat(mStateMachine.hasPendingSourceOperation(metadata.getBroadcastId())).isTrue();
+
+        assertThat(mStateMachine.mMsgWhats).contains(CANCEL_PENDING_SOURCE_OPERATION);
+        assertThat(mStateMachine.mMsgAgr1).isEqualTo(TEST_BROADCAST_ID);
+
+        /* Inject a cancel pending source operation event */
+        Message msg = mStateMachine.obtainMessage(CANCEL_PENDING_SOURCE_OPERATION);
+        msg.arg1 = metadata.getBroadcastId();
+        mStateMachine.sendMessage(msg);
+        mLooper.dispatchAll();
+
+        /* Verify if pending add source operation is canceled */
+        assertThat(mStateMachine.hasPendingSourceOperation(metadata.getBroadcastId())).isFalse();
+    }
+
+    @Test
+    public void cancelPendingUpdateBcastSourceMessage_inConnectedState() {
+        initToConnectedState();
+        mStateMachine.connectGatt(true);
+        mStateMachine.mNumOfBroadcastReceiverStates = 2;
+
+        // Prepare mBluetoothLeBroadcastReceiveStates for test
+        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
+        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
+        int sourceId = 1;
+        int paSync = BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_IDLE;
+        byte[] value =
+                new byte[] {
+                    (byte) sourceId, // sourceId
+                    (byte) (mSourceTestDevice.getAddressType() & 0xFF), // sourceAddressType
+                    Utils.getByteAddress(mSourceTestDevice)[5],
+                    Utils.getByteAddress(mSourceTestDevice)[4],
+                    Utils.getByteAddress(mSourceTestDevice)[3],
+                    Utils.getByteAddress(mSourceTestDevice)[2],
+                    Utils.getByteAddress(mSourceTestDevice)[1],
+                    Utils.getByteAddress(mSourceTestDevice)[0], // sourceAddress
+                    0x00, // sourceAdvSid
+                    (byte) (TEST_BROADCAST_ID & 0xFF),
+                    0x00,
+                    0x00, // broadcastIdBytes
+                    (byte) paSync,
+                    (byte) BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_BAD_CODE,
                     // 16 bytes badBroadcastCode
                     0x00,
                     0x00,
@@ -1586,854 +1997,489 @@ public class BassClientStateMachineTest {
                     0x00,
                     0x00, // metadata
                 };
-        mBassClientStateMachine.mPendingOperation = REMOVE_BCAST_SOURCE;
-        mBassClientStateMachine.mPendingSourceId = (byte) sourceId;
         BluetoothGattCharacteristic characteristic =
                 Mockito.mock(BluetoothGattCharacteristic.class);
         when(characteristic.getValue()).thenReturn(value);
         when(characteristic.getInstanceId()).thenReturn(sourceId);
         when(characteristic.getUuid()).thenReturn(BassConstants.BASS_BCAST_RECEIVER_STATE);
-
-        mBassClientStateMachine.mGattCallback.onCharacteristicRead(
-                null, characteristic, GATT_SUCCESS);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-
-        mBassClientStateMachine.mPendingMetadata = createBroadcastMetadata();
-        mBassClientStateMachine.mGattCallback.onCharacteristicRead(
-                null, characteristic, GATT_SUCCESS);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        mBassClientStateMachine.mShouldHandleMessage = true;
-
-        BluetoothLeBroadcastReceiveState recvState =
-                new BluetoothLeBroadcastReceiveState(
-                        2,
-                        BluetoothDevice.ADDRESS_TYPE_PUBLIC,
-                        mAdapter.getRemoteLeDevice(
-                                "00:00:00:00:00:00", BluetoothDevice.ADDRESS_TYPE_PUBLIC),
-                        0,
-                        0,
-                        BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_IDLE,
-                        BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_CODE_REQUIRED,
-                        null,
-                        0,
-                        Arrays.asList(new Long[0]),
-                        Arrays.asList(new BluetoothLeAudioContentMetadata[0]));
-        mBassClientStateMachine.mSetBroadcastCodePending = false;
-        mBassClientStateMachine.sendMessage(SET_BCAST_CODE, recvState);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        assertThat(mBassClientStateMachine.mSetBroadcastCodePending).isTrue();
-
-        recvState =
-                new BluetoothLeBroadcastReceiveState(
-                        sourceId,
-                        BluetoothDevice.ADDRESS_TYPE_PUBLIC,
-                        mAdapter.getRemoteLeDevice(
-                                "00:00:00:00:00:00", BluetoothDevice.ADDRESS_TYPE_PUBLIC),
-                        0,
-                        0,
-                        BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_IDLE,
-                        BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_CODE_REQUIRED,
-                        null,
-                        0,
-                        Arrays.asList(new Long[0]),
-                        Arrays.asList(new BluetoothLeAudioContentMetadata[0]));
-        mBassClientStateMachine.sendMessage(SET_BCAST_CODE, recvState);
-        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
-                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
-        BluetoothGattCharacteristic scanControlPoint =
-                Mockito.mock(BluetoothGattCharacteristic.class);
-        mBassClientStateMachine.mBroadcastScanControlPoint = scanControlPoint;
-
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(SET_BCAST_CODE, recvState),
-                BassClientStateMachine.ConnectedProcessing.class);
-        assertThat(mBassClientStateMachine.mPendingOperation).isEqualTo(SET_BCAST_CODE);
-        assertThat(mBassClientStateMachine.mPendingSourceId).isEqualTo(sourceId);
-        verify(btGatt).writeCharacteristic(any());
-        verify(scanControlPoint).setValue(any(byte[].class));
-    }
-
-    @Test
-    public void receiveSinkReceiveState_inConnectedState() {
-        initToConnectedState();
-        mBassClientStateMachine.connectGatt(true);
-        mBassClientStateMachine.mNumOfBroadcastReceiverStates = 2;
-        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
-        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
-
-        // Prepare mBluetoothLeBroadcastReceiveStates with metadata for test
-        int sourceId = 1;
-        int metaDataLength = 142;
-        byte[] value =
-                new byte[] {
-                    (byte) sourceId, // sourceId
-                    (byte) (mSourceTestDevice.getAddressType() & 0xFF), // sourceAddressType
-                    Utils.getByteAddress(mSourceTestDevice)[5],
-                    Utils.getByteAddress(mSourceTestDevice)[4],
-                    Utils.getByteAddress(mSourceTestDevice)[3],
-                    Utils.getByteAddress(mSourceTestDevice)[2],
-                    Utils.getByteAddress(mSourceTestDevice)[1],
-                    Utils.getByteAddress(mSourceTestDevice)[0], // sourceAddress
-                    0x00, // sourceAdvSid
-                    0x00,
-                    0x00,
-                    0x00, // broadcastIdBytes
-                    (byte) BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_IDLE,
-                    (byte) BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_CODE_REQUIRED,
-                    // no badBroadcastCode
-                    0x01, // numSubGroups 1
-                    0x00,
-                    0x00,
-                    0x00,
-                    0x00, // audioSyncIndex
-                    (byte) metaDataLength, // metaDataLength
-                };
-
-        byte[] metadataHeader =
-                new byte[] {
-                    (byte) (metaDataLength - 1), // length 141
-                    (byte) 0xFF
-                };
-
-        byte[] metadataPayload = new byte[140];
-        new Random().nextBytes(metadataPayload);
-
-        BluetoothGattCharacteristic characteristic =
-                Mockito.mock(BluetoothGattCharacteristic.class);
-        when(characteristic.getValue())
-                .thenReturn(Bytes.concat(value, metadataHeader, metadataPayload));
-        when(characteristic.getInstanceId()).thenReturn(sourceId);
-        when(characteristic.getUuid()).thenReturn(BassConstants.BASS_BCAST_RECEIVER_STATE);
-
-        mBassClientStateMachine.mGattCallback.onCharacteristicRead(
-                null, characteristic, GATT_SUCCESS);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-
-        assertThat(mBassClientStateMachine.getAllSources().size()).isEqualTo(1);
-        BluetoothLeBroadcastReceiveState recvState = mBassClientStateMachine.getAllSources().get(0);
-
-        assertThat(recvState.getSourceId()).isEqualTo(sourceId);
-        assertThat(recvState.getSourceAddressType()).isEqualTo(mSourceTestDevice.getAddressType());
-        assertThat(recvState.getSourceDevice()).isEqualTo(mSourceTestDevice);
-        assertThat(recvState.getSourceAdvertisingSid()).isEqualTo(0x00);
-        assertThat(recvState.getBroadcastId()).isEqualTo(0x00);
-        assertThat(recvState.getPaSyncState())
-                .isEqualTo(BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_IDLE);
-        assertThat(recvState.getBigEncryptionState())
-                .isEqualTo(BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_CODE_REQUIRED);
-        assertThat(recvState.getNumSubgroups()).isEqualTo(1);
-
-        assertThat(recvState.getBisSyncState().size()).isEqualTo(1);
-        assertThat(recvState.getBisSyncState().get(0)).isEqualTo(0x00);
-
-        assertThat(recvState.getSubgroupMetadata().size()).isEqualTo(1);
-        BluetoothLeAudioContentMetadata metaData = recvState.getSubgroupMetadata().get(0);
-        assertThat(metaData.getRawMetadata().length).isEqualTo(metaDataLength);
-        assertThat(metaData.getRawMetadata())
-                .isEqualTo(Bytes.concat(metadataHeader, metadataPayload));
-    }
-
-    @Test
-    public void sendRemoveBcastSourceMessage_inConnectedState() {
-        initToConnectedState();
-        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
-        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
-
-        int sid = 10;
-        mBassClientStateMachine.sendMessage(REMOVE_BCAST_SOURCE, sid);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        verify(callbacks).notifySourceRemoveFailed(any(), anyInt(), anyInt());
-
-        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
-                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
-        BluetoothGattCharacteristic scanControlPoint =
-                Mockito.mock(BluetoothGattCharacteristic.class);
-        mBassClientStateMachine.mBroadcastScanControlPoint = scanControlPoint;
-
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(REMOVE_BCAST_SOURCE, sid),
-                BassClientStateMachine.ConnectedProcessing.class);
-        verify(scanControlPoint).setValue(any(byte[].class));
-        verify(btGatt).writeCharacteristic(any());
-        assertThat(mBassClientStateMachine.mPendingOperation).isEqualTo(REMOVE_BCAST_SOURCE);
-        assertThat(mBassClientStateMachine.mPendingSourceId).isEqualTo(sid);
-    }
-
-    @Test
-    public void sendConnectMessage_inConnectedProcessingState_doesNotChangeState() {
-        initToConnectedProcessingState();
-
-        mBassClientStateMachine.sendMessage(CONNECT);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
-    }
-
-    @Test
-    public void sendDisconnectMessage_inConnectedProcessingState_doesNotChangeState() {
-        initToConnectedProcessingState();
-
-        // Mock instance of btGatt was created in initToConnectedProcessingState().
-        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
-                mBassClientStateMachine.mBluetoothGatt;
-        // need this to ensure expected mock behavior for getActiveSyncedSource
-        when(mBassClientService.getActiveSyncedSources(any())).thenReturn(null);
-
-        mBassClientStateMachine.mBluetoothGatt = null;
-        mBassClientStateMachine.sendMessage(DISCONNECT);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
-
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(DISCONNECT),
-                BassClientStateMachine.Disconnected.class);
-        verify(btGatt).disconnect();
-        verify(btGatt).close();
-    }
-
-    @Test
-    public void sendStateChangedMessage_inConnectedProcessingState() {
-        initToConnectedProcessingState();
-
-        Message msgToConnectedState =
-                mBassClientStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
-        msgToConnectedState.obj = BluetoothProfile.STATE_CONNECTED;
-
-        // need this to ensure expected mock behavior for getActiveSyncedSource
-        when(mBassClientService.getActiveSyncedSources(any())).thenReturn(null);
-
-        mBassClientStateMachine.sendMessage(msgToConnectedState);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
-
-        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
-                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
-        Message msgToNoneConnectedState =
-                mBassClientStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
-        msgToNoneConnectedState.obj = BluetoothProfile.STATE_DISCONNECTING;
-        sendMessageAndVerifyTransition(
-                msgToNoneConnectedState, BassClientStateMachine.Disconnected.class);
-        verify(btGatt).close();
-        assertNull(mBassClientStateMachine.mBluetoothGatt);
-    }
-
-    /** This also tests BassClientStateMachine#sendPendingCallbacks */
-    @Test
-    public void sendGattTxnProcessedMessage_inConnectedProcessingState() {
-        initToConnectedProcessingState();
-        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
-        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
-        // need this to ensure expected mock behavior for getActiveSyncedSource
-        when(mBassClientService.getActiveSyncedSources(any())).thenReturn(null);
-
-        // Test sendPendingCallbacks(START_SCAN_OFFLOAD, ERROR_UNKNOWN)
-        mBassClientStateMachine.mPendingOperation = START_SCAN_OFFLOAD;
-        mBassClientStateMachine.mAutoTriggered = false;
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(GATT_TXN_PROCESSED, GATT_FAILURE),
-                BassClientStateMachine.Connected.class);
-
-        if (!Flags.leaudioBroadcastExtractPeriodicScannerFromStateMachine()) {
-            // verify getActiveSyncedSource got called in CancelActiveSync
-            verify(mBassClientService).getActiveSyncedSources(any());
-
-            // Test sendPendingCallbacks(START_SCAN_OFFLOAD, ERROR_UNKNOWN)
-            moveConnectedStateToConnectedProcessingState();
-            mBassClientStateMachine.mPendingOperation = START_SCAN_OFFLOAD;
-            mBassClientStateMachine.mAutoTriggered = true;
-            sendMessageAndVerifyTransition(
-                    mBassClientStateMachine.obtainMessage(GATT_TXN_PROCESSED, GATT_FAILURE),
-                    BassClientStateMachine.Connected.class);
-            assertThat(mBassClientStateMachine.mAutoTriggered).isFalse();
-        }
-
-        // Test sendPendingCallbacks(ADD_BCAST_SOURCE, ERROR_UNKNOWN)
-        moveConnectedStateToConnectedProcessingState();
-        mBassClientStateMachine.mPendingMetadata = createBroadcastMetadata();
-        mBassClientStateMachine.mPendingOperation = ADD_BCAST_SOURCE;
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(GATT_TXN_PROCESSED, GATT_FAILURE),
-                BassClientStateMachine.Connected.class);
-        verify(callbacks).notifySourceAddFailed(any(), any(), anyInt());
-
-        if (!Flags.leaudioBroadcastExtractPeriodicScannerFromStateMachine()) {
-            // Test sendPendingCallbacks(UPDATE_BCAST_SOURCE, REASON_LOCAL_APP_REQUEST)
-            moveConnectedStateToConnectedProcessingState();
-            mBassClientStateMachine.mPendingOperation = UPDATE_BCAST_SOURCE;
-            mBassClientStateMachine.mAutoTriggered = true;
-            sendMessageAndVerifyTransition(
-                    mBassClientStateMachine.obtainMessage(GATT_TXN_PROCESSED, GATT_SUCCESS),
-                    BassClientStateMachine.Connected.class);
-            assertThat(mBassClientStateMachine.mAutoTriggered).isFalse();
-        }
-
-        // Test sendPendingCallbacks(UPDATE_BCAST_SOURCE, ERROR_UNKNOWN)
-        moveConnectedStateToConnectedProcessingState();
-        mBassClientStateMachine.mPendingOperation = UPDATE_BCAST_SOURCE;
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(GATT_TXN_PROCESSED, GATT_FAILURE),
-                BassClientStateMachine.Connected.class);
-        verify(callbacks).notifySourceModifyFailed(any(), anyInt(), anyInt());
-
-        // Test sendPendingCallbacks(REMOVE_BCAST_SOURCE, ERROR_UNKNOWN)
-        moveConnectedStateToConnectedProcessingState();
-        mBassClientStateMachine.mPendingOperation = REMOVE_BCAST_SOURCE;
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(GATT_TXN_PROCESSED, GATT_FAILURE),
-                BassClientStateMachine.Connected.class);
-        verify(callbacks).notifySourceRemoveFailed(any(), anyInt(), anyInt());
-
-        // Test sendPendingCallbacks(SET_BCAST_CODE, REASON_LOCAL_APP_REQUEST)
-        moveConnectedStateToConnectedProcessingState();
-        mBassClientStateMachine.mPendingOperation = REMOVE_BCAST_SOURCE;
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(GATT_TXN_PROCESSED, GATT_FAILURE),
-                BassClientStateMachine.Connected.class);
-        // Nothing to verify more
-
-        // Test sendPendingCallbacks(SET_BCAST_CODE, REASON_LOCAL_APP_REQUEST)
-        moveConnectedStateToConnectedProcessingState();
-        mBassClientStateMachine.mPendingOperation = -1;
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(GATT_TXN_PROCESSED, GATT_FAILURE),
-                BassClientStateMachine.Connected.class);
-        // Nothing to verify more
-    }
-
-    @Test
-    public void sendGattTxnTimeoutMessage_inConnectedProcessingState_doesNotChangeState() {
-        initToConnectedProcessingState();
-
-        mBassClientStateMachine.mPendingOperation = SET_BCAST_CODE;
-        mBassClientStateMachine.mPendingSourceId = 0;
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(GATT_TXN_TIMEOUT, GATT_FAILURE),
-                BassClientStateMachine.Connected.class);
-        assertThat(mBassClientStateMachine.mPendingOperation).isEqualTo(-1);
-        assertThat(mBassClientStateMachine.mPendingSourceId).isEqualTo(-1);
-    }
-
-    @Test
-    public void sendMessageForDeferring_inConnectedProcessingState_defersMessage() {
-        initToConnectedProcessingState();
-
-        mBassClientStateMachine.sendMessage(READ_BASS_CHARACTERISTICS);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        assertThat(mBassClientStateMachine.hasDeferredMessagesSuper(READ_BASS_CHARACTERISTICS))
-                .isTrue();
-
-        mBassClientStateMachine.sendMessage(START_SCAN_OFFLOAD);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        assertThat(mBassClientStateMachine.hasDeferredMessagesSuper(START_SCAN_OFFLOAD)).isTrue();
-
-        mBassClientStateMachine.sendMessage(STOP_SCAN_OFFLOAD);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        assertThat(mBassClientStateMachine.hasDeferredMessagesSuper(STOP_SCAN_OFFLOAD)).isTrue();
-
-        mBassClientStateMachine.sendMessage(SELECT_BCAST_SOURCE);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        assertThat(mBassClientStateMachine.hasDeferredMessagesSuper(SELECT_BCAST_SOURCE)).isTrue();
-
-        mBassClientStateMachine.sendMessage(ADD_BCAST_SOURCE);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        assertThat(mBassClientStateMachine.hasDeferredMessagesSuper(ADD_BCAST_SOURCE)).isTrue();
-
-        mBassClientStateMachine.sendMessage(SET_BCAST_CODE);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        assertThat(mBassClientStateMachine.hasDeferredMessagesSuper(SET_BCAST_CODE)).isTrue();
-
-        mBassClientStateMachine.sendMessage(REMOVE_BCAST_SOURCE);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        assertThat(mBassClientStateMachine.hasDeferredMessagesSuper(REMOVE_BCAST_SOURCE)).isTrue();
-
-        mBassClientStateMachine.sendMessage(PSYNC_ACTIVE_TIMEOUT);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        assertThat(mBassClientStateMachine.hasDeferredMessagesSuper(PSYNC_ACTIVE_TIMEOUT)).isTrue();
-
-        mBassClientStateMachine.sendMessage(REACHED_MAX_SOURCE_LIMIT);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        assertThat(mBassClientStateMachine.hasDeferredMessagesSuper(REACHED_MAX_SOURCE_LIMIT))
-                .isTrue();
-
-        mBassClientStateMachine.sendMessage(SWITCH_BCAST_SOURCE);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        assertThat(mBassClientStateMachine.hasDeferredMessagesSuper(SWITCH_BCAST_SOURCE)).isTrue();
-    }
-
-    @Test
-    public void sendInvalidMessage_inConnectedProcessingState_doesNotChangeState() {
-        initToConnectedProcessingState();
-
-        mBassClientStateMachine.sendMessage(-1);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
-    }
-
-    @Test
-    public void dump_doesNotCrash() {
-        mBassClientStateMachine.dump(new StringBuilder());
-    }
-
-    @Test
-    public void sendAddBcastSourceMessage_NoResponseWrite() {
-        mBassClientStateMachine.connectGatt(true);
-        BluetoothGattCallback cb = mBassClientStateMachine.mGattCallback;
-        cb.onMtuChanged(null, 250, GATT_SUCCESS);
-        initToConnectedState();
-
-        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
-        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
+        mStateMachine.mGattCallback.onCharacteristicRead(null, characteristic, GATT_SUCCESS);
+        mLooper.dispatchAll();
 
         BluetoothLeBroadcastMetadata metadata = createBroadcastMetadata();
-        // verify local broadcast doesn't require active synced source
-        when(mBassClientService.isLocalBroadcast(any(BluetoothLeBroadcastMetadata.class)))
-                .thenReturn(true);
-        mBassClientStateMachine.sendMessage(ADD_BCAST_SOURCE, metadata);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-
-        verify(mBassClientService).getCallbacks();
-        verify(callbacks).notifySourceAddFailed(any(), any(), anyInt());
-
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
         BluetoothGattCharacteristic scanControlPoint =
                 Mockito.mock(BluetoothGattCharacteristic.class);
-        mBassClientStateMachine.mBroadcastScanControlPoint = scanControlPoint;
+        mStateMachine.mBroadcastScanControlPoint = scanControlPoint;
 
         sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(ADD_BCAST_SOURCE, metadata),
-                BassClientStateMachine.ConnectedProcessing.class);
-        verify(scanControlPoint).setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
-        verify(scanControlPoint).setValue(any(byte[].class));
-        verify(btGatt).writeCharacteristic(any());
-    }
-
-    @Test
-    public void sendAddBcastSourceMessage_LongWrite() {
-        mBassClientStateMachine.connectGatt(true);
-        BluetoothGattCallback cb = mBassClientStateMachine.mGattCallback;
-        cb.onMtuChanged(null, 23, GATT_SUCCESS);
-        initToConnectedState();
-
-        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
-        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
-
-        BluetoothLeBroadcastMetadata metadata = createBroadcastMetadata();
-        // verify local broadcast doesn't require active synced source
-        when(mBassClientService.isLocalBroadcast(any(BluetoothLeBroadcastMetadata.class)))
-                .thenReturn(true);
-        mBassClientStateMachine.sendMessage(ADD_BCAST_SOURCE, metadata);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-
-        verify(mBassClientService).getCallbacks();
-        verify(callbacks).notifySourceAddFailed(any(), any(), anyInt());
-
-        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
-                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
-        BluetoothGattCharacteristic scanControlPoint =
-                Mockito.mock(BluetoothGattCharacteristic.class);
-        mBassClientStateMachine.mBroadcastScanControlPoint = scanControlPoint;
-
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(ADD_BCAST_SOURCE, metadata),
-                BassClientStateMachine.ConnectedProcessing.class);
-        verify(scanControlPoint).setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
-        verify(scanControlPoint).setValue(any(byte[].class));
-        verify(btGatt).writeCharacteristic(any());
-    }
-
-    @Test
-    public void selectBcastSource_withSameBroadcastId() {
-        mSetFlagsRule.disableFlags(
-                Flags.FLAG_LEAUDIO_BROADCAST_EXTRACT_PERIODIC_SCANNER_FROM_STATE_MACHINE);
-        final int testSyncHandle = 1;
-        initToConnectedState();
-
-        byte[] scanRecord =
-                new byte[] {
-                    0x02,
-                    0x01,
-                    0x1a, // advertising flags
-                    0x05,
-                    0x02,
-                    0x52,
-                    0x18,
-                    0x0a,
-                    0x11, // 16 bit service uuids
-                    0x04,
-                    0x09,
-                    0x50,
-                    0x65,
-                    0x64, // name
-                    0x02,
-                    0x0A,
-                    (byte) 0xec, // tx power level
-                    0x05,
-                    0x30,
-                    0x54,
-                    0x65,
-                    0x73,
-                    0x74, // broadcast name: Test
-                    0x06,
-                    0x16,
-                    0x52,
-                    0x18,
-                    0x2A,
-                    0x00,
-                    0x00, // service data, broadcast id 42
-                    0x08,
-                    0x16,
-                    0x56,
-                    0x18,
-                    0x07,
-                    0x03,
-                    0x06,
-                    0x07,
-                    0x08,
-                    // service data - public broadcast,
-                    // feature - 0x7, metadata len - 0x3, metadata - 0x6, 0x7, 0x8
-                    0x05,
-                    (byte) 0xff,
-                    (byte) 0xe0,
-                    0x00,
-                    0x02,
-                    0x15, // manufacturer specific data
-                    0x03,
-                    0x50,
-                    0x01,
-                    0x02, // an unknown data type won't cause trouble
-                };
-        ScanRecord record = ScanRecord.parseFromBytes(scanRecord);
-        ScanResult scanResult = new ScanResult(mTestDevice, 0, 0, 0, 0, 0, 0, 0, record, 0);
-
-        List<Integer> activeSyncedSrc = new ArrayList<>();
-        activeSyncedSrc.add(testSyncHandle);
-        // need this to ensure expected mock behavior for getActiveSyncedSource
-        when(mBassClientService.getActiveSyncedSources(any())).thenReturn(activeSyncedSrc);
-        when(mBassClientService.getSyncHandleForBroadcastId(anyInt())).thenReturn(testSyncHandle);
-        doNothing()
-                .when(mMethodProxy)
-                .periodicAdvertisingManagerRegisterSync(
-                        any(), any(), anyInt(), anyInt(), any(), any());
-
-        mBassClientStateMachine.sendMessage(SELECT_BCAST_SOURCE, BassConstants.AUTO, 0, scanResult);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        // validate syncing to the same broadcast id will be skipped
-        verify(mBassClientService, never())
-                .updatePeriodicAdvertisementResultMap(
-                        any(), anyInt(), anyInt(), anyInt(), anyInt(), anyInt(), any(), any());
-
-        // need this to ensure expected mock behavior for getActiveSyncedSource
-        when(mBassClientService.getActiveSyncedSources(any())).thenReturn(null);
-
-        mBassClientStateMachine.sendMessage(SELECT_BCAST_SOURCE, BassConstants.AUTO, 0, scanResult);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        verify(mBassClientService)
-                .updatePeriodicAdvertisementResultMap(
-                        any(),
-                        anyInt(),
-                        anyInt(),
-                        anyInt(),
-                        anyInt(),
-                        anyInt(),
-                        any(),
-                        eq(TEST_BROADCAST_NAME));
-    }
-
-    @Test
-    public void addBcastSource_withCachedScanResults() {
-        mSetFlagsRule.disableFlags(
-                Flags.FLAG_LEAUDIO_BROADCAST_EXTRACT_PERIODIC_SCANNER_FROM_STATE_MACHINE);
-        initToConnectedState();
-
-        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
-        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
-
-        BluetoothLeBroadcastMetadata metadata = createBroadcastMetadata();
-        when(mBassClientService.isLocalBroadcast(any(BluetoothLeBroadcastMetadata.class)))
-                .thenReturn(false);
-        when(mBassClientService.getActiveSyncedSources(any())).thenReturn(null);
-        when(mBassClientService.getCachedBroadcast(anyInt())).thenReturn(null);
-        mBassClientStateMachine.sendMessage(ADD_BCAST_SOURCE, metadata);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-
-        verify(mBassClientService).getCallbacks();
-        verify(callbacks).notifySourceAddFailed(any(), any(), anyInt());
-
-        byte[] scanRecord =
-                new byte[] {
-                    0x02,
-                    0x01,
-                    0x1a, // advertising flags
-                    0x05,
-                    0x02,
-                    0x52,
-                    0x18,
-                    0x0a,
-                    0x11, // 16 bit service uuids
-                    0x04,
-                    0x09,
-                    0x50,
-                    0x65,
-                    0x64, // name
-                    0x02,
-                    0x0A,
-                    (byte) 0xec, // tx power level
-                    0x05,
-                    0x30,
-                    0x54,
-                    0x65,
-                    0x73,
-                    0x74, // broadcast name: Test
-                    0x06,
-                    0x16,
-                    0x52,
-                    0x18,
-                    0x2A,
-                    0x00,
-                    0x00, // service data, broadcast id 42
-                    0x08,
-                    0x16,
-                    0x56,
-                    0x18,
-                    0x07,
-                    0x03,
-                    0x06,
-                    0x07,
-                    0x08,
-                    // service data - public broadcast,
-                    // feature - 0x7, metadata len - 0x3, metadata - 0x6, 0x7, 0x8
-                    0x05,
-                    (byte) 0xff,
-                    (byte) 0xe0,
-                    0x00,
-                    0x02,
-                    0x15, // manufacturer specific data
-                    0x03,
-                    0x50,
-                    0x01,
-                    0x02, // an unknown data type won't cause trouble
-                };
-        ScanRecord record = ScanRecord.parseFromBytes(scanRecord);
-        ScanResult scanResult =
-                new ScanResult(
-                        mAdapter.getRemoteLeDevice(
-                                "00:11:22:33:44:55", BluetoothDevice.ADDRESS_TYPE_RANDOM),
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        record,
-                        0);
-        when(mBassClientService.getCachedBroadcast(anyInt())).thenReturn(scanResult);
-        doNothing()
-                .when(mMethodProxy)
-                .periodicAdvertisingManagerRegisterSync(
-                        any(), any(), anyInt(), anyInt(), any(), any());
-        // validate add source will trigger select source and update mPendingSourceToAdd
-        mBassClientStateMachine.sendMessage(ADD_BCAST_SOURCE, metadata);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-
-        verify(mMethodProxy, timeout(TIMEOUT_MS))
-                .periodicAdvertisingManagerRegisterSync(
-                        any(), any(), anyInt(), anyInt(), any(), any());
-        Assert.assertEquals(mBassClientStateMachine.mPendingSourceToAdd, metadata);
-        verify(mBassClientService, never()).sendBroadcast(any(Intent.class), anyString(), any());
-    }
-
-    private void initToDisconnectedState() {
-        allowConnection(true);
-        allowConnectGatt(true);
-        assertThat(mBassClientStateMachine.getCurrentState())
-                .isInstanceOf(BassClientStateMachine.Disconnected.class);
-    }
-
-    @Test
-    public void periodicAdvertisingCallbackOnSyncLost_notifySourceLost() {
-        mSetFlagsRule.disableFlags(
-                Flags.FLAG_LEAUDIO_BROADCAST_EXTRACT_PERIODIC_SCANNER_FROM_STATE_MACHINE);
-        mSetFlagsRule.enableFlags(Flags.FLAG_LEAUDIO_BROADCAST_MONITOR_SOURCE_SYNC_STATUS);
-        PeriodicAdvertisingCallback cb = mBassClientStateMachine.mLocalPeriodicAdvCallback;
-        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
-        int syncHandle = 1;
-        int broadcastId = 2;
-        when(mBassClientService.getBroadcastIdForSyncHandle(syncHandle)).thenReturn(broadcastId);
-        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
-        cb.onSyncLost(syncHandle);
-
-        verify(callbacks).notifySourceLost(broadcastId);
-    }
-
-    @Test
-    public void periodicAdvertisingCallbackOnBigInfoAdvertisingReport_updateRssi() {
-        mSetFlagsRule.disableFlags(
-                Flags.FLAG_LEAUDIO_BROADCAST_EXTRACT_PERIODIC_SCANNER_FROM_STATE_MACHINE);
-        mSetFlagsRule.enableFlags(Flags.FLAG_LEAUDIO_BROADCAST_MONITOR_SOURCE_SYNC_STATUS);
-        PeriodicAdvertisingCallback cb = mBassClientStateMachine.mLocalPeriodicAdvCallback;
-        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
-        int testRssi = -40;
-        int syncHandle = 1;
-        final String testMacAddress = "00:11:22:33:44:55";
-        BluetoothDevice testDevice =
-                mAdapter.getRemoteLeDevice(testMacAddress, BluetoothDevice.ADDRESS_TYPE_RANDOM);
-
-        byte[] scanRecordWithBaseData =
-                new byte[] {
-                    (byte) 0x02,
-                    (byte) 0x01,
-                    (byte) 0x1a, // advertising flags
-                    (byte) 0x05,
-                    (byte) 0x02,
-                    (byte) 0x51,
-                    (byte) 0x18,
-                    (byte) 0x0a,
-                    (byte) 0x11, // 16 bit service uuids
-                    (byte) 0x04,
-                    (byte) 0x09,
-                    (byte) 0x50,
-                    (byte) 0x65,
-                    (byte) 0x64, // name
-                    (byte) 0x02,
-                    (byte) 0x0A,
-                    (byte) 0xec, // tx power level
-                    (byte) 0x19,
-                    (byte) 0x16,
-                    (byte) 0x51,
-                    (byte) 0x18, // service data (base data with 18 bytes)
-                    // LEVEL 1
-                    (byte) 0x01,
-                    (byte) 0x02,
-                    (byte) 0x03, // presentationDelay
-                    (byte) 0x01, // numSubGroups
-                    // LEVEL 2
-                    (byte) 0x01, // numSubGroups
-                    (byte) 0x00,
-                    (byte) 0x00,
-                    (byte) 0x00,
-                    (byte) 0x00,
-                    (byte) 0x00, // UNKNOWN_CODEC
-                    (byte) 0x02, // codecConfigLength
-                    (byte) 0x01,
-                    (byte) 'A', // codecConfigInfo
-                    (byte) 0x03, // metaDataLength
-                    (byte) 0x06,
-                    (byte) 0x07,
-                    (byte) 0x08, // metaData
-                    // LEVEL 3
-                    (byte) 0x04, // index
-                    (byte) 0x03, // codecConfigLength
-                    (byte) 0x02,
-                    (byte) 'B',
-                    (byte) 'C', // codecConfigInfo
-                    (byte) 0x05,
-                    (byte) 0xff,
-                    (byte) 0xe0,
-                    (byte) 0x00,
-                    (byte) 0x02,
-                    (byte) 0x15, // manufacturer specific data
-                    (byte) 0x03,
-                    (byte) 0x50,
-                    (byte) 0x01,
-                    (byte) 0x02, // an unknown data type won't cause trouble
-                };
-
-        ScanRecord record = ScanRecord.parseFromBytes(scanRecordWithBaseData);
-        ScanResult scanResult =
-                new ScanResult(
-                        mAdapter.getRemoteLeDevice(
-                                "00:11:22:33:44:55", BluetoothDevice.ADDRESS_TYPE_RANDOM),
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        testRssi,
-                        0,
-                        record,
-                        0);
-        BaseData data =
-                BaseData.parseBaseData(record.getServiceData(BassConstants.BASIC_AUDIO_UUID));
-
-        when(mBassClientService.getDeviceForSyncHandle(syncHandle)).thenReturn(testDevice);
-        PeriodicAdvertisementResult paResult = Mockito.mock(PeriodicAdvertisementResult.class);
-        when(mBassClientService.getPeriodicAdvertisementResult(any(), anyInt()))
-                .thenReturn(paResult);
-        when(paResult.isNotified()).thenReturn(false);
-        when(mBassClientService.getBase(anyInt())).thenReturn(data);
-        when(mBassClientService.getCachedBroadcast(anyInt())).thenReturn(scanResult);
-        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
-
-        cb.onBigInfoAdvertisingReport(syncHandle, true);
-        ArgumentCaptor<BluetoothLeBroadcastMetadata> metaData =
-                ArgumentCaptor.forClass(BluetoothLeBroadcastMetadata.class);
-        verify(callbacks).notifySourceFound(metaData.capture());
-
-        Assert.assertEquals(testRssi, metaData.getValue().getRssi());
-    }
-
-    @Test
-    public void cancelPendingAddBcastSourceMessage_inConnectedState() {
-        initToConnectedState();
-
-        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
-        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
-
-        BluetoothLeBroadcastMetadata metadata = createBroadcastMetadata();
-        // verify local broadcast doesn't require active synced source
-        when(mBassClientService.isLocalBroadcast(any(BluetoothLeBroadcastMetadata.class)))
-                .thenReturn(true);
-
-        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
-                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
-        BluetoothGattCharacteristic scanControlPoint =
-                Mockito.mock(BluetoothGattCharacteristic.class);
-        mBassClientStateMachine.mBroadcastScanControlPoint = scanControlPoint;
-
-        sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(ADD_BCAST_SOURCE, metadata),
+                mStateMachine.obtainMessage(UPDATE_BCAST_SOURCE, sourceId, paSync, metadata),
                 BassClientStateMachine.ConnectedProcessing.class);
         verify(scanControlPoint).setValue(any(byte[].class));
         verify(btGatt).writeCharacteristic(any());
 
         /* Verify if there is pending add source operation */
-        assertThat(mBassClientStateMachine.hasPendingSourceOperation(metadata.getBroadcastId()))
-                .isTrue();
+        assertThat(mStateMachine.hasPendingSourceOperation(metadata.getBroadcastId())).isTrue();
+
+        assertThat(mStateMachine.mMsgWhats).contains(CANCEL_PENDING_SOURCE_OPERATION);
+        assertThat(mStateMachine.mMsgAgr1).isEqualTo(TEST_BROADCAST_ID);
 
         /* Inject a cancel pending source operation event */
-        Message msg = mBassClientStateMachine.obtainMessage(CANCEL_PENDING_SOURCE_OPERATION);
+        Message msg = mStateMachine.obtainMessage(CANCEL_PENDING_SOURCE_OPERATION);
         msg.arg1 = metadata.getBroadcastId();
-        mBassClientStateMachine.sendMessage(msg);
-
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
+        mStateMachine.sendMessage(msg);
+        mLooper.dispatchAll();
 
         /* Verify if pending add source operation is canceled */
-        assertThat(mBassClientStateMachine.hasPendingSourceOperation(metadata.getBroadcastId()))
-                .isFalse();
+        assertThat(mStateMachine.hasPendingSourceOperation(metadata.getBroadcastId())).isFalse();
+    }
+
+    @Test
+    public void receiveSinkReceiveStateChange_logSyncMetricsWhenSyncNoPast() {
+        prepareInitialReceiveStateForGatt();
+
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_NO_PAST,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_CODE_REQUIRED,
+                0x0L);
+        // Verify broadcast audio session is logged when pa no past
+        verify(mMetricsLogger)
+                .logLeAudioBroadcastAudioSync(
+                        eq(mDevice),
+                        eq(TEST_BROADCAST_ID),
+                        eq(false),
+                        anyLong(),
+                        anyLong(),
+                        anyLong(),
+                        eq(0x5)); // STATS_SYNC_PA_NO_PAST
+    }
+
+    @Test
+    public void receiveSinkReceiveStateChange_logSyncMetricsWhenBigEncryptFailed() {
+        prepareInitialReceiveStateForGatt();
+
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_SYNCHRONIZED,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_BAD_CODE,
+                0x0L);
+        // Verify broadcast audio session is logged when big encryption failed
+        verify(mMetricsLogger)
+                .logLeAudioBroadcastAudioSync(
+                        eq(mDevice),
+                        eq(TEST_BROADCAST_ID),
+                        eq(false),
+                        anyLong(),
+                        anyLong(),
+                        anyLong(),
+                        eq(0x6)); // STATS_SYNC_BIG_DECRYPT_FAILED
+    }
+
+    @Test
+    public void receiveSinkReceiveStateChange_logSyncMetricsWhenAudioSyncFailed() {
+        prepareInitialReceiveStateForGatt();
+
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_SYNCHRONIZED,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_DECRYPTING,
+                BassConstants.BCAST_RCVR_STATE_BIS_SYNC_FAILED_SYNC_TO_BIG);
+        // Verify broadcast audio session is logged when bis sync failed
+        verify(mMetricsLogger)
+                .logLeAudioBroadcastAudioSync(
+                        eq(mDevice),
+                        eq(TEST_BROADCAST_ID),
+                        eq(false),
+                        anyLong(),
+                        anyLong(),
+                        anyLong(),
+                        eq(0x7)); // STATS_SYNC_AUDIO_SYNC_FAILED
+    }
+
+    @Test
+    public void receiveSinkReceiveStateChange_logSyncMetricsWhenSourceRemoved() {
+        prepareInitialReceiveStateForGatt();
+
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_SYNCHRONIZED,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_DECRYPTING,
+                0x1L);
+
+        // Verify broadcast audio session is not reported, only update the status
+        verify(mMetricsLogger, never())
+                .logLeAudioBroadcastAudioSync(
+                        any(), anyInt(), anyBoolean(), anyLong(), anyLong(), anyLong(), anyInt());
+
+        // Update receive state to source removed
+        generateBroadcastReceiveStatesAndVerify(
+                mEmptyTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_IDLE,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_NOT_ENCRYPTED,
+                0x0L);
+
+        // Verify broadcast audio session is logged when source removed
+        verify(mMetricsLogger)
+                .logLeAudioBroadcastAudioSync(
+                        eq(mDevice),
+                        eq(TEST_BROADCAST_ID),
+                        eq(false),
+                        anyLong(),
+                        anyLong(),
+                        anyLong(),
+                        eq(0x3)); // STATS_SYNC_AUDIO_SYNC_SUCCESS
+    }
+
+    @Test
+    public void sinkDisconnected_logSyncMetricsWhenSourceRemoved() {
+        prepareInitialReceiveStateForGatt();
+
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_SYNCHRONIZED,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_DECRYPTING,
+                0x1L);
+
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(DISCONNECT), BassClientStateMachine.Disconnected.class);
+        mLooper.dispatchAll();
+
+        // Verify broadcast audio session is logged when source removed
+        verify(mMetricsLogger)
+                .logLeAudioBroadcastAudioSync(
+                        eq(mDevice),
+                        eq(TEST_BROADCAST_ID),
+                        eq(false),
+                        anyLong(),
+                        anyLong(),
+                        anyLong(),
+                        eq(0x3)); // STATS_SYNC_AUDIO_SYNC_SUCCESS
+    }
+
+    @Test
+    public void sinkConnected_queueAddingSourceForReceiveStateReady() {
+        mStateMachine.connectGatt(true);
+        BluetoothGattCallback cb = mStateMachine.mGattCallback;
+        cb.onMtuChanged(null, 23, GATT_SUCCESS);
+        initToConnectedState();
+
+        mStateMachine.mNumOfBroadcastReceiverStates = 1;
+        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
+        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
+
+        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
+                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
+        mStateMachine.mBluetoothGatt = btGatt;
+        BluetoothGattCharacteristic scanControlPoint =
+                Mockito.mock(BluetoothGattCharacteristic.class);
+        mStateMachine.mBroadcastScanControlPoint = scanControlPoint;
+
+        // Initial receive state with empty source device
+        generateBroadcastReceiveStatesAndVerify(
+                mEmptyTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_IDLE,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_NOT_ENCRYPTED,
+                0x0L);
+        // Verify notifyBassStateReady is called
+        verify(callbacks).notifyBassStateReady(eq(mDevice));
+        assertThat(mStateMachine.isBassStateReady()).isTrue();
+    }
+
+    @Test
+    public void updateBroadcastSource_withoutMetadata() {
+        int sourceId = 1;
+        int paSync = BassConstants.PA_SYNC_DO_NOT_SYNC;
+
+        prepareInitialReceiveStateForGatt();
+
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_SYNCHRONIZED,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_DECRYPTING,
+                0x1L);
+
+        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
+                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
+        mStateMachine.mBluetoothGatt = btGatt;
+        BluetoothGattCharacteristic scanControlPoint =
+                Mockito.mock(BluetoothGattCharacteristic.class);
+        mStateMachine.mBroadcastScanControlPoint = scanControlPoint;
+
+        mStateMachine.mPendingOperation = 0;
+        mStateMachine.mPendingSourceId = 0;
+        mStateMachine.mPendingMetadata = null;
+
+        // update source without metadata
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(UPDATE_BCAST_SOURCE, sourceId, paSync, null),
+                BassClientStateMachine.ConnectedProcessing.class);
+        assertThat(mStateMachine.mPendingOperation).isEqualTo(UPDATE_BCAST_SOURCE);
+        assertThat(mStateMachine.mPendingSourceId).isEqualTo(sourceId);
+    }
+
+    @Test
+    public void updateBroadcastSource_pendingSourceToRemove() {
+        prepareInitialReceiveStateForGatt();
+
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_SYNCHRONIZED,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_DECRYPTING,
+                0x1L);
+
+        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
+                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
+        mStateMachine.mBluetoothGatt = btGatt;
+        BluetoothGattCharacteristic scanControlPoint =
+                Mockito.mock(BluetoothGattCharacteristic.class);
+        mStateMachine.mBroadcastScanControlPoint = scanControlPoint;
+
+        BluetoothLeBroadcastMetadata metadata = createBroadcastMetadata();
+        mStateMachine.mPendingMetadata = metadata;
+
+        if (Flags.leaudioBisSyncControl()) {
+            sendMessageAndVerifyTransition(
+                    mStateMachine.obtainMessage(REMOVE_BCAST_SOURCE, TEST_SOURCE_ID),
+                    BassClientStateMachine.ConnectedProcessing.class);
+        } else {
+            sendMessageAndVerifyTransition(
+                    mStateMachine.obtainMessage(
+                            UPDATE_BCAST_SOURCE,
+                            TEST_SOURCE_ID,
+                            BassConstants.PA_SYNC_DO_NOT_SYNC,
+                            metadata),
+                    BassClientStateMachine.ConnectedProcessing.class);
+        }
+        assertThat(mStateMachine.mPendingOperation).isEqualTo(UPDATE_BCAST_SOURCE);
+        assertThat(mStateMachine.mPendingSourceId).isEqualTo(TEST_SOURCE_ID);
+
+        mStateMachine.mPendingOperation = 0;
+        mStateMachine.mPendingSourceId = 0;
+        // Verify not removing source when PA is still synced
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_SYNCHRONIZED,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_NOT_ENCRYPTED,
+                0x0L);
+        assertThat(mStateMachine.mPendingOperation).isEqualTo(0);
+        assertThat(mStateMachine.mPendingSourceId).isEqualTo(0);
+
+        // Verify removing source when PA is unsynced
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_IDLE,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_NOT_ENCRYPTED,
+                0x0L);
+        assertThat(mStateMachine.mPendingOperation).isEqualTo(REMOVE_BCAST_SOURCE);
+        assertThat(mStateMachine.mPendingSourceId).isEqualTo(TEST_SOURCE_ID);
+    }
+
+    @Test
+    public void updateBroadcastSource_withMetadataChanged() {
+        prepareInitialReceiveStateForGatt();
+
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_SYNCHRONIZED,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_DECRYPTING,
+                0x1L);
+
+        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
+                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
+        mStateMachine.mBluetoothGatt = btGatt;
+        BluetoothGattCharacteristic scanControlPoint =
+                Mockito.mock(BluetoothGattCharacteristic.class);
+        mStateMachine.mBroadcastScanControlPoint = scanControlPoint;
+
+        BluetoothLeBroadcastMetadata metadata = createBroadcastMetadata();
+        // Verify pausing broadcast stream with updated metadata
+        BluetoothLeBroadcastMetadata updatedMetadataPaused = getMetadataToPauseStream(metadata);
+        mStateMachine.mPendingMetadata = updatedMetadataPaused;
+        byte[] valueBisPaused = convertMetadataToUpdateSourceByteArray(updatedMetadataPaused);
+
+        if (Flags.leaudioBisSyncControl()) {
+            sendMessageAndVerifyTransition(
+                    mStateMachine.obtainMessage(
+                            UPDATE_BCAST_SOURCE,
+                            TEST_SOURCE_ID,
+                            BassConstants.FLAG_SYNC_PA
+                                    | BassConstants.FLAG_SYNC_BIS_CHANNEL_PREFERENCE,
+                            updatedMetadataPaused),
+                    BassClientStateMachine.ConnectedProcessing.class);
+        } else {
+            sendMessageAndVerifyTransition(
+                    mStateMachine.obtainMessage(
+                            UPDATE_BCAST_SOURCE,
+                            TEST_SOURCE_ID,
+                            BassConstants.INVALID_PA_SYNC_VALUE,
+                            updatedMetadataPaused),
+                    BassClientStateMachine.ConnectedProcessing.class);
+        }
+        assertThat(mStateMachine.mPendingOperation).isEqualTo(UPDATE_BCAST_SOURCE);
+        assertThat(mStateMachine.mPendingSourceId).isEqualTo(TEST_SOURCE_ID);
+        verify(scanControlPoint).setValue(eq(valueBisPaused));
+
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(GATT_TXN_PROCESSED),
+                BassClientStateMachine.Connected.class);
+        mLooper.dispatchAll();
+        Mockito.clearInvocations(scanControlPoint);
+
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_SYNCHRONIZED,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_DECRYPTING,
+                0L);
+        // After modifying source with no channels selected, verify metadata is updated to
+        // updatedMetadataPaused
+        assertThat(mStateMachine.getCurrentBroadcastMetadata(TEST_SOURCE_ID))
+                .isEqualTo(updatedMetadataPaused);
+
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_SYNCHRONIZED,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_DECRYPTING,
+                1L << (TEST_CHANNEL_INDEX - 1));
+        // After BIS synced, verify channels are selected as the original metadata
+        assertThat(mStateMachine.getCurrentBroadcastMetadata(TEST_SOURCE_ID)).isEqualTo(metadata);
+
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_SYNCHRONIZED,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_DECRYPTING,
+                0L);
+        // After BIS unsynced, verify channels are still selected as the original metadata
+        assertThat(mStateMachine.getCurrentBroadcastMetadata(TEST_SOURCE_ID)).isEqualTo(metadata);
+
+        // Verify resuming broadcast stream with the original metadata
+        byte[] valueBisResumed = convertMetadataToUpdateSourceByteArray(metadata);
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(
+                        UPDATE_BCAST_SOURCE,
+                        TEST_SOURCE_ID,
+                        BassConstants.INVALID_PA_SYNC_VALUE,
+                        metadata),
+                BassClientStateMachine.ConnectedProcessing.class);
+        assertThat(mStateMachine.mPendingOperation).isEqualTo(UPDATE_BCAST_SOURCE);
+        assertThat(mStateMachine.mPendingSourceId).isEqualTo(TEST_SOURCE_ID);
+        verify(scanControlPoint).setValue(eq(valueBisResumed));
+
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(GATT_TXN_PROCESSED),
+                BassClientStateMachine.Connected.class);
+
+        mLooper.dispatchAll();
+        Mockito.clearInvocations(scanControlPoint);
+    }
+
+    @Test
+    @EnableFlags(Flags.FLAG_LEAUDIO_BIS_SYNC_CONTROL)
+    public void remoteRemovedBroadcastSource_clearPendingOperations() {
+        prepareInitialReceiveStateForGatt();
+
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_SYNCHRONIZED,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_DECRYPTING,
+                0x1L);
+
+        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
+                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
+        mStateMachine.mBluetoothGatt = btGatt;
+        BluetoothGattCharacteristic scanControlPoint =
+                Mockito.mock(BluetoothGattCharacteristic.class);
+        mStateMachine.mBroadcastScanControlPoint = scanControlPoint;
+
+        mStateMachine.mPendingOperation = 0;
+        mStateMachine.mPendingSourceId = 0;
+        BluetoothLeBroadcastMetadata metadata = createBroadcastMetadata();
+        mStateMachine.mPendingMetadata = metadata;
+
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(
+                        UPDATE_BCAST_SOURCE, TEST_SOURCE_ID, BassConstants.FLAG_SYNC_PA, metadata),
+                BassClientStateMachine.ConnectedProcessing.class);
+
+        assertThat(mStateMachine.mPendingOperation).isEqualTo(UPDATE_BCAST_SOURCE);
+        assertThat(mStateMachine.mPendingSourceId).isEqualTo(TEST_SOURCE_ID);
+        assertThat(mStateMachine.mPendingMetadata).isEqualTo(metadata);
+
+        // remote removed source
+        generateBroadcastReceiveStatesAndVerify(
+                mEmptyTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_IDLE,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_NOT_ENCRYPTED,
+                0x0L);
+        // verify mPendingMetadata is cleared
+        assertThat(mStateMachine.mPendingMetadata).isEqualTo(null);
+        assertThat(mStateMachine.isPendingRemove(TEST_SOURCE_ID)).isFalse();
+
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(GATT_TXN_PROCESSED),
+                BassClientStateMachine.Connected.class);
+        mLooper.dispatchAll();
+        Mockito.clearInvocations(scanControlPoint);
+    }
+
+    @Test
+    @EnableFlags(Flags.FLAG_LEAUDIO_INTENT_BROADCAST_IN_STATE_MACHINE_CLEANUP)
+    public void testDoQuit_inConnectedState_broadcastsDisconnectedIntent() {
+        allowConnection(true);
+        allowConnectGatt(true);
+
+        // Transition the state machine from DISCONNECTED to CONNECTING
+        mStateMachine.sendMessage(CONNECT);
+        mLooper.dispatchAll();
+        verifyConnectionStateIntent(STATE_CONNECTING, STATE_DISCONNECTED);
+
+        // Transition the state machine to CONNECTED
+        mStateMachine.notifyConnectionStateChanged(GATT_SUCCESS, STATE_CONNECTED);
+        mLooper.dispatchAll();
+        verifyConnectionStateIntent(STATE_CONNECTED, STATE_CONNECTING);
+
+        // Call the method under test, which should trigger a disconnect intent
+        mStateMachine.doQuit();
+
+        // Verify that the connection state broadcast was made for the disconnection
+        verifyIntentSent(
+                hasAction(ACTION_CONNECTION_STATE_CHANGED),
+                hasExtra(BluetoothDevice.EXTRA_DEVICE, mDevice),
+                hasExtra(EXTRA_STATE, STATE_DISCONNECTED),
+                hasExtra(EXTRA_PREVIOUS_STATE, STATE_CONNECTED));
     }
 
     private void initToConnectingState() {
         allowConnection(true);
         allowConnectGatt(true);
         sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(CONNECT),
-                BassClientStateMachine.Connecting.class);
+                mStateMachine.obtainMessage(CONNECT), BassClientStateMachine.Connecting.class);
         Mockito.clearInvocations(mBassClientService);
     }
 
     private void initToConnectedState() {
         initToConnectingState();
 
-        Message msg = mBassClientStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
-        msg.obj = BluetoothProfile.STATE_CONNECTED;
+        Message msg = mStateMachine.obtainMessage(CONNECTION_STATE_CHANGED);
+        msg.obj = STATE_CONNECTED;
         sendMessageAndVerifyTransition(msg, BassClientStateMachine.Connected.class);
         Mockito.clearInvocations(mBassClientService);
     }
@@ -2448,46 +2494,55 @@ public class BassClientStateMachineTest {
                 Mockito.mock(BluetoothGattCharacteristic.class);
         BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
                 Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
-        mBassClientStateMachine.mBluetoothGatt = btGatt;
+        mStateMachine.mBluetoothGatt = btGatt;
         sendMessageAndVerifyTransition(
-                mBassClientStateMachine.obtainMessage(
-                        READ_BASS_CHARACTERISTICS, gattCharacteristic),
+                mStateMachine.obtainMessage(READ_BASS_CHARACTERISTICS, gattCharacteristic),
                 BassClientStateMachine.ConnectedProcessing.class);
         Mockito.clearInvocations(mBassClientService);
     }
 
-    private boolean isConnectionIntentExpected(Class currentType, Class nextType) {
+    private static boolean isConnectionIntentExpected(Class currentType, Class nextType) {
         if (currentType == nextType) {
             return false; // Same state, no intent expected
         }
 
-        if ((currentType == BassClientStateMachine.ConnectedProcessing.class)
-                || (nextType == BassClientStateMachine.ConnectedProcessing.class)) {
-            return false; // ConnectedProcessing is an internal state that doesn't generate a
-            // broadcast
-        } else {
-            return true; // All other state are generating broadcast
-        }
+        // ConnectedProcessing is an internal state that doesn't generate a broadcast
+        return currentType != BassClientStateMachine.ConnectedProcessing.class
+                && nextType != BassClientStateMachine.ConnectedProcessing.class;
     }
 
     @SafeVarargs
-    private void verifyIntentSent(int timeout_ms, Matcher<Intent>... matchers) {
-        verify(mBassClientService, timeout(timeout_ms).times(1))
-                .sendBroadcast(
-                        MockitoHamcrest.argThat(AllOf.allOf(matchers)),
-                        eq(BLUETOOTH_CONNECT),
-                        any());
+    private void verifyIntentSent(Matcher<Intent>... matchers) {
+        mInOrder.verify(mAdapterService)
+                .sendBroadcastMultiplePermissions(
+                        MockitoHamcrest.argThat(AllOf.allOf(matchers)), any(), any());
+    }
+
+    private void verifyNoIntentSent() {
+        mInOrder.verify(mAdapterService, never()).sendBroadcastAsUser(any(), any(), any(), any());
+        mInOrder.verify(mAdapterService, never())
+                .sendBroadcastWithMultiplePermissions(any(), any());
+        mInOrder.verify(mAdapterService, never())
+                .sendBroadcastMultiplePermissions(any(), any(), any());
+    }
+
+    private void verifyConnectionStateIntent(int newState, int oldState) {
+        verifyIntentSent(
+                hasAction(ACTION_CONNECTION_STATE_CHANGED),
+                hasExtra(BluetoothDevice.EXTRA_DEVICE, mDevice),
+                hasExtra(EXTRA_STATE, newState),
+                hasExtra(EXTRA_PREVIOUS_STATE, oldState));
+        assertThat(mStateMachine.getConnectionState()).isEqualTo(newState);
     }
 
     private <T> void sendMessageAndVerifyTransition(Message msg, Class<T> type) {
         Mockito.clearInvocations(mBassClientService);
 
-        mBassClientStateMachine.sendMessage(msg);
-        TestUtils.waitForLooperToFinishScheduledTask(mHandlerThread.getLooper());
-        Class currentStateClass = mBassClientStateMachine.getCurrentState().getClass();
+        mStateMachine.sendMessage(msg);
+        mLooper.dispatchAll();
+        Class currentStateClass = mStateMachine.getCurrentState().getClass();
         if (isConnectionIntentExpected(currentStateClass, type)) {
             verifyIntentSent(
-                    NO_TIMEOUT_MS,
                     hasAction(BluetoothLeBroadcastAssistant.ACTION_CONNECTION_STATE_CHANGED),
                     hasExtra(
                             BluetoothProfile.EXTRA_STATE,
@@ -2499,25 +2554,24 @@ public class BassClientStateMachineTest {
                             Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT
                                     | Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND));
         }
-        Assert.assertThat(mBassClientStateMachine.getCurrentState(), IsInstanceOf.instanceOf(type));
+        assertThat(mStateMachine.getCurrentState()).isInstanceOf(type);
     }
 
-    private BluetoothLeBroadcastMetadata createBroadcastMetadata() {
+    private static BluetoothLeBroadcastMetadata createBroadcastMetadata() {
         final String testMacAddress = "00:11:22:33:44:55";
-        final int testBroadcastId = 42;
         final int testAdvertiserSid = 1234;
         final int testPaSyncInterval = 100;
         final int testPresentationDelayMs = 345;
 
         BluetoothDevice testDevice =
-                mAdapter.getRemoteLeDevice(testMacAddress, BluetoothDevice.ADDRESS_TYPE_RANDOM);
+                getRealDevice(testMacAddress, BluetoothDevice.ADDRESS_TYPE_RANDOM);
 
         BluetoothLeBroadcastMetadata.Builder builder =
                 new BluetoothLeBroadcastMetadata.Builder()
                         .setEncrypted(false)
                         .setSourceDevice(testDevice, BluetoothDevice.ADDRESS_TYPE_RANDOM)
                         .setSourceAdvertisingSid(testAdvertiserSid)
-                        .setBroadcastId(testBroadcastId)
+                        .setBroadcastId(TEST_BROADCAST_ID)
                         .setBroadcastCode(new byte[] {0x00, 0x01, 0x00, 0x02})
                         .setPaSyncInterval(testPaSyncInterval)
                         .setPresentationDelayMicros(testPresentationDelayMs);
@@ -2526,7 +2580,192 @@ public class BassClientStateMachineTest {
         return builder.build();
     }
 
-    private BluetoothLeBroadcastSubgroup createBroadcastSubgroup() {
+    private static byte[] convertMetadataToUpdateSourceByteArray(
+            BluetoothLeBroadcastMetadata metaData) {
+        int numSubGroups = metaData.getSubgroups().size();
+
+        byte[] res = new byte[UPDATE_SOURCE_FIXED_LENGTH + numSubGroups * 5];
+        int offset = 0;
+        // Opcode
+        res[offset++] = OPCODE_UPDATE_SOURCE;
+        // Source_ID
+        res[offset++] = (byte) TEST_SOURCE_ID;
+        // PA_Sync
+        res[offset++] = (byte) (0x01);
+        // PA_Interval
+        res[offset++] = (byte) 0xFF;
+        res[offset++] = (byte) 0xFF;
+        // Num_Subgroups
+        res[offset++] = (byte) numSubGroups;
+
+        for (int i = 0; i < numSubGroups; i++) {
+            int bisIndexValue = 0;
+            for (BluetoothLeBroadcastChannel channel :
+                    metaData.getSubgroups().get(i).getChannels()) {
+                if (channel.isSelected()) {
+                    if (channel.getChannelIndex() == 0) {
+                        continue;
+                    }
+                    bisIndexValue |= 1 << (channel.getChannelIndex() - 1);
+                }
+            }
+            // BIS_Sync
+            res[offset++] = (byte) (bisIndexValue & 0x00000000000000FF);
+            res[offset++] = (byte) ((bisIndexValue & 0x000000000000FF00) >>> 8);
+            res[offset++] = (byte) ((bisIndexValue & 0x0000000000FF0000) >>> 16);
+            res[offset++] = (byte) ((bisIndexValue & 0x00000000FF000000) >>> 24);
+            // Metadata_Length; On Modify source, don't update any Metadata
+            res[offset++] = 0;
+        }
+        return res;
+    }
+
+    private static BluetoothLeBroadcastMetadata getMetadataToPauseStream(
+            BluetoothLeBroadcastMetadata original) {
+        BluetoothLeBroadcastMetadata.Builder metaDataBuilder =
+                new BluetoothLeBroadcastMetadata.Builder(original);
+        metaDataBuilder.clearSubgroup();
+
+        for (BluetoothLeBroadcastSubgroup subgroup : original.getSubgroups()) {
+            BluetoothLeBroadcastSubgroup.Builder subGroupBuilder =
+                    new BluetoothLeBroadcastSubgroup.Builder(subgroup);
+            subGroupBuilder.clearChannel();
+
+            for (BluetoothLeBroadcastChannel channel : subgroup.getChannels()) {
+                BluetoothLeBroadcastChannel.Builder channelBuilder =
+                        new BluetoothLeBroadcastChannel.Builder(channel).setSelected(false);
+                subGroupBuilder.addChannel(channelBuilder.build());
+            }
+            metaDataBuilder.addSubgroup(subGroupBuilder.build());
+        }
+
+        return metaDataBuilder.build();
+    }
+
+    private void prepareInitialReceiveStateForGatt() {
+        initToConnectedState();
+        mStateMachine.connectGatt(true);
+
+        mStateMachine.mNumOfBroadcastReceiverStates = 2;
+        BassClientService.Callbacks callbacks = Mockito.mock(BassClientService.Callbacks.class);
+        when(mBassClientService.getCallbacks()).thenReturn(callbacks);
+
+        BluetoothLeBroadcastMetadata metadata = createBroadcastMetadata();
+        when(mBassClientService.isLocalBroadcast(any(BluetoothLeBroadcastMetadata.class)))
+                .thenReturn(false);
+        BassClientStateMachine.BluetoothGattTestableWrapper btGatt =
+                Mockito.mock(BassClientStateMachine.BluetoothGattTestableWrapper.class);
+        mStateMachine.mBluetoothGatt = btGatt;
+        BluetoothGattCharacteristic scanControlPoint =
+                Mockito.mock(BluetoothGattCharacteristic.class);
+        mStateMachine.mBroadcastScanControlPoint = scanControlPoint;
+
+        sendMessageAndVerifyTransition(
+                mStateMachine.obtainMessage(ADD_BCAST_SOURCE, metadata),
+                BassClientStateMachine.ConnectedProcessing.class);
+        verify(scanControlPoint).setValue(any(byte[].class));
+        verify(btGatt).writeCharacteristic(any());
+        // Initial receive state
+        generateBroadcastReceiveStatesAndVerify(
+                mSourceTestDevice,
+                TEST_SOURCE_ID,
+                BluetoothLeBroadcastReceiveState.PA_SYNC_STATE_IDLE,
+                BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_CODE_REQUIRED,
+                0x0L);
+    }
+
+    private void generateBroadcastReceiveStatesAndVerify(
+            BluetoothDevice sourceDevice,
+            int sourceId,
+            int paSyncState,
+            int bigEncryptState,
+            long bisSyncState) {
+        final int sourceAdvSid = 0;
+        final int numOfSubgroups = 1;
+        final int metaDataLength = 142;
+
+        // Prepare mBluetoothLeBroadcastReceiveStates with metadata for test
+        byte[] value_base =
+                new byte[] {
+                    (byte) sourceId, // sourceId
+                    (byte) (sourceDevice.getAddressType() & 0xFF), // sourceAddressType
+                    Utils.getByteAddress(sourceDevice)[5],
+                    Utils.getByteAddress(sourceDevice)[4],
+                    Utils.getByteAddress(sourceDevice)[3],
+                    Utils.getByteAddress(sourceDevice)[2],
+                    Utils.getByteAddress(sourceDevice)[1],
+                    Utils.getByteAddress(sourceDevice)[0], // sourceAddress
+                    (byte) sourceAdvSid, // sourceAdvSid
+                    (byte) (TEST_BROADCAST_ID & 0xFF),
+                    (byte) 0x00,
+                    (byte) 0x00, // broadcastIdBytes
+                    (byte) paSyncState,
+                    (byte) bigEncryptState,
+                };
+
+        byte[] value_subgroup =
+                new byte[] {
+                    (byte) numOfSubgroups, // numSubGroups
+                    (byte) (bisSyncState & 0xFF),
+                    (byte) ((bisSyncState >> 8) & 0xFF),
+                    (byte) ((bisSyncState >> 16) & 0xFF),
+                    (byte) ((bisSyncState >> 24) & 0xFF), // audioSyncIndex
+                    (byte) metaDataLength, // metaDataLength
+                };
+
+        byte[] badBroadcastCode = new byte[16];
+        Arrays.fill(badBroadcastCode, (byte) 0xFF);
+
+        byte[] metadataHeader =
+                new byte[] {
+                    (byte) (metaDataLength - 1), // length 141
+                    (byte) 0xFF
+                };
+
+        byte[] metadataPayload = new byte[140];
+        new Random().nextBytes(metadataPayload);
+
+        BluetoothGattCharacteristic characteristic =
+                Mockito.mock(BluetoothGattCharacteristic.class);
+        when(characteristic.getValue())
+                .thenReturn(
+                        Bytes.concat(
+                                bigEncryptState
+                                                == BluetoothLeBroadcastReceiveState
+                                                        .BIG_ENCRYPTION_STATE_BAD_CODE
+                                        ? Bytes.concat(value_base, badBroadcastCode, value_subgroup)
+                                        : Bytes.concat(value_base, value_subgroup),
+                                metadataHeader,
+                                metadataPayload));
+        when(characteristic.getInstanceId()).thenReturn(sourceId);
+        when(characteristic.getUuid()).thenReturn(BassConstants.BASS_BCAST_RECEIVER_STATE);
+
+        mStateMachine.mGattCallback.onCharacteristicRead(null, characteristic, GATT_SUCCESS);
+        mLooper.dispatchAll();
+
+        assertThat(mStateMachine.getAllSources()).hasSize(1);
+        BluetoothLeBroadcastReceiveState recvState = mStateMachine.getAllSources().get(0);
+
+        assertThat(recvState.getSourceId()).isEqualTo(sourceId);
+        assertThat(recvState.getSourceAddressType()).isEqualTo(sourceDevice.getAddressType());
+        assertThat(recvState.getSourceDevice()).isEqualTo(sourceDevice);
+        assertThat(recvState.getSourceAdvertisingSid()).isEqualTo(sourceAdvSid);
+        assertThat(recvState.getBroadcastId()).isEqualTo(TEST_BROADCAST_ID);
+        assertThat(recvState.getPaSyncState()).isEqualTo(paSyncState);
+        assertThat(recvState.getBigEncryptionState()).isEqualTo(bigEncryptState);
+        assertThat(recvState.getNumSubgroups()).isEqualTo(numOfSubgroups);
+
+        assertThat(recvState.getBisSyncState()).hasSize(numOfSubgroups);
+        assertThat(recvState.getBisSyncState().get(0)).isEqualTo(bisSyncState);
+
+        assertThat(recvState.getSubgroupMetadata()).hasSize(numOfSubgroups);
+        BluetoothLeAudioContentMetadata metaData = recvState.getSubgroupMetadata().get(0);
+        assertThat(metaData.getRawMetadata().length).isEqualTo(metaDataLength);
+        assertThat(metaData.getRawMetadata())
+                .isEqualTo(Bytes.concat(metadataHeader, metadataPayload));
+    }
+
+    private static BluetoothLeBroadcastSubgroup createBroadcastSubgroup() {
         final long testAudioLocationFrontLeft = 0x01;
         final long testAudioLocationFrontRight = 0x02;
         // For BluetoothLeAudioContentMetadata
@@ -2534,7 +2773,6 @@ public class BassClientStateMachineTest {
         // German language code in ISO 639-3
         final String testLanguage = "deu";
         final int testCodecId = 42;
-        final int testChannelIndex = 56;
 
         BluetoothLeAudioCodecConfigMetadata codecMetadata =
                 new BluetoothLeAudioCodecConfigMetadata.Builder()
@@ -2560,7 +2798,7 @@ public class BassClientStateMachineTest {
         BluetoothLeBroadcastChannel channel =
                 new BluetoothLeBroadcastChannel.Builder()
                         .setSelected(true)
-                        .setChannelIndex(testChannelIndex)
+                        .setChannelIndex(TEST_CHANNEL_INDEX)
                         .setCodecMetadata(channelCodecMetadata)
                         .build();
         builder.addChannel(channel);
@@ -2577,14 +2815,15 @@ public class BassClientStateMachineTest {
         int mMsgAgr1;
         int mMsgArg2;
         Object mMsgObj;
+        long mMsgDelay;
 
         StubBassClientStateMachine(
                 BluetoothDevice device,
                 BassClientService service,
                 AdapterService adapterService,
-                Looper looper,
-                int connectTimeout) {
-            super(device, service, adapterService, looper, connectTimeout);
+                PeriodicAdvertisingManager periodicAdvertisingManager,
+                Looper looper) {
+            super(device, service, adapterService, periodicAdvertisingManager, looper);
         }
 
         @Override
@@ -2602,6 +2841,28 @@ public class BassClientStateMachineTest {
             mMsgObj = msg.obj;
             if (mShouldHandleMessage) {
                 super.sendMessage(msg);
+            }
+        }
+
+        @Override
+        public void sendMessageDelayed(int what, Object obj, long delayMillis) {
+            mMsgWhats.add(what);
+            mMsgWhat = what;
+            mMsgObj = obj;
+            mMsgDelay = delayMillis;
+            if (mShouldHandleMessage) {
+                super.sendMessageDelayed(what, obj, delayMillis);
+            }
+        }
+
+        @Override
+        public void sendMessageDelayed(int what, int arg1, long delayMillis) {
+            mMsgWhats.add(what);
+            mMsgWhat = what;
+            mMsgAgr1 = arg1;
+            mMsgDelay = delayMillis;
+            if (mShouldHandleMessage) {
+                super.sendMessageDelayed(what, arg1, delayMillis);
             }
         }
 

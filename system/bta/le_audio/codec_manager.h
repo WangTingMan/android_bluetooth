@@ -29,27 +29,6 @@ namespace bluetooth::le_audio {
 class LeAudioSinkAudioHalClient;
 class LeAudioSourceAudioHalClient;
 
-struct stream_map_info {
-  stream_map_info(uint16_t stream_handle, uint32_t audio_channel_allocation,
-                  bool is_stream_active)
-      : stream_handle(stream_handle),
-        audio_channel_allocation(audio_channel_allocation),
-        is_stream_active(is_stream_active) {}
-  uint16_t stream_handle;
-  uint32_t audio_channel_allocation;
-  bool is_stream_active;
-};
-
-struct offload_config {
-  std::vector<stream_map_info> stream_map;
-  uint8_t bits_per_sample;
-  uint32_t sampling_rate;
-  uint32_t frame_duration;
-  uint16_t octets_per_frame;
-  uint8_t blocks_per_sdu;
-  uint16_t peer_delay_ms;
-};
-
 struct broadcast_offload_config {
   std::vector<std::pair<uint16_t, uint32_t>> stream_map;
   uint8_t bits_per_sample;
@@ -61,8 +40,31 @@ struct broadcast_offload_config {
   uint16_t max_transport_latency;
 };
 
+struct ProviderInfo {
+  bool allowAsymmetric = false;
+  bool lowLatency = false;
+  bool isMulticodecSupported = false;
+
+  inline std::string toString() const {
+    std::ostringstream _aidl_os;
+    _aidl_os << "ProviderInfo{";
+    _aidl_os << "allowAsymmetric: " << allowAsymmetric;
+    _aidl_os << ", lowLatency: " << lowLatency;
+    _aidl_os << ", isMulticodecSupported: " << isMulticodecSupported;
+    _aidl_os << "}";
+    return _aidl_os.str();
+  }
+};
+
 class CodecManager {
- public:
+public:
+  enum Flags {
+    NONE = 0x00,
+    LOW_LATENCY = 0x01,
+    ALLOW_ASYMMETRIC = 0x02,
+    SPATIAL_AUDIO = 0x04,
+  };
+
   struct UnicastConfigurationRequirements {
     ::bluetooth::le_audio::types::LeAudioContextType audio_context_type;
     std::optional<std::vector<types::acs_ac_record>> sink_pacs;
@@ -76,23 +78,24 @@ class CodecManager {
 
     std::optional<std::vector<DeviceDirectionRequirements>> sink_requirements;
     std::optional<std::vector<DeviceDirectionRequirements>> source_requirements;
+
+    Flags flags;
   };
 
-  /* The verifier function checks each possible configuration (from the set of
+  /* The provider function checks each possible configuration (from the set of
    * all possible, supported configuration acquired from
    * AudioSetConfigurationProvider for the given scenario), to select a single
    * configuration, matching the current streaming audio group requirements.
    * Note: Used only with the legacy AudioSetConfigurationProvider.
    */
-  typedef std::function<const set_configurations::AudioSetConfiguration*(
-      const UnicastConfigurationRequirements& requirements,
-      const set_configurations::AudioSetConfigurations* confs)>
-      UnicastConfigurationVerifier;
+  typedef std::function<std::unique_ptr<types::AudioSetConfiguration>(
+          const UnicastConfigurationRequirements& requirements,
+          const types::AudioSetConfigurations* confs)>
+          UnicastConfigurationProvider;
 
   struct BroadcastConfigurationRequirements {
-    std::vector<
-        std::pair<bluetooth::le_audio::types::LeAudioContextType, uint8_t>>
-        subgroup_quality;
+    std::vector<std::pair<bluetooth::le_audio::types::LeAudioContextType, uint8_t>>
+            subgroup_quality;
     std::optional<std::vector<types::acs_ac_record>> sink_pacs;
   };
 
@@ -101,64 +104,64 @@ class CodecManager {
     static CodecManager* instance = new CodecManager();
     return instance;
   }
-  void Start(const std::vector<bluetooth::le_audio::btle_audio_codec_config_t>&
-                 offloading_preference);
+  void Start(
+          const std::vector<bluetooth::le_audio::btle_audio_codec_config_t>& offloading_preference);
   void Stop(void);
   virtual types::CodecLocation GetCodecLocation(void) const;
+  virtual std::optional<ProviderInfo> GetCodecConfigProviderInfo(void) const;
   virtual bool IsDualBiDirSwbSupported(void) const;
-  virtual void UpdateCisConfiguration(
-      const std::vector<struct types::cis>& cises,
-      const stream_parameters& stream_params, uint8_t direction);
+  virtual bool UpdateCisConfiguration(const std::vector<struct types::cis>& cises,
+                                      const stream_parameters& stream_params, uint8_t direction);
   virtual void ClearCisConfiguration(uint8_t direction);
   virtual bool IsUsingCodecExtensibility() const;
-  virtual bool UpdateActiveUnicastAudioHalClient(
-      LeAudioSourceAudioHalClient* source_unicast_client,
-      LeAudioSinkAudioHalClient* sink_unicast_client, bool is_active);
+  virtual bool UpdateActiveUnicastAudioHalClient(LeAudioSourceAudioHalClient* source_unicast_client,
+                                                 LeAudioSinkAudioHalClient* sink_unicast_client,
+                                                 bool is_active);
   virtual bool UpdateActiveBroadcastAudioHalClient(
-      LeAudioSourceAudioHalClient* source_broadcast_client, bool is_active);
+          LeAudioSourceAudioHalClient* source_broadcast_client, bool is_active);
   virtual void UpdateActiveAudioConfig(
-      const types::BidirectionalPair<stream_parameters>& stream_params,
-      types::BidirectionalPair<uint16_t> delays_ms,
-      std::function<void(const offload_config& config, uint8_t direction)>
-          update_receiver);
-  virtual std::unique_ptr<
-      ::bluetooth::le_audio::set_configurations::AudioSetConfiguration>
-  GetCodecConfig(const UnicastConfigurationRequirements& requirements,
-                 UnicastConfigurationVerifier verifier);
+          const types::BidirectionalPair<stream_parameters>& stream_params,
+          std::function<void(const stream_config& config, uint8_t direction)> update_receiver,
+          uint8_t directions_to_update = (bluetooth::le_audio::types::kLeAudioDirectionSink |
+                                          bluetooth::le_audio::types::kLeAudioDirectionSource),
+          bool force_update = false);
+  virtual std::unique_ptr<::bluetooth::le_audio::types::AudioSetConfiguration> GetCodecConfig(
+          const UnicastConfigurationRequirements& requirements,
+          UnicastConfigurationProvider provider);
+  virtual void UpdateSelectedCodecConfig(
+          const ::bluetooth::le_audio::types::AudioSetConfiguration& config) const;
   virtual bool CheckCodecConfigIsBiDirSwb(
-      const ::bluetooth::le_audio::set_configurations::AudioSetConfiguration&
-          config) const;
+          const ::bluetooth::le_audio::types::AudioSetConfiguration& config) const;
   virtual bool CheckCodecConfigIsDualBiDirSwb(
-      const ::bluetooth::le_audio::set_configurations::AudioSetConfiguration&
-          config) const;
-  virtual std::unique_ptr<broadcaster::BroadcastConfiguration>
-  GetBroadcastConfig(
-      const BroadcastConfigurationRequirements& requirements) const;
+          const ::bluetooth::le_audio::types::AudioSetConfiguration& config) const;
+  virtual std::unique_ptr<broadcaster::BroadcastConfiguration> GetBroadcastConfig(
+          const BroadcastConfigurationRequirements& requirements) const;
 
   virtual void UpdateBroadcastConnHandle(
-      const std::vector<uint16_t>& conn_handle,
-      std::function<
-          void(const ::bluetooth::le_audio::broadcast_offload_config& config)>
-          update_receiver);
+          const std::vector<uint16_t>& conn_handle,
+          std::function<void(const ::bluetooth::le_audio::broadcast_offload_config& config)>
+                  update_receiver);
   virtual std::vector<bluetooth::le_audio::btle_audio_codec_config_t>
   GetLocalAudioOutputCodecCapa();
-  virtual std::vector<bluetooth::le_audio::btle_audio_codec_config_t>
-  GetLocalAudioInputCodecCapa();
+  virtual std::vector<bluetooth::le_audio::btle_audio_codec_config_t> GetLocalAudioInputCodecCapa();
+  std::vector<bluetooth::le_audio::btle_audio_codec_config_t> GetRemoteAudioCodecCapa(
+          const bluetooth::le_audio::types::PublishedAudioCapabilities& pac) const;
 
- private:
+  virtual void ConfigureDataPath(hci_data_direction_t direction, uint8_t dataPathId,
+                                 std::vector<uint8_t> dataPathConfig) const;
+
+private:
   CodecManager();
   struct impl;
   std::unique_ptr<impl> pimpl_;
 };
 
-std::ostream& operator<<(
-    std::ostream& os,
-    const CodecManager::UnicastConfigurationRequirements& req);
+std::ostream& operator<<(std::ostream& os,
+                         const CodecManager::UnicastConfigurationRequirements& req);
 }  // namespace bluetooth::le_audio
 
-namespace fmt {
+namespace std {
 template <>
-struct formatter<
-    bluetooth::le_audio::CodecManager::UnicastConfigurationRequirements>
+struct formatter<bluetooth::le_audio::CodecManager::UnicastConfigurationRequirements>
     : ostream_formatter {};
-}  // namespace fmt
+}  // namespace std

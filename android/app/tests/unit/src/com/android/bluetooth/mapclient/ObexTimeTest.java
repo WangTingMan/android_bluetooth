@@ -16,9 +16,12 @@
 
 package com.android.bluetooth.mapclient;
 
-import androidx.test.runner.AndroidJUnit4;
+import static com.google.common.truth.Truth.assertThat;
 
-import org.junit.Assert;
+import android.annotation.SuppressLint;
+
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -26,7 +29,9 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.TimeZone;
 
+/** Test cases for {@link ObexTime}. */
 @RunWith(AndroidJUnit4.class)
+@SuppressLint("UndefinedEquals")
 public class ObexTimeTest {
     private static final String TAG = ObexTimeTest.class.getSimpleName();
 
@@ -56,8 +61,13 @@ public class ObexTimeTest {
     @SuppressWarnings("JavaUtilDate")
     private static final Date VALID_DATE = new Date(VALID_TS);
 
+    @SuppressWarnings("JavaUtilDate")
     private static final Date VALID_DATE_LOCAL_TZ = new Date(VALID_TS_LOCAL_TZ);
+
+    @SuppressWarnings("JavaUtilDate")
     private static final Date VALID_DATE_WITH_OFFSET_POS = new Date(VALID_TS_OFFSET_POS);
+
+    @SuppressWarnings("JavaUtilDate")
     private static final Date VALID_DATE_WITH_OFFSET_NEG = new Date(VALID_TS_OFFSET_NEG);
 
     private static final Instant VALID_INSTANT = Instant.ofEpochMilli(VALID_TS);
@@ -70,94 +80,60 @@ public class ObexTimeTest {
     @Test
     public void createWithValidDateTimeString_TimestampCorrect() {
         ObexTime timestamp = new ObexTime(VALID_TIME_STRING);
-        Assert.assertEquals(
-                "Parsed instant must match expected",
-                VALID_INSTANT_LOCAL_TZ,
-                timestamp.getInstant());
-        Assert.assertEquals(
-                "Parsed date must match expected", VALID_DATE_LOCAL_TZ, timestamp.getTime());
+        assertThat(timestamp.getInstant()).isEqualTo(VALID_INSTANT_LOCAL_TZ);
+        assertThat(timestamp.getTime()).isEqualTo(VALID_DATE_LOCAL_TZ);
     }
 
     @Test
     public void createWithValidDateTimeStringWithPosOffset_TimestampCorrect() {
         ObexTime timestamp = new ObexTime(VALID_TIME_STRING_WITH_OFFSET_POS);
-        Assert.assertEquals(
-                "Parsed instant must match expected",
-                VALID_INSTANT_WITH_OFFSET_POS,
-                timestamp.getInstant());
-        Assert.assertEquals(
-                "Parsed date must match expected", VALID_DATE_WITH_OFFSET_POS, timestamp.getTime());
+        assertThat(timestamp.getInstant()).isEqualTo(VALID_INSTANT_WITH_OFFSET_POS);
+        assertThat(timestamp.getTime()).isEqualTo(VALID_DATE_WITH_OFFSET_POS);
     }
 
     @Test
     public void createWithValidDateTimeStringWithNegOffset_TimestampCorrect() {
         ObexTime timestamp = new ObexTime(VALID_TIME_STRING_WITH_OFFSET_NEG);
-        Assert.assertEquals(
-                "Parsed instant must match expected",
-                VALID_INSTANT_WITH_OFFSET_NEG,
-                timestamp.getInstant());
-        Assert.assertEquals(
-                "Parsed date must match expected", VALID_DATE_WITH_OFFSET_NEG, timestamp.getTime());
+        assertThat(timestamp.getInstant()).isEqualTo(VALID_INSTANT_WITH_OFFSET_NEG);
+        assertThat(timestamp.getTime()).isEqualTo(VALID_DATE_WITH_OFFSET_NEG);
     }
 
     @Test
     public void createWithValidDate_TimestampCorrect() {
         ObexTime timestamp = new ObexTime(VALID_DATE_LOCAL_TZ);
-        Assert.assertEquals(
-                "ObexTime created with a date must return the expected instant",
-                VALID_INSTANT_LOCAL_TZ,
-                timestamp.getInstant());
-        Assert.assertEquals(
-                "ObexTime created with a date must return the same date",
-                VALID_DATE_LOCAL_TZ,
-                timestamp.getTime());
+        assertThat(timestamp.getInstant()).isEqualTo(VALID_INSTANT_LOCAL_TZ);
+        assertThat(timestamp.getTime()).isEqualTo(VALID_DATE_LOCAL_TZ);
     }
 
     @SuppressWarnings("JavaUtilDate")
     @Test
     public void createWithValidInstant_TimestampCorrect() {
         ObexTime timestamp = new ObexTime(VALID_INSTANT);
-        Assert.assertEquals(
-                "ObexTime created with a instant must return the same instant",
-                VALID_INSTANT,
-                timestamp.getInstant());
-        Assert.assertEquals(
-                "ObexTime created with a instant must return the expected date",
-                VALID_DATE,
-                timestamp.getTime());
+        assertThat(timestamp.getInstant()).isEqualTo(VALID_INSTANT);
+        assertThat(timestamp.getTime()).isEqualTo(VALID_DATE);
     }
 
     @Test
     public void printValidTime_TimestampMatchesInput() {
         ObexTime timestamp = new ObexTime(VALID_TIME_STRING);
-        Assert.assertEquals(
-                "Timestamp as a string must match the input string",
-                VALID_TIME_STRING,
-                timestamp.toString());
+        assertThat(timestamp.toString()).isEqualTo(VALID_TIME_STRING);
     }
 
     @Test
     public void createWithInvalidDelimiterString_TimestampIsNull() {
         ObexTime timestamp = new ObexTime(INVALID_TIME_STRING_BAD_DELIMITER);
-        Assert.assertEquals(
-                "Parsed timestamp was invalid and must result in a null object",
-                null,
-                timestamp.getTime());
+        assertThat(timestamp.getTime()).isNull();
     }
 
     @Test
     public void createWithInvalidOffsetString_TimestampIsNull() {
         ObexTime timestamp = new ObexTime(INVALID_TIME_STRING_OFFSET_EXTRA_DIGITS);
-        Assert.assertEquals(
-                "Parsed timestamp was invalid and must result in a null object",
-                null,
-                timestamp.getTime());
+        assertThat(timestamp.getTime()).isNull();
     }
 
     @Test
     public void printInvalidTime_ReturnsNull() {
         ObexTime timestamp = new ObexTime(INVALID_TIME_STRING_BAD_DELIMITER);
-        Assert.assertEquals(
-                "Invalid timestamps must return null for toString()", null, timestamp.toString());
+        assertThat(timestamp.toString()).isNull();
     }
 }

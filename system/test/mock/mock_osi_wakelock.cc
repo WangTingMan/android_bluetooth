@@ -23,6 +23,7 @@
 // Mock include file to share data between tests and mock
 #include "test/mock/mock_osi_wakelock.h"
 
+#include "osi/include/wakelock.h"
 #include "test/common/mock_functions.h"
 
 // Mocked internal structures, if any

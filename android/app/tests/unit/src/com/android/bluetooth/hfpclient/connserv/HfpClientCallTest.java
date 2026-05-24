@@ -16,33 +16,29 @@
 
 package com.android.bluetooth.hfpclient;
 
+import static com.android.bluetooth.TestUtils.getRealDevice;
+import static com.android.bluetooth.TestUtils.getTestDevice;
+
 import static com.google.common.truth.Truth.assertThat;
 
 import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothManager;
-import android.content.Context;
 import android.os.Parcel;
 
-import androidx.test.InstrumentationRegistry;
-import androidx.test.runner.AndroidJUnit4;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+/** Test cases for {@link HfpClientCall}. */
 @RunWith(AndroidJUnit4.class)
 public class HfpClientCallTest {
-    private static final String TEST_DEVICE_ADDRESS = "00:11:22:33:44:55";
-    private static final BluetoothDevice TEST_DEVICE =
-            ((BluetoothManager)
-                            InstrumentationRegistry.getTargetContext()
-                                    .getSystemService(Context.BLUETOOTH_SERVICE))
-                    .getAdapter()
-                    .getRemoteDevice(TEST_DEVICE_ADDRESS);
     private static final int TEST_ID = 0;
     private static final String TEST_NUMBER = "000-111-2222";
     private static final String TEST_NUMBER_2 = "111-222-3333";
 
-    private void assertCall(
+    private final BluetoothDevice mDevice = getTestDevice(32);
+
+    private static void assertCall(
             BluetoothDevice device,
             int id,
             int state,
@@ -69,7 +65,7 @@ public class HfpClientCallTest {
     public void testCreateActiveCall() {
         HfpClientCall call =
                 new HfpClientCall(
-                        /* device= */ TEST_DEVICE,
+                        /* device= */ mDevice,
                         /* call id= */ TEST_ID,
                         /* call state= */ HfpClientCall.CALL_STATE_ACTIVE,
                         /* phone number= */ TEST_NUMBER,
@@ -77,7 +73,7 @@ public class HfpClientCallTest {
                         /* outgoing= */ true,
                         /* inBandRing= */ false);
         assertCall(
-                TEST_DEVICE,
+                mDevice,
                 TEST_ID,
                 HfpClientCall.CALL_STATE_ACTIVE,
                 TEST_NUMBER,
@@ -91,7 +87,7 @@ public class HfpClientCallTest {
     public void testCreateHeldCall() {
         HfpClientCall call =
                 new HfpClientCall(
-                        /* device= */ TEST_DEVICE,
+                        /* device= */ mDevice,
                         /* call id= */ TEST_ID,
                         /* call state= */ HfpClientCall.CALL_STATE_HELD,
                         /* phone number= */ TEST_NUMBER,
@@ -99,7 +95,7 @@ public class HfpClientCallTest {
                         /* outgoing= */ true,
                         /* inBandRing= */ false);
         assertCall(
-                TEST_DEVICE,
+                mDevice,
                 TEST_ID,
                 HfpClientCall.CALL_STATE_HELD,
                 TEST_NUMBER,
@@ -113,7 +109,7 @@ public class HfpClientCallTest {
     public void testCreateDialingCall() {
         HfpClientCall call =
                 new HfpClientCall(
-                        /* device= */ TEST_DEVICE,
+                        /* device= */ mDevice,
                         /* call id= */ TEST_ID,
                         /* call state= */ HfpClientCall.CALL_STATE_DIALING,
                         /* phone number= */ TEST_NUMBER,
@@ -121,7 +117,7 @@ public class HfpClientCallTest {
                         /* outgoing= */ true,
                         /* inBandRing= */ false);
         assertCall(
-                TEST_DEVICE,
+                mDevice,
                 TEST_ID,
                 HfpClientCall.CALL_STATE_DIALING,
                 TEST_NUMBER,
@@ -135,7 +131,7 @@ public class HfpClientCallTest {
     public void testCreateAlertingCall() {
         HfpClientCall call =
                 new HfpClientCall(
-                        /* device= */ TEST_DEVICE,
+                        /* device= */ mDevice,
                         /* call id= */ TEST_ID,
                         /* call state= */ HfpClientCall.CALL_STATE_ALERTING,
                         /* phone number= */ TEST_NUMBER,
@@ -143,7 +139,7 @@ public class HfpClientCallTest {
                         /* outgoing= */ true,
                         /* inBandRing= */ false);
         assertCall(
-                TEST_DEVICE,
+                mDevice,
                 TEST_ID,
                 HfpClientCall.CALL_STATE_ALERTING,
                 TEST_NUMBER,
@@ -157,7 +153,7 @@ public class HfpClientCallTest {
     public void testCreateIncomingCall() {
         HfpClientCall call =
                 new HfpClientCall(
-                        /* device= */ TEST_DEVICE,
+                        /* device= */ mDevice,
                         /* call id= */ TEST_ID,
                         /* call state= */ HfpClientCall.CALL_STATE_INCOMING,
                         /* phone number= */ TEST_NUMBER,
@@ -165,7 +161,7 @@ public class HfpClientCallTest {
                         /* outgoing= */ false,
                         /* inBandRing= */ false);
         assertCall(
-                TEST_DEVICE,
+                mDevice,
                 TEST_ID,
                 HfpClientCall.CALL_STATE_INCOMING,
                 TEST_NUMBER,
@@ -179,7 +175,7 @@ public class HfpClientCallTest {
     public void testCreateWaitingCall() {
         HfpClientCall call =
                 new HfpClientCall(
-                        /* device= */ TEST_DEVICE,
+                        /* device= */ mDevice,
                         /* call id= */ TEST_ID,
                         /* call state= */ HfpClientCall.CALL_STATE_WAITING,
                         /* phone number= */ TEST_NUMBER,
@@ -187,7 +183,7 @@ public class HfpClientCallTest {
                         /* outgoing= */ false,
                         /* inBandRing= */ false);
         assertCall(
-                TEST_DEVICE,
+                mDevice,
                 TEST_ID,
                 HfpClientCall.CALL_STATE_WAITING,
                 TEST_NUMBER,
@@ -201,7 +197,7 @@ public class HfpClientCallTest {
     public void testCreateHeldByResponseAndHoldCall() {
         HfpClientCall call =
                 new HfpClientCall(
-                        /* device= */ TEST_DEVICE,
+                        /* device= */ mDevice,
                         /* call id= */ TEST_ID,
                         /* call state= */ HfpClientCall.CALL_STATE_HELD_BY_RESPONSE_AND_HOLD,
                         /* phone number= */ TEST_NUMBER,
@@ -209,7 +205,7 @@ public class HfpClientCallTest {
                         /* outgoing= */ false,
                         /* inBandRing= */ false);
         assertCall(
-                TEST_DEVICE,
+                mDevice,
                 TEST_ID,
                 HfpClientCall.CALL_STATE_HELD_BY_RESPONSE_AND_HOLD,
                 TEST_NUMBER,
@@ -223,7 +219,7 @@ public class HfpClientCallTest {
     public void testCreateTerminatedCall() {
         HfpClientCall call =
                 new HfpClientCall(
-                        /* device= */ TEST_DEVICE,
+                        /* device= */ mDevice,
                         /* call id= */ TEST_ID,
                         /* call state= */ HfpClientCall.CALL_STATE_TERMINATED,
                         /* phone number= */ TEST_NUMBER,
@@ -231,7 +227,7 @@ public class HfpClientCallTest {
                         /* outgoing= */ false,
                         /* inBandRing= */ false);
         assertCall(
-                TEST_DEVICE,
+                mDevice,
                 TEST_ID,
                 HfpClientCall.CALL_STATE_TERMINATED,
                 TEST_NUMBER,
@@ -245,7 +241,7 @@ public class HfpClientCallTest {
     public void testSetState() {
         HfpClientCall call =
                 new HfpClientCall(
-                        /* device= */ TEST_DEVICE,
+                        /* device= */ mDevice,
                         /* call id= */ TEST_ID,
                         /* call state= */ HfpClientCall.CALL_STATE_ACTIVE,
                         /* phone number= */ TEST_NUMBER,
@@ -254,7 +250,7 @@ public class HfpClientCallTest {
                         /* inBandRing= */ false);
 
         assertCall(
-                TEST_DEVICE,
+                mDevice,
                 TEST_ID,
                 HfpClientCall.CALL_STATE_ACTIVE,
                 TEST_NUMBER,
@@ -266,7 +262,7 @@ public class HfpClientCallTest {
         call.setState(HfpClientCall.CALL_STATE_HELD);
 
         assertCall(
-                TEST_DEVICE,
+                mDevice,
                 TEST_ID,
                 HfpClientCall.CALL_STATE_HELD,
                 TEST_NUMBER,
@@ -280,7 +276,7 @@ public class HfpClientCallTest {
     public void testSetNumber() {
         HfpClientCall call =
                 new HfpClientCall(
-                        /* device= */ TEST_DEVICE,
+                        /* device= */ mDevice,
                         /* call id= */ TEST_ID,
                         /* call state= */ HfpClientCall.CALL_STATE_ACTIVE,
                         /* phone number= */ TEST_NUMBER,
@@ -289,7 +285,7 @@ public class HfpClientCallTest {
                         /* inBandRing= */ false);
 
         assertCall(
-                TEST_DEVICE,
+                mDevice,
                 TEST_ID,
                 HfpClientCall.CALL_STATE_ACTIVE,
                 TEST_NUMBER,
@@ -301,7 +297,7 @@ public class HfpClientCallTest {
         call.setNumber(TEST_NUMBER_2);
 
         assertCall(
-                TEST_DEVICE,
+                mDevice,
                 TEST_ID,
                 HfpClientCall.CALL_STATE_ACTIVE,
                 TEST_NUMBER_2,
@@ -315,7 +311,7 @@ public class HfpClientCallTest {
     public void testSetMultiParty() {
         HfpClientCall call =
                 new HfpClientCall(
-                        /* device= */ TEST_DEVICE,
+                        /* device= */ mDevice,
                         /* call id= */ TEST_ID,
                         /* call state= */ HfpClientCall.CALL_STATE_ACTIVE,
                         /* phone number= */ TEST_NUMBER,
@@ -324,7 +320,7 @@ public class HfpClientCallTest {
                         /* inBandRing= */ false);
 
         assertCall(
-                TEST_DEVICE,
+                mDevice,
                 TEST_ID,
                 HfpClientCall.CALL_STATE_ACTIVE,
                 TEST_NUMBER,
@@ -336,7 +332,7 @@ public class HfpClientCallTest {
         call.setMultiParty(true);
 
         assertCall(
-                TEST_DEVICE,
+                mDevice,
                 TEST_ID,
                 HfpClientCall.CALL_STATE_ACTIVE,
                 TEST_NUMBER,
@@ -348,9 +344,11 @@ public class HfpClientCallTest {
 
     @Test
     public void testParcelable() {
+        final BluetoothDevice device = getRealDevice("01:23:45:67:89:AB");
+
         HfpClientCall call =
                 new HfpClientCall(
-                        /* device= */ TEST_DEVICE,
+                        /* device= */ device,
                         /* call id= */ TEST_ID,
                         /* call state= */ HfpClientCall.CALL_STATE_ACTIVE,
                         /* phone number= */ TEST_NUMBER,
@@ -359,7 +357,7 @@ public class HfpClientCallTest {
                         /* inBandRing= */ false);
 
         assertCall(
-                TEST_DEVICE,
+                device,
                 TEST_ID,
                 HfpClientCall.CALL_STATE_ACTIVE,
                 TEST_NUMBER,
@@ -375,7 +373,7 @@ public class HfpClientCallTest {
         parcel.recycle();
 
         assertCall(
-                TEST_DEVICE,
+                device,
                 TEST_ID,
                 HfpClientCall.CALL_STATE_ACTIVE,
                 TEST_NUMBER,

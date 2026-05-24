@@ -23,6 +23,7 @@
 // Mock include file to share data between tests and mock
 #include "test/mock/mock_btif_hf.h"
 
+#include "btif/include/btif_hf.h"
 #include "test/common/mock_functions.h"
 
 // Original usings
@@ -35,6 +36,8 @@ namespace btif_hf {
 
 // Function state capture and return values, if needed
 struct GetInterface GetInterface;
+struct IsCallIdle IsCallIdle;
+struct IsDuringVoiceRecognition IsDuringVoiceRecognition;
 }  // namespace btif_hf
 }  // namespace mock
 }  // namespace test
@@ -45,6 +48,16 @@ namespace headset {
 Interface* GetInterface() {
   inc_func_call_count(__func__);
   return test::mock::btif_hf::GetInterface();
+}
+
+bool IsCallIdle() {
+  inc_func_call_count(__func__);
+  return test::mock::btif_hf::IsCallIdle();
+}
+
+bool IsDuringVoiceRecognition(RawAddress bd_addr) {
+  inc_func_call_count(__func__);
+  return test::mock::btif_hf::IsDuringVoiceRecognition(bd_addr);
 }
 }  // namespace headset
 }  // namespace bluetooth

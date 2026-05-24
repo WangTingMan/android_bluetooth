@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,55 +16,64 @@
 
 #define LOG_TAG "BluetoothQualityReportJni"
 
-#include <string.h>
+#include <bluetooth/log.h>
+#include <bluetooth/types/address.h>
+#include <jni.h>
+#include <nativehelper/scoped_local_ref.h>
 
+#include <cstdint>
+#include <cstring>
+#include <mutex>
 #include <shared_mutex>
+#include <vector>
 
 #include "com_android_bluetooth.h"
-#include "common/init_flags.h"
+#include "hardware/bluetooth.h"
 #include "hardware/bt_bqr.h"
 
-using bluetooth::bqr::BluetoothQualityReportCallbacks;
 using bluetooth::bqr::BluetoothQualityReportInterface;
 
 namespace android {
 static jmethodID method_bqrDeliver;
 
-static BluetoothQualityReportInterface* sBluetoothQualityReportInterface =
-    nullptr;
+static BluetoothQualityReportInterface* sBluetoothQualityReportInterface = nullptr;
 static std::shared_timed_mutex interface_mutex;
 
 static jobject mCallbacksObj = nullptr;
 static std::shared_timed_mutex callbacks_mutex;
 
-class BluetoothQualityReportCallbacksImpl
-    : public bluetooth::bqr::BluetoothQualityReportCallbacks {
- public:
+class BluetoothQualityReportCallbacksImpl : public bluetooth::bqr::BluetoothQualityReportCallbacks {
+public:
   ~BluetoothQualityReportCallbacksImpl() = default;
 
-  void bqr_delivery_callback(const RawAddress bd_addr, uint8_t lmp_ver,
-                             uint16_t lmp_subver, uint16_t manufacturer_id,
-                             std::vector<uint8_t> bqr_raw_data) override {
+  void bqr_delivery_callback(const RawAddress bd_addr, uint8_t lmp_ver, uint16_t lmp_subver,
+                             uint16_t manufacturer_id, std::vector<uint8_t> bqr_raw_data) override {
     log::info("");
     std::shared_lock<std::shared_timed_mutex> lock(callbacks_mutex);
 
     CallbackEnv sCallbackEnv(__func__);
-    if (!sCallbackEnv.valid()) return;
-    if (method_bqrDeliver == NULL) return;
-    if (mCallbacksObj == nullptr) return;
+    if (!sCallbackEnv.valid()) {
+      return;
+    }
+    if (method_bqrDeliver == NULL) {
+      return;
+    }
+    if (mCallbacksObj == nullptr) {
+      return;
+    }
 
-    ScopedLocalRef<jbyteArray> addr(
-        sCallbackEnv.get(), sCallbackEnv->NewByteArray(sizeof(RawAddress)));
+    ScopedLocalRef<jbyteArray> addr(sCallbackEnv.get(),
+                                    sCallbackEnv->NewByteArray(sizeof(RawAddress)));
     if (!addr.get()) {
       log::error("Error while allocation byte array for addr");
       return;
     }
 
     sCallbackEnv->SetByteArrayRegion(addr.get(), 0, sizeof(RawAddress),
-                                     (jbyte*)bd_addr.address);
+                                     (jbyte*)bd_addr.address.data());
 
-    ScopedLocalRef<jbyteArray> raw_data(
-        sCallbackEnv.get(), sCallbackEnv->NewByteArray(bqr_raw_data.size()));
+    ScopedLocalRef<jbyteArray> raw_data(sCallbackEnv.get(),
+                                        sCallbackEnv->NewByteArray(bqr_raw_data.size()));
     if (!raw_data.get()) {
       log::error("Error while allocation byte array for bqr raw data");
       return;
@@ -72,9 +81,8 @@ class BluetoothQualityReportCallbacksImpl
     sCallbackEnv->SetByteArrayRegion(raw_data.get(), 0, bqr_raw_data.size(),
                                      (jbyte*)bqr_raw_data.data());
 
-    sCallbackEnv->CallVoidMethod(mCallbacksObj, method_bqrDeliver, addr.get(),
-                                 (jint)lmp_ver, (jint)lmp_subver,
-                                 (jint)manufacturer_id, raw_data.get());
+    sCallbackEnv->CallVoidMethod(mCallbacksObj, method_bqrDeliver, addr.get(), (jint)lmp_ver,
+                                 (jint)lmp_subver, (jint)manufacturer_id, raw_data.get());
   }
 };
 
@@ -91,8 +99,7 @@ static void initNative(JNIEnv* env, jobject object) {
   }
 
   if (sBluetoothQualityReportInterface != nullptr) {
-    log::info(
-        "Cleaning up BluetoothQualityReport Interface before initializing...");
+    log::info("Cleaning up BluetoothQualityReport Interface before initializing...");
     sBluetoothQualityReportInterface = nullptr;
   }
 
@@ -103,13 +110,12 @@ static void initNative(JNIEnv* env, jobject object) {
   }
 
   if ((mCallbacksObj = env->NewGlobalRef(object)) == nullptr) {
-    log::error(
-        "Failed to allocate Global Ref for BluetoothQualityReport Callbacks");
+    log::error("Failed to allocate Global Ref for BluetoothQualityReport Callbacks");
     return;
   }
 
   sBluetoothQualityReportInterface =
-      (BluetoothQualityReportInterface*)btInf->get_profile_interface(BT_BQR_ID);
+          (BluetoothQualityReportInterface*)btInf->get_profile_interface(BT_BQR_ID);
   if (sBluetoothQualityReportInterface == nullptr) {
     log::error("Failed to get BluetoothQualityReport Interface");
     return;
@@ -138,27 +144,22 @@ static void cleanupNative(JNIEnv* env, jobject /* object */) {
   }
 }
 
-int register_com_android_bluetooth_btservice_BluetoothQualityReport(
-    JNIEnv* env) {
+int register_com_android_bluetooth_btservice_BluetoothQualityReport(JNIEnv* env) {
   const JNINativeMethod methods[] = {
-      {"initNative", "()V", (void*)initNative},
-      {"cleanupNative", "()V", (void*)cleanupNative},
+          {"initNative", "()V", (void*)initNative},
+          {"cleanupNative", "()V", (void*)cleanupNative},
   };
   const int result = REGISTER_NATIVE_METHODS(
-      env,
-      "com/android/bluetooth/btservice/BluetoothQualityReportNativeInterface",
-      methods);
+          env, "com/android/bluetooth/btservice/BluetoothQualityReportNativeInterface", methods);
   if (result != 0) {
     return result;
   }
 
   const JNIJavaMethod javaMethods[] = {
-      {"bqrDeliver", "([BIII[B)V", &method_bqrDeliver},
+          {"bqrDeliver", "([BIII[B)V", &method_bqrDeliver},
   };
-  GET_JAVA_METHODS(
-      env,
-      "com/android/bluetooth/btservice/BluetoothQualityReportNativeInterface",
-      javaMethods);
+  GET_JAVA_METHODS(env, "com/android/bluetooth/btservice/BluetoothQualityReportNativeInterface",
+                   javaMethods);
 
   return 0;
 }

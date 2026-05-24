@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.audio_util;
 
 import android.content.Context;
@@ -34,7 +35,7 @@ import java.io.InputStream;
  * determine image equality in an application/folder/item agnostic way.
  */
 public class Image {
-    private static final String TAG = "Image";
+    private static final String TAG = Image.class.getSimpleName();
 
     public static int SOURCE_NONE = 0;
     public static int SOURCE_URI = 1;
@@ -60,7 +61,7 @@ public class Image {
         Bitmap bmp_album_art = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
         Bitmap bmp_icon = metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON);
 
-        if (mContext != null && Util.areUriImagesSupported(mContext)) {
+        if (Util.areUriImagesSupported()) {
             uri_art = metadata.getString(MediaMetadata.METADATA_KEY_ART_URI);
             uri_album_art = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI);
             uri_icon = metadata.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI);
@@ -92,7 +93,7 @@ public class Image {
         Bitmap bmp_album_art = bundle.getParcelable(MediaMetadata.METADATA_KEY_ALBUM_ART);
         Bitmap bmp_icon = bundle.getParcelable(MediaMetadata.METADATA_KEY_DISPLAY_ICON);
 
-        if (mContext != null && Util.areUriImagesSupported(mContext)) {
+        if (Util.areUriImagesSupported()) {
             uri_art = bundle.getString(MediaMetadata.METADATA_KEY_ART_URI);
             uri_album_art = bundle.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI);
             uri_icon = bundle.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI);

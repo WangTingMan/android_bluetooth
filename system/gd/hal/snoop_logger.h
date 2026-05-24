@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 #pragma once
 
 #include <bluetooth/log.h>
+#include <com_android_bluetooth_flags.h>
 
 #include <fstream>
 #include <string>
@@ -26,12 +27,12 @@
 
 #include "common/circular_buffer.h"
 #include "hal/hci_hal.h"
-#include "hal/snoop_logger_socket_interface.h" 
-#ifndef _MSC_VER
+#include "hal/snoop_logger_file.h"
+#include "hal/snoop_logger_socket_interface.h"
 #include "hal/snoop_logger_socket_thread.h"
 #include "hal/syscall_wrapper_impl.h"
-#endif
-#include "module.h"
+#include "hci/hci_packets.h"
+#include "os/handler.h"
 #include "os/repeating_alarm.h"
 
 namespace bluetooth {
@@ -42,7 +43,7 @@ static uint64_t file_creation_time;
 #endif
 
 class FilterTracker {
- public:
+public:
   // NOTE: 1 is used as a static CID for L2CAP signaling
   std::unordered_set<uint16_t> l2c_local_cid = {1};
   std::unordered_set<uint16_t> l2c_remote_cid = {1};
@@ -78,7 +79,7 @@ typedef enum {
 } profile_type_t;
 
 class ProfilesFilter {
- public:
+public:
   void SetupProfilesFilter(bool pbap_filtered, bool map_filtered);
 
   bool IsHfpProfile(bool local, uint16_t cid, uint8_t dlci);
@@ -95,13 +96,13 @@ class ProfilesFilter {
 
   profile_type_t DlciToProfile(bool local, uint16_t cid, uint8_t dlci);
 
-  void ProfileL2capOpen(
-      profile_type_t profile, uint16_t lcid, uint16_t rcid, uint16_t psm, bool flow_ext);
+  void ProfileL2capOpen(profile_type_t profile, uint16_t lcid, uint16_t rcid, uint16_t psm,
+                        bool flow_ext);
 
   void ProfileL2capClose(profile_type_t profile);
 
-  void ProfileRfcommOpen(
-      profile_type_t profile, uint16_t lcid, uint8_t dlci, uint16_t uuid, bool flow_ext);
+  void ProfileRfcommOpen(profile_type_t profile, uint16_t lcid, uint8_t dlci, uint16_t uuid,
+                         bool flow_ext);
 
   void ProfileRfcommClose(profile_type_t profile);
 
@@ -129,7 +130,7 @@ class ProfilesFilter {
   uint16_t ch_rfc_l, ch_rfc_r;  // local & remote L2CAP channel for RFCOMM
   uint16_t ch_last;             // last channel seen for fragment packet
 
- private:
+private:
   bool setup_done_flag = false;
   struct {
     profile_type_t type;
@@ -141,12 +142,10 @@ class ProfilesFilter {
   profile_type_t current_profile;
 };
 
-class SnoopLogger : public ::bluetooth::Module {
- public:
-  static const ModuleFactory Factory;
-
+class SnoopLogger {
+public:
   static const std::string kBtSnoopMaxPacketsPerFileProperty;
-  static const std::string kIsDebuggableProperty;
+  static const std::string kRoBuildType;
   static const std::string kBtSnoopLogModeProperty;
   static const std::string kBtSnoopLogPersists;
   static const std::string kBtSnoopDefaultLogModeProperty;
@@ -157,6 +156,7 @@ class SnoopLogger : public ::bluetooth::Module {
   static const std::string kBtSnoopLogFilterProfileRfcommProperty;
   static const std::string kSoCManufacturerProperty;
 
+  static const std::string kBtSnoopLogModeKernel;
   static const std::string kBtSnoopLogModeDisabled;
   static const std::string kBtSnoopLogModeFiltered;
   static const std::string kBtSnoopLogModeFull;
@@ -169,24 +169,14 @@ class SnoopLogger : public ::bluetooth::Module {
   static const std::string kBtSnoopLogFilterProfileModeDisabled;
 
   std::unordered_map<std::string, bool> kBtSnoopLogFilterState = {
-      {kBtSnoopLogFilterHeadersProperty, false},
-      {kBtSnoopLogFilterProfileA2dpProperty, false},
-      {kBtSnoopLogFilterProfileRfcommProperty, false}};
+          {kBtSnoopLogFilterHeadersProperty, false},
+          {kBtSnoopLogFilterProfileA2dpProperty, false},
+          {kBtSnoopLogFilterProfileRfcommProperty, false}};
 
   std::unordered_map<std::string, std::string> kBtSnoopLogFilterMode = {
-      {kBtSnoopLogFilterProfilePbapModeProperty, kBtSnoopLogFilterProfileModeDisabled},
-      {kBtSnoopLogFilterProfileMapModeProperty, kBtSnoopLogFilterProfileModeDisabled}};
-#pragma pack(1)
-  // Put in header for test
-  struct PacketHeaderType {
-    uint32_t length_original;
-    uint32_t length_captured;
-    uint32_t flags;
-    uint32_t dropped_packets;
-    uint64_t timestamp;
-    uint8_t type;
-  } /*__attribute__((__packed__))*/;
-#pragma pack()
+          {kBtSnoopLogFilterProfilePbapModeProperty, kBtSnoopLogFilterProfileModeDisabled},
+          {kBtSnoopLogFilterProfileMapModeProperty, kBtSnoopLogFilterProfileModeDisabled}};
+
   // Struct for caching info about L2CAP Media Channel
   struct A2dpMediaChannel {
     uint16_t conn_handle;
@@ -194,15 +184,19 @@ class SnoopLogger : public ::bluetooth::Module {
     uint16_t remote_cid;
   };
 
+  SnoopLogger(os::Handler* handler);
+  ~SnoopLogger();
+
+  os::Handler* GetHandler();
+
   // Returns the maximum number of packets per file
   // Changes to this value is only effective after restarting Bluetooth
   static size_t GetMaxPacketsPerFile();
 
   static size_t GetMaxPacketsPerBuffer();
 
-  // Get snoop logger mode based on current system setup
-  // Changes to this values is only effective after restarting Bluetooth
-  static std::string GetBtSnoopMode();
+  // Get current snoop logger mode
+  std::string GetCurrentSnoopMode();
 
   // Returns whether the soc manufacturer is Qualcomm
   // Changes to this value is only effective after restarting Bluetooth
@@ -233,7 +227,7 @@ class SnoopLogger : public ::bluetooth::Module {
 
   // Set a RFCOMM dlci as acceptlisted, allowing packets with that RFCOMM CID
   // to show up in the snoop logs. The local_cid is used to associate it with
-  // its corrisponding ACL connection. The dlci is the channel with direction
+  // its corresponding ACL connection. The dlci is the channel with direction
   // so there is no chance of a collision if two services are using the same
   // channel but in different directions.
   void AcceptlistRfcommDlci(uint16_t conn_handle, uint16_t local_cid, uint8_t dlci);
@@ -253,20 +247,25 @@ class SnoopLogger : public ::bluetooth::Module {
   void RemoveA2dpMediaChannel(uint16_t conn_handle, uint16_t local_cid);
 
   // New RFCOMM port is opened.
-  void SetRfcommPortOpen(
-      uint16_t conn_handle, uint16_t local_cid, uint8_t dlci, uint16_t uuid, bool flow);
+  void SetRfcommPortOpen(uint16_t conn_handle, uint16_t local_cid, uint8_t dlci, uint16_t uuid,
+                         bool flow);
   // RFCOMM port is closed.
   void SetRfcommPortClose(uint16_t handle, uint16_t local_cid, uint8_t dlci, uint16_t uuid);
 
   // New L2CAP channel is opened.
-  void SetL2capChannelOpen(
-      uint16_t handle, uint16_t local_cid, uint16_t remote_cid, uint16_t psm, bool flow);
+  void SetL2capChannelOpen(uint16_t handle, uint16_t local_cid, uint16_t remote_cid, uint16_t psm,
+                           bool flow);
   // L2CAP channel is closed.
   void SetL2capChannelClose(uint16_t handle, uint16_t local_cid, uint16_t remote_cid);
 
   void RegisterSocket(SnoopLoggerSocketInterface* socket);
 
- protected:
+  // Dump the contents of the snooz buffer to a file.
+  void DumpSnoozLogToFile();
+#ifndef _MSC_VER
+  SnoopLoggerSocketThread const* GetSocketThread() { return snoop_logger_socket_thread_.get(); }
+#endif
+protected:
   // Packet type length
   static const size_t PACKET_TYPE_LENGTH;
   // The size of the L2CAP header. All information past this point is removed from
@@ -275,27 +274,13 @@ class SnoopLogger : public ::bluetooth::Module {
   // Max packet data size when headersfiltered option enabled
   static const size_t MAX_HCI_ACL_LEN;
 
-  void ListDependencies(ModuleList* list) const override;
-  void Start() override;
-  void Stop() override;
-  DumpsysDataFinisher GetDumpsysData(flatbuffers::FlatBufferBuilder* builder) const override;
-  std::string ToString() const override {
-    return std::string("SnoopLogger");
-  }
+  SnoopLogger(os::Handler* handler, std::string snoop_log_path, std::string snooz_log_path,
+              size_t max_packets_per_file, size_t max_packets_per_buffer,
+              const std::string& btsnoop_mode, bool qualcomm_debug_log_enabled,
+              const std::chrono::milliseconds snooz_log_life_time,
+              const std::chrono::milliseconds snooz_log_delete_alarm_interval,
+              bool snoop_log_persists, int port = SnoopLoggerSocket::kDefaultPort);
 
-  SnoopLogger(
-      std::string snoop_log_path,
-      std::string snooz_log_path,
-      size_t max_packets_per_file,
-      size_t max_packets_per_buffer,
-      const std::string& btsnoop_mode,
-      bool qualcomm_debug_log_enabled,
-      const std::chrono::milliseconds snooz_log_life_time,
-      const std::chrono::milliseconds snooz_log_delete_alarm_interval,
-      bool snoop_log_persists);
-  void CloseCurrentSnoopLogFile();
-  void OpenNextSnoopLogFile();
-  void DumpSnoozLogToFile(const std::vector<std::string>& data) const;
   // Enable filters according to their sysprops
   void EnableFilters();
   // Disable all filters
@@ -307,45 +292,37 @@ class SnoopLogger : public ::bluetooth::Module {
   // Calculate packet length (snoopheadersfiltered mode)
   void CalculateAclPacketLength(uint32_t& length, uint8_t* packet, bool is_received);
   // Strip packet's payload (profilesfiltered mode)
-  uint32_t PayloadStrip(
-      profile_type_t current_profile, uint8_t* packet, uint32_t hdr_len, uint32_t pl_len);
+  uint32_t PayloadStrip(profile_type_t current_profile, uint8_t* packet, uint32_t hdr_len,
+                        uint32_t pl_len);
   // Filter profile packet according to its filtering mode
   uint32_t FilterProfiles(bool is_received, uint8_t* packet);
   // Check if packet is A2DP media packet (a2dppktsfiltered mode)
   bool IsA2dpMediaPacket(bool is_received, uint8_t* packet);
-  // Chec if channel is cached in snoop logger for filtering (a2dppktsfiltered mode)
+  // Check if channel is cached in snoop logger for filtering (a2dppktsfiltered mode)
   bool IsA2dpMediaChannel(uint16_t conn_handle, uint16_t cid, bool is_local_cid);
   // Handle HFP filtering while profilesfiltered enabled
-  uint32_t FilterProfilesHandleHfp(
-      uint8_t* packet, uint32_t length, uint32_t totlen, uint32_t offset);
-  void FilterProfilesRfcommChannel(
-      uint8_t* packet,
-      uint8_t& current_offset,
-      uint32_t& length,
-      profile_type_t& current_profile,
-      bluetooth::hal::ProfilesFilter& filters,
-      bool is_received,
-      uint16_t l2cap_channel,
-      uint32_t& offset,
-      uint32_t total_length);
-  void FilterCapturedPacket(
-      HciPacket& packet,
-      Direction direction,
-      PacketType type,
-      uint32_t& length,
-      PacketHeaderType header);
+  uint32_t FilterProfilesHandleHfp(uint8_t* packet, uint32_t length, uint32_t totlen,
+                                   uint32_t offset);
+  void FilterProfilesRfcommChannel(uint8_t* packet, uint8_t& current_offset, uint32_t& length,
+                                   profile_type_t& current_profile,
+                                   bluetooth::hal::ProfilesFilter& filters, bool is_received,
+                                   uint16_t l2cap_channel, uint32_t& offset, uint32_t total_length);
+  void FilterCapturedPacket(HciPacket& packet, Direction direction, PacketType type,
+                            uint32_t& length, SnoopLoggerFile::PacketHeaderType header);
 #ifndef _MSC_VER
   std::unique_ptr<SnoopLoggerSocketThread> snoop_logger_socket_thread_;
 #endif
- private:
-  static std::string btsnoop_mode_;
-  std::string snoop_log_path_;
+#ifdef __ANDROID__
+  void LogTracePoint(const HciPacket& packet, Direction direction, PacketType type);
+#endif  // __ANDROID__
+
+private:
+  os::Handler* handler_;
+  std::string btsnoop_mode_;
   std::string snooz_log_path_;
-  std::ofstream btsnoop_ostream_;
-  size_t max_packets_per_file_;
+  std::unique_ptr<SnoopLoggerFile> btsnoop_file_;
   common::CircularBuffer<std::string> btsnooz_buffer_;
   bool qualcomm_debug_log_enabled_ = false;
-  size_t packet_counter_ = 0;
   mutable std::recursive_mutex file_mutex_;
   std::unique_ptr<os::RepeatingAlarm> alarm_;
   std::chrono::milliseconds snooz_log_life_time_;
@@ -355,13 +332,16 @@ class SnoopLogger : public ::bluetooth::Module {
   SyscallWrapperImpl syscall_if;
 #endif
   bool snoop_log_persists = false;
+  int port_ = SnoopLoggerSocket::kDefaultPort;
+
+  friend class SnoopLoggerTest;
 };
 
 }  // namespace hal
 }  // namespace bluetooth
 
-namespace fmt {
+namespace std {
 template <>
 struct formatter<bluetooth::hal::profile_type_t> : enum_formatter<bluetooth::hal::profile_type_t> {
 };
-}  // namespace fmt
+}  // namespace std

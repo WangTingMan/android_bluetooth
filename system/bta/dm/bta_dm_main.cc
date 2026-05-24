@@ -21,13 +21,13 @@
  *  This is the main implementation file for the BTA device manager.
  *
  ******************************************************************************/
-#include <base/strings/stringprintf.h>
 #include <stddef.h>
 
 #include "bta/dm/bta_dm_device_search.h"
 #include "bta/dm/bta_dm_disc.h"
 #include "bta/dm/bta_dm_gatt_client.h"
 #include "bta/dm/bta_dm_int.h"
+#include "bta/dm/bta_dm_pm_offload.h"
 #include "bta/dm/bta_dm_sec_int.h"
 #include "main/shim/dumpsys.h"
 
@@ -43,5 +43,8 @@ void DumpsysBtaDm(int fd) {
   DumpsysBtaDmDisc(fd);
   DumpsysBtaDmSearch(fd);
   DumpsysBtaDmGattClient(fd);
+  if (com_android_bluetooth_flags_sniff_offload_with_vsc_based_control()) {
+    DumpsysBtaDmPmOffload(fd);
+  }
 }
 #undef DUMPSYS_TAG

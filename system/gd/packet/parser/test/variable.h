@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2019 The Android Open Source Project
+ *  Copyright (C) 2019 The Android Open Source Project
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
 #pragma once
 
 #include <stdint.h>
+
 #include <optional>
 #include <sstream>
 #include <string>
@@ -32,7 +33,7 @@ namespace parser {
 namespace test {
 
 class Variable final {
- public:
+public:
   std::string data;
 
   Variable() = default;
@@ -44,7 +45,8 @@ class Variable final {
   size_t size() const;
 
   template <bool little_endian>
-  static std::optional<Iterator<little_endian>> Parse(Variable* instance, Iterator<little_endian> it) {
+  static std::optional<Iterator<little_endian>> Parse(Variable* instance,
+                                                      Iterator<little_endian> it) {
     if (it.NumBytesRemaining() < 1) {
       return {};
     }
@@ -63,9 +65,7 @@ class Variable final {
     return it;
   }
 
-  std::string ToString() const {
-    return data;
-  }
+  std::string ToString() const { return data; }
 };
 
 }  // namespace test

@@ -16,8 +16,9 @@
  *
  ******************************************************************************/
 
-#ifndef BTIF_DM_H
-#define BTIF_DM_H
+#pragma once
+
+#include <bluetooth/types/address.h>
 
 #include "bta/include/bta_api.h"
 #include "bta/include/bta_sec_api.h"
@@ -25,7 +26,7 @@
 #include "hci/le_rand_callback.h"
 #include "internal_include/bt_target.h"
 #include "internal_include/bte_appl.h"
-#include "types/raw_address.h"
+#include "stack/include/acl_api_types.h"
 
 /*******************************************************************************
  *  Constants & Macros
@@ -76,8 +77,8 @@ void btif_dm_proc_io_req(tBTM_AUTH_REQ* p_auth_req, bool is_orig);
 /**
  * Callout for handling io_capabilities response
  */
-void btif_dm_proc_io_rsp(const RawAddress& bd_addr, tBTM_IO_CAP io_cap,
-                         tBTM_OOB_DATA oob_data, tBTM_AUTH_REQ auth_req);
+void btif_dm_proc_io_rsp(const RawAddress& bd_addr, tBTM_IO_CAP io_cap, tBTM_OOB_DATA oob_data,
+                         tBTM_AUTH_REQ auth_req);
 
 /**
  * Device Configuration Queries
@@ -88,40 +89,46 @@ DEV_CLASS btif_dm_get_local_class_of_device();
  * Out-of-band functions
  */
 void btif_dm_set_oob_for_io_req(tBTM_OOB_DATA* p_oob_data);
-void btif_dm_set_oob_for_le_io_req(const RawAddress& bd_addr,
-                                   tBTM_OOB_DATA* p_oob_data,
+void btif_dm_set_oob_for_le_io_req(const RawAddress& bd_addr, tBTM_OOB_DATA* p_oob_data,
                                    tBTM_LE_AUTH_REQ* p_auth_req);
 void btif_dm_load_local_oob(void);
-void btif_dm_proc_loc_oob(tBT_TRANSPORT transport, bool is_valid,
-                          const Octet16& c, const Octet16& r);
-bool btif_dm_proc_rmt_oob(const RawAddress& bd_addr, Octet16* p_c,
-                          Octet16* p_r);
+void btif_dm_proc_loc_oob(tBT_TRANSPORT transport, bool is_valid, const Octet16& c,
+                          const Octet16& r);
+bool btif_dm_proc_rmt_oob(const RawAddress& bd_addr, Octet16* p_c, Octet16* p_r);
 void btif_dm_generate_local_oob_data(tBT_TRANSPORT transport);
 
 void btif_check_device_in_inquiry_db(const RawAddress& address);
+bool btif_get_address_type(const RawAddress& bda, tBLE_ADDR_TYPE* p_addr_type);
+bool btif_get_device_type(const RawAddress& bda, int* p_device_type);
 
 void btif_dm_clear_event_filter();
-
 void btif_dm_clear_event_mask();
-
 void btif_dm_clear_filter_accept_list();
-
 void btif_dm_disconnect_all_acls();
+void btif_dm_disconnect_acl(const RawAddress& bd_addr, tBT_TRANSPORT transport);
 
 void btif_dm_le_rand(bluetooth::hci::LeRandCallback callback);
 void btif_dm_set_event_filter_connection_setup_all_devices();
-void btif_dm_allow_wake_by_hid(
-    std::vector<RawAddress> classic_addrs,
-    std::vector<std::pair<RawAddress, uint8_t>> le_addrs);
-void btif_dm_restore_filter_accept_list(
-    std::vector<std::pair<RawAddress, uint8_t>> le_devices);
+void btif_dm_allow_wake_by_hid(std::vector<RawAddress> classic_addrs,
+                               std::vector<std::pair<RawAddress, uint8_t>> le_addrs);
+void btif_dm_restore_filter_accept_list(std::vector<std::pair<RawAddress, uint8_t>> le_devices);
 void btif_dm_set_default_event_mask_except(uint64_t mask, uint64_t le_mask);
 void btif_dm_set_event_filter_inquiry_result_all_devices();
 void btif_dm_metadata_changed(const RawAddress& remote_bd_addr, int key,
                               std::vector<uint8_t> value);
 
+void btif_dm_hh_open_failed(RawAddress* bdaddr);
+
+bool btif_dm_is_pairing(const RawAddress& bdaddr);
+
 /*callout for reading SMP properties from Text file*/
 bool btif_dm_get_smp_config(tBTE_APPL_CFG* p_cfg);
+
+void btif_dm_enable_service(tBTA_SERVICE_ID service_id, bool enable);
+
+void BTIF_dm_disable();
+void BTIF_dm_enable();
+void BTIF_dm_report_inquiry_status_change(tBTM_INQUIRY_STATE inquiry_state);
 
 typedef struct {
   bool is_penc_key_rcvd;
@@ -131,8 +138,7 @@ typedef struct {
   bool is_pid_key_rcvd;
   tBTM_LE_PID_KEYS pid_key; /* peer device ID key */
   bool is_lenc_key_rcvd;
-  tBTM_LE_LENC_KEYS
-      lenc_key; /* local encryption reproduction keys LTK = = d1(ER,DIV,0)*/
+  tBTM_LE_LENC_KEYS lenc_key; /* local encryption reproduction keys LTK = = d1(ER,DIV,0)*/
   bool is_lcsrk_key_rcvd;
   tBTM_LE_LCSRK_KEYS lcsrk_key; /* local device CSRK = d1(ER,DIV,1)*/
   bool is_lidk_key_rcvd;        /* local identity key received */
@@ -144,15 +150,22 @@ typedef struct {
 #define BTIF_DM_LE_LOCAL_KEY_ER (1 << 3)
 
 void btif_dm_load_ble_local_keys(void);
-void btif_dm_get_ble_local_keys(tBTA_DM_BLE_LOCAL_KEY_MASK* p_key_mask,
-                                Octet16* p_er,
+void btif_dm_get_ble_local_keys(tBTA_DM_BLE_LOCAL_KEY_MASK* p_key_mask, Octet16* p_er,
                                 tBTA_BLE_LOCAL_ID_KEYS* p_id_keys);
-void btif_dm_update_ble_remote_properties(const RawAddress& bd_addr,
-                                          BD_NAME bd_name, DEV_CLASS dev_class,
-                                          tBT_DEVICE_TYPE dev_type);
+void btif_remove_local_irk_from_resolving_list();
+void btif_update_remote_properties(const RawAddress& bd_addr, BD_NAME bd_name, DEV_CLASS dev_class,
+                                   tBT_DEVICE_TYPE dev_type);
+bool btif_is_interesting_le_service(const bluetooth::Uuid& uuid);
 
-bool check_cod_hid(const RawAddress& bd_addr);
-bool check_cod_hid_major(const RawAddress& bd_addr, uint32_t cod);
+bool btif_check_cod_hid(const RawAddress& bd_addr);
+bool btif_check_cod_hid_major(const RawAddress& bd_addr, uint32_t cod);
 bool is_device_le_audio_capable(const RawAddress bd_addr);
 bool is_le_audio_capable_during_service_discovery(const RawAddress& bd_addr);
-#endif
+
+namespace bluetooth::legacy::testing {
+void bta_energy_info_cb(tBTM_BLE_TX_TIME_MS tx_time, tBTM_BLE_RX_TIME_MS rx_time,
+                        tBTM_BLE_IDLE_TIME_MS idle_time, tBTM_BLE_ENERGY_USED energy_used,
+                        tBTM_CONTRL_STATE ctrl_state, tBTA_STATUS status);
+void btif_on_name_read(RawAddress bd_addr, tHCI_ERROR_CODE hci_status, const BD_NAME bd_name,
+                       bool during_device_search);
+}  // namespace bluetooth::legacy::testing

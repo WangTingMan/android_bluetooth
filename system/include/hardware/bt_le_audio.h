@@ -18,14 +18,14 @@
 #pragma once
 
 #include <bluetooth/log.h>
+#include <bluetooth/types/address.h>
 
 #include <array>
+#include <bitset>
 #include <map>
 #include <optional>
 #include <ostream>
 #include <vector>
-
-#include "raw_address.h"
 
 namespace bluetooth {
 namespace le_audio {
@@ -37,8 +37,7 @@ enum class LeAudioHealthBasedAction {
   INACTIVATE_GROUP,
 };
 
-inline std::ostream& operator<<(std::ostream& os,
-                                const LeAudioHealthBasedAction action) {
+inline std::ostream& operator<<(std::ostream& os, const LeAudioHealthBasedAction action) {
   switch (action) {
     case LeAudioHealthBasedAction::NONE:
       os << "NONE";
@@ -59,29 +58,62 @@ inline std::ostream& operator<<(std::ostream& os,
   return os;
 }
 
-enum class ConnectionState {
-  DISCONNECTED = 0,
-  CONNECTING,
-  CONNECTED,
-  DISCONNECTING
-};
+enum class ConnectionState { DISCONNECTED = 0, CONNECTING, CONNECTED, DISCONNECTING };
 
 enum class GroupStatus {
   INACTIVE = 0,
   ACTIVE,
   TURNED_IDLE_DURING_CALL,
+  AUTONOMOUS_INACTIVE,
 };
 
 enum class GroupStreamStatus {
   IDLE = 0,
   STREAMING,
   RELEASING,
+  RELEASING_AUTONOMOUS,
   SUSPENDING,
   SUSPENDED,
   CONFIGURED_AUTONOMOUS,
   CONFIGURED_BY_USER,
   DESTROYED,
 };
+
+inline std::ostream& operator<<(std::ostream& os, const GroupStreamStatus& state) {
+  switch (state) {
+    case GroupStreamStatus::IDLE:
+      os << "IDLE";
+      break;
+    case GroupStreamStatus::STREAMING:
+      os << "STREAMING";
+      break;
+    case GroupStreamStatus::RELEASING:
+      os << "RELEASING";
+      break;
+    case GroupStreamStatus::RELEASING_AUTONOMOUS:
+      os << "RELEASING_AUTONOMOUS";
+      break;
+    case GroupStreamStatus::SUSPENDING:
+      os << "SUSPENDING";
+      break;
+    case GroupStreamStatus::SUSPENDED:
+      os << "SUSPENDED";
+      break;
+    case GroupStreamStatus::CONFIGURED_AUTONOMOUS:
+      os << "CONFIGURED_AUTONOMOUS";
+      break;
+    case GroupStreamStatus::CONFIGURED_BY_USER:
+      os << "CONFIGURED_BY_USER";
+      break;
+    case GroupStreamStatus::DESTROYED:
+      os << "DESTROYED";
+      break;
+    default:
+      os << "UNKNOWN";
+      break;
+  }
+  return os;
+}
 
 enum class GroupNodeStatus {
   ADDED = 1,
@@ -95,8 +127,31 @@ enum class UnicastMonitorModeStatus {
   STREAMING_REQUESTED_NO_CONTEXT_VALIDATE,
 };
 
+inline std::ostream& operator<<(std::ostream& os, const UnicastMonitorModeStatus& status) {
+  switch (status) {
+    case UnicastMonitorModeStatus::STREAMING_REQUESTED:
+      os << "STREAMING_REQUESTED";
+      break;
+    case UnicastMonitorModeStatus::STREAMING:
+      os << "STREAMING";
+      break;
+    case UnicastMonitorModeStatus::STREAMING_REQUESTED_NO_CONTEXT_VALIDATE:
+      os << "CONTEXT NOT AVAILABLE";
+      break;
+    case UnicastMonitorModeStatus::STREAMING_SUSPENDED:
+      os << "STREAMING_SUSPENDED";
+      break;
+    default:
+      os << "UNKNOWN";
+      break;
+  }
+  return os;
+}
+
 typedef enum {
   LE_AUDIO_CODEC_INDEX_SOURCE_LC3 = 0,
+  LE_AUDIO_CODEC_INDEX_SOURCE_OPUS = 1,
+  LE_AUDIO_CODEC_INDEX_SOURCE_OPUS_HI_RES = 2,
   LE_AUDIO_CODEC_INDEX_SOURCE_INVALID = 1000 * 1000,
 } btle_audio_codec_index_t;
 
@@ -135,34 +190,45 @@ typedef enum {
 typedef enum {
   LE_AUDIO_FRAME_DURATION_INDEX_NONE = 0,
   LE_AUDIO_FRAME_DURATION_INDEX_7500US = 0x01 << 0,
-  LE_AUDIO_FRAME_DURATION_INDEX_10000US = 0x01 << 1
+  LE_AUDIO_FRAME_DURATION_INDEX_10000US = 0x01 << 1,
+  LE_AUDIO_FRAME_DURATION_INDEX_20000US = 0x01 << 2
 } btle_audio_frame_duration_index_t;
 
 typedef struct btle_audio_codec_config {
   btle_audio_codec_index_t codec_type = LE_AUDIO_CODEC_INDEX_SOURCE_INVALID;
   btle_audio_sample_rate_index_t sample_rate = LE_AUDIO_SAMPLE_RATE_INDEX_NONE;
-  btle_audio_bits_per_sample_index_t bits_per_sample =
-      LE_AUDIO_BITS_PER_SAMPLE_INDEX_NONE;
-  btle_audio_channel_count_index_t channel_count =
-      LE_AUDIO_CHANNEL_COUNT_INDEX_NONE;
-  btle_audio_frame_duration_index_t frame_duration =
-      LE_AUDIO_FRAME_DURATION_INDEX_NONE;
+  btle_audio_bits_per_sample_index_t bits_per_sample = LE_AUDIO_BITS_PER_SAMPLE_INDEX_NONE;
+  btle_audio_channel_count_index_t channel_count = LE_AUDIO_CHANNEL_COUNT_INDEX_NONE;
+  btle_audio_frame_duration_index_t frame_duration = LE_AUDIO_FRAME_DURATION_INDEX_NONE;
+  uint8_t codec_frame_blocks_per_sdu = 0;
   uint16_t octets_per_frame = 0;
   int32_t codec_priority = 0;
 
   bool operator!=(const btle_audio_codec_config& other) const {
-    if (codec_type != other.codec_type) return true;
-    if (sample_rate != other.sample_rate) return true;
-    if (bits_per_sample != other.bits_per_sample) return true;
-    if (channel_count != other.channel_count) return true;
-    if (frame_duration != other.frame_duration) return true;
-    if (octets_per_frame != other.octets_per_frame) return true;
-    if (codec_priority != other.codec_priority) return true;
+    if (codec_type != other.codec_type) {
+      return true;
+    }
+    if (sample_rate != other.sample_rate) {
+      return true;
+    }
+    if (bits_per_sample != other.bits_per_sample) {
+      return true;
+    }
+    if (channel_count != other.channel_count) {
+      return true;
+    }
+    if (frame_duration != other.frame_duration) {
+      return true;
+    }
+    if (octets_per_frame != other.octets_per_frame) {
+      return true;
+    }
+    if (codec_priority != other.codec_priority) {
+      return true;
+    }
     return false;
-  };
-  bool operator==(const btle_audio_codec_config& other) const {
-    return !(*this != other);
-  };
+  }
+  bool operator==(const btle_audio_codec_config& other) const { return !(*this != other); }
 
   std::string ToString() const {
     std::string codec_name_str;
@@ -176,6 +242,12 @@ typedef struct btle_audio_codec_config {
     switch (codec_type) {
       case LE_AUDIO_CODEC_INDEX_SOURCE_LC3:
         codec_name_str = "LC3";
+        break;
+      case LE_AUDIO_CODEC_INDEX_SOURCE_OPUS:
+        codec_name_str = "Opus";
+        break;
+      case LE_AUDIO_CODEC_INDEX_SOURCE_OPUS_HI_RES:
+        codec_name_str = "Opus Hi-Res";
         break;
       default:
         codec_name_str = "Unknown LE codec " + std::to_string(codec_type);
@@ -226,8 +298,7 @@ typedef struct btle_audio_codec_config {
         sample_rate_str = "384000 hz";
         break;
       default:
-        sample_rate_str =
-            "Unknown LE sample rate " + std::to_string(sample_rate);
+        sample_rate_str = "Unknown LE sample rate " + std::to_string(sample_rate);
         break;
     }
 
@@ -245,8 +316,7 @@ typedef struct btle_audio_codec_config {
         bits_per_sample_str = "32";
         break;
       default:
-        bits_per_sample_str =
-            "Unknown LE bits per sample " + std::to_string(bits_per_sample);
+        bits_per_sample_str = "Unknown LE bits per sample " + std::to_string(bits_per_sample);
         break;
     }
 
@@ -261,8 +331,7 @@ typedef struct btle_audio_codec_config {
         channel_count_str = "2";
         break;
       default:
-        channel_count_str =
-            "Unknown LE channel count " + std::to_string(channel_count);
+        channel_count_str = "Unknown LE channel count " + std::to_string(channel_count);
         break;
     }
 
@@ -277,45 +346,38 @@ typedef struct btle_audio_codec_config {
         frame_duration_str = "10000 us";
         break;
       default:
-        frame_duration_str =
-            "Unknown LE frame duration " + std::to_string(frame_duration);
+        frame_duration_str = "Unknown LE frame duration " + std::to_string(frame_duration);
         break;
     }
 
     if (octets_per_frame < 0) {
-      octets_per_frame_str =
-          "Unknown LE octets per frame " + std::to_string(octets_per_frame);
+      octets_per_frame_str = "Unknown LE octets per frame " + std::to_string(octets_per_frame);
     } else {
       octets_per_frame_str = std::to_string(octets_per_frame);
     }
 
     if (codec_priority < -1) {
-      codec_priority_str =
-          "Unknown LE codec priority " + std::to_string(codec_priority);
+      codec_priority_str = "Unknown LE codec priority " + std::to_string(codec_priority);
     } else {
       codec_priority_str = std::to_string(codec_priority);
     }
 
     return "codec: " + codec_name_str + ", sample rate: " + sample_rate_str +
-           ", bits per sample: " + bits_per_sample_str +
-           ", channel count: " + channel_count_str +
+           ", bits per sample: " + bits_per_sample_str + ", channel count: " + channel_count_str +
            ", frame duration: " + frame_duration_str +
-           ", octets per frame: " + octets_per_frame_str +
-           ", codec priroty: " + codec_priority_str;
+           ", octets per frame: " + octets_per_frame_str + ", codec priroty: " + codec_priority_str;
   }
-
 } btle_audio_codec_config_t;
 
 class LeAudioClientCallbacks {
- public:
+public:
   virtual ~LeAudioClientCallbacks() = default;
 
   /* Callback to notify Java that stack is ready */
   virtual void OnInitialized(void) = 0;
 
   /** Callback for profile connection state change */
-  virtual void OnConnectionState(ConnectionState state,
-                                 const RawAddress& address) = 0;
+  virtual void OnConnectionState(ConnectionState state, const RawAddress& address) = 0;
 
   /* Callback with group status update */
   virtual void OnGroupStatus(int group_id, GroupStatus group_status) = 0;
@@ -325,48 +387,44 @@ class LeAudioClientCallbacks {
                                  GroupNodeStatus node_status) = 0;
   /* Callback for newly recognized or reconfigured existing le audio group */
   virtual void OnAudioConf(uint8_t direction, int group_id,
-                           uint32_t snk_audio_location,
-                           uint32_t src_audio_location,
+                           std::optional<std::bitset<32>> snk_audio_location,
+                           std::optional<std::bitset<32>> src_audio_location,
                            uint16_t avail_cont) = 0;
   /* Callback for sink audio location recognized */
   virtual void OnSinkAudioLocationAvailable(const RawAddress& address,
-                                            uint32_t snk_audio_locations) = 0;
+                                            std::optional<std::bitset<32>> snk_audio_location) = 0;
   /* Callback with local codec capabilities */
   virtual void OnAudioLocalCodecCapabilities(
-      std::vector<btle_audio_codec_config_t> local_input_capa_codec_conf,
-      std::vector<btle_audio_codec_config_t> local_output_capa_codec_conf) = 0;
+          std::vector<btle_audio_codec_config_t> local_input_capa_codec_conf,
+          std::vector<btle_audio_codec_config_t> local_output_capa_codec_conf) = 0;
   /* Callback with current group codec configurations. Should change when PACs
    * changes */
-  virtual void OnAudioGroupCurrentCodecConf(
-      int group_id, btle_audio_codec_config_t input_codec_conf,
-      btle_audio_codec_config_t output_codec_conf) = 0;
+  virtual void OnAudioGroupCurrentCodecConf(int group_id,
+                                            btle_audio_codec_config_t input_codec_conf,
+                                            btle_audio_codec_config_t output_codec_conf) = 0;
   /* Callback with selectable group codec configurations. Should change when
    * context changes */
   virtual void OnAudioGroupSelectableCodecConf(
-      int group_id,
-      std::vector<btle_audio_codec_config_t> input_selectable_codec_conf,
-      std::vector<btle_audio_codec_config_t> output_selectable_codec_conf) = 0;
-  virtual void OnHealthBasedRecommendationAction(
-      const RawAddress& address, LeAudioHealthBasedAction action) = 0;
-  virtual void OnHealthBasedGroupRecommendationAction(
-      int group_id, LeAudioHealthBasedAction action) = 0;
+          int group_id, std::vector<btle_audio_codec_config_t> input_selectable_codec_conf,
+          std::vector<btle_audio_codec_config_t> output_selectable_codec_conf) = 0;
+  virtual void OnHealthBasedRecommendationAction(const RawAddress& address,
+                                                 LeAudioHealthBasedAction action) = 0;
+  virtual void OnHealthBasedGroupRecommendationAction(int group_id,
+                                                      LeAudioHealthBasedAction action) = 0;
 
-  virtual void OnUnicastMonitorModeStatus(uint8_t direction,
-                                          UnicastMonitorModeStatus status) = 0;
+  virtual void OnUnicastMonitorModeStatus(uint8_t direction, UnicastMonitorModeStatus status) = 0;
 
   /* Callback with group stream status update */
-  virtual void OnGroupStreamStatus(int group_id,
-                                   GroupStreamStatus group_stream_status) = 0;
+  virtual void OnGroupStreamStatus(int group_id, GroupStreamStatus group_stream_status) = 0;
 };
 
 class LeAudioClientInterface {
- public:
+public:
   virtual ~LeAudioClientInterface() = default;
 
   /* Register the LeAudio callbacks */
-  virtual void Initialize(
-      LeAudioClientCallbacks* callbacks,
-      const std::vector<btle_audio_codec_config_t>& offloading_preference) = 0;
+  virtual void Initialize(LeAudioClientCallbacks* callbacks,
+                          const std::vector<btle_audio_codec_config_t>& offloading_preference) = 0;
 
   /** Connect to LEAudio */
   virtual void Connect(const RawAddress& address) = 0;
@@ -393,9 +451,8 @@ class LeAudioClientInterface {
   virtual void GroupSetActive(int group_id) = 0;
 
   /* Set codec config preference */
-  virtual void SetCodecConfigPreference(
-      int group_id, btle_audio_codec_config_t input_codec_config,
-      btle_audio_codec_config_t output_codec_config) = 0;
+  virtual void SetCodecConfigPreference(int group_id, btle_audio_codec_config_t input_codec_config,
+                                        btle_audio_codec_config_t output_codec_config) = 0;
 
   /* Set Ccid for context type */
   virtual void SetCcidInformation(int ccid, int context_type) = 0;
@@ -407,13 +464,15 @@ class LeAudioClientInterface {
   virtual void SetUnicastMonitorMode(uint8_t direction, bool enable) = 0;
 
   /* Sends a preferred audio profiles change */
-  virtual void SendAudioProfilePreferences(
-      int group_id, bool is_output_preference_le_audio,
-      bool is_duplex_preference_le_audio) = 0;
+  virtual void SendAudioProfilePreferences(int group_id, bool is_output_preference_le_audio,
+                                           bool is_duplex_preference_le_audio) = 0;
 
   /* Set allowed to stream context */
   virtual void SetGroupAllowedContextMask(int group_id, int sink_context_types,
                                           int source_context_types) = 0;
+
+  /* Confirm group is active */
+  virtual void GroupConfirmActive(int group_id) = 0;
 };
 
 /* Represents the broadcast source state. */
@@ -421,6 +480,8 @@ enum class BroadcastState {
   STOPPED = 0,
   CONFIGURING,
   CONFIGURED,
+  ENABLING,
+  DISABLING,
   STOPPING,
   STREAMING,
 };
@@ -509,7 +570,7 @@ struct BroadcastMetadata {
 };
 
 class LeAudioBroadcasterCallbacks {
- public:
+public:
   virtual ~LeAudioBroadcasterCallbacks() = default;
   /* Callback for the newly created broadcast event. */
   virtual void OnBroadcastCreated(uint32_t broadcast_id, bool success) = 0;
@@ -517,15 +578,16 @@ class LeAudioBroadcasterCallbacks {
   /* Callback for the destroyed broadcast event. */
   virtual void OnBroadcastDestroyed(uint32_t broadcast_id) = 0;
   /* Callback for the broadcast source state event. */
-  virtual void OnBroadcastStateChanged(uint32_t broadcast_id,
-                                       BroadcastState state) = 0;
+  virtual void OnBroadcastStateChanged(uint32_t broadcast_id, BroadcastState state) = 0;
   /* Callback for the broadcast metadata change. */
-  virtual void OnBroadcastMetadataChanged(
-      uint32_t broadcast_id, const BroadcastMetadata& broadcast_metadata) = 0;
+  virtual void OnBroadcastMetadataChanged(uint32_t broadcast_id,
+                                          const BroadcastMetadata& broadcast_metadata) = 0;
+  /* Callback for broadcast audio session create event. */
+  virtual void OnBroadcastAudioSessionCreated(bool success) = 0;
 };
 
 class LeAudioBroadcasterInterface {
- public:
+public:
   virtual ~LeAudioBroadcasterInterface() = default;
   /* Register the LeAudio Broadcaster callbacks */
   virtual void Initialize(LeAudioBroadcasterCallbacks* callbacks) = 0;
@@ -534,17 +596,15 @@ class LeAudioBroadcasterInterface {
   /* Cleanup the LeAudio Broadcaster */
   virtual void Cleanup(void) = 0;
   /* Create Broadcast instance */
-  virtual void CreateBroadcast(
-      bool is_public, std::string broadcast_name,
-      std::optional<BroadcastCode> broadcast_code,
-      std::vector<uint8_t> public_metadata,
-      std::vector<uint8_t> subgroup_quality,
-      std::vector<std::vector<uint8_t>> subgroup_metadata) = 0;
+  virtual void CreateBroadcast(bool is_public, std::string broadcast_name,
+                               std::optional<BroadcastCode> broadcast_code,
+                               std::vector<uint8_t> public_metadata,
+                               std::vector<uint8_t> subgroup_quality,
+                               std::vector<std::vector<uint8_t>> subgroup_metadata) = 0;
   /* Update the ongoing Broadcast metadata */
-  virtual void UpdateMetadata(
-      uint32_t broadcast_id, std::string broadcast_name,
-      std::vector<uint8_t> public_metadata,
-      std::vector<std::vector<uint8_t>> subgroup_metadata) = 0;
+  virtual void UpdateMetadata(uint32_t broadcast_id, std::string broadcast_name,
+                              std::vector<uint8_t> public_metadata,
+                              std::vector<std::vector<uint8_t>> subgroup_metadata) = 0;
 
   /* Start the existing Broadcast stream */
   virtual void StartBroadcast(uint32_t broadcast_id) = 0;
@@ -561,7 +621,7 @@ class LeAudioBroadcasterInterface {
 } /* namespace le_audio */
 } /* namespace bluetooth */
 
-namespace fmt {
+namespace std {
 template <>
 struct formatter<bluetooth::le_audio::btle_audio_codec_index_t>
     : enum_formatter<bluetooth::le_audio::btle_audio_codec_index_t> {};
@@ -570,8 +630,7 @@ struct formatter<bluetooth::le_audio::btle_audio_sample_rate_index_t>
     : enum_formatter<bluetooth::le_audio::btle_audio_sample_rate_index_t> {};
 template <>
 struct formatter<bluetooth::le_audio::btle_audio_bits_per_sample_index_t>
-    : enum_formatter<bluetooth::le_audio::btle_audio_bits_per_sample_index_t> {
-};
+    : enum_formatter<bluetooth::le_audio::btle_audio_bits_per_sample_index_t> {};
 template <>
 struct formatter<bluetooth::le_audio::btle_audio_channel_count_index_t>
     : enum_formatter<bluetooth::le_audio::btle_audio_channel_count_index_t> {};
@@ -581,4 +640,6 @@ struct formatter<bluetooth::le_audio::btle_audio_frame_duration_index_t>
 template <>
 struct formatter<bluetooth::le_audio::GroupStreamStatus>
     : enum_formatter<bluetooth::le_audio::GroupStreamStatus> {};
-}  // namespace fmt
+template <>
+struct formatter<bluetooth::le_audio::UnicastMonitorModeStatus> : ostream_formatter {};
+}  // namespace std

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,9 +23,8 @@
 #include <vector>
 
 #include "hci/fuzz/status_vs_complete_commands.h"
-#include "hci/hci_layer.h"
+#include "hci/hci_interface.h"
 #include "hci/hci_packets.h"
-#include "module.h"
 #include "os/fuzz/dev_null_queue.h"
 #include "os/fuzz/fuzz_inject_queue.h"
 
@@ -33,26 +32,14 @@ namespace bluetooth {
 namespace hci {
 namespace fuzz {
 
-class HciLayerFuzzClient : public Module {
- public:
-  HciLayerFuzzClient() : Module() {}
-
-  void Start() override;
-  void Stop() override;
+class HciLayerFuzzClient {
+public:
+  HciLayerFuzzClient(os::Handler* handler, HciInterface* hci);
+  ~HciLayerFuzzClient();
 
   void injectArbitrary(FuzzedDataProvider& fdp);
 
-  void ListDependencies(ModuleList* list) const override {
-    list->add<hci::HciLayer>();
-  }
-
-  static const ModuleFactory Factory;
-
-  std::string ToString() const override {
-    return "DevNullHci";
-  }
-
- private:
+private:
   void injectAclData(std::vector<uint8_t> data);
   void injectHciCommand(std::vector<uint8_t> data);
   void injectSecurityCommand(std::vector<uint8_t> data);
@@ -69,18 +56,21 @@ class HciLayerFuzzClient : public Module {
       return;
     }
 
-    if (uses_command_status(commandPacket.GetOpCode())) {
+    if (uses_command_status_or_complete(commandPacket.GetOpCode())) {
       interface->EnqueueCommand(
-          TBUILDER::FromView(commandPacket),
-          GetHandler()->BindOnce([](CommandStatusView /* status */) {}));
+              TBUILDER::FromView(commandPacket),
+              handler_->BindOnce([](CommandStatusOrCompleteView /* status */) {}));
+    } else if (uses_command_status(commandPacket.GetOpCode())) {
+      interface->EnqueueCommand(TBUILDER::FromView(commandPacket),
+                                handler_->BindOnce([](CommandStatusView /* status */) {}));
     } else {
-      interface->EnqueueCommand(
-          TBUILDER::FromView(commandPacket),
-          GetHandler()->BindOnce([](CommandCompleteView /* status */) {}));
+      interface->EnqueueCommand(TBUILDER::FromView(commandPacket),
+                                handler_->BindOnce([](CommandCompleteView /* status */) {}));
     }
   }
 
-  hci::HciLayer* hci_ = nullptr;
+  os::Handler* handler_ = nullptr;
+  hci::HciInterface* hci_ = nullptr;
   os::fuzz::DevNullQueue<AclView>* aclDevNull_;
   os::fuzz::FuzzInjectQueue<AclBuilder>* aclInject_;
 

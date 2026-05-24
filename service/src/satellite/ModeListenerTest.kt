@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.server.bluetooth.satellite.test
 
 import android.content.ContentResolver
@@ -39,34 +40,18 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class ModeListenerTest {
-    companion object {
-        internal fun setupSatelliteModeToOn(
-            resolver: ContentResolver,
-            looper: Looper,
-            callback: (m: Boolean) -> Unit
-        ) {
-            enableSensitive(resolver, looper, SETTINGS_SATELLITE_MODE_RADIOS)
-            enableMode(resolver, looper, SETTINGS_SATELLITE_MODE_ENABLED)
 
-            initialize(looper, resolver, callback)
-        }
-
-        internal fun setupSatelliteModeToOff(resolver: ContentResolver, looper: Looper) {
-            disableSensitive(resolver, looper, SETTINGS_SATELLITE_MODE_RADIOS)
-            disableMode(resolver, looper, SETTINGS_SATELLITE_MODE_ENABLED)
-        }
-    }
+    @get:Rule val testName = TestName()
 
     private val resolver: ContentResolver =
         ApplicationProvider.getApplicationContext<Context>().getContentResolver()
-    @JvmField @Rule val testName = TestName()
 
     private val looper: Looper = Looper.getMainLooper()
 
     private lateinit var mode: ArrayList<Boolean>
 
     @Before
-    public fun setup() {
+    fun setup() {
         Log.i("SatelliteModeListener", "\t--> setup of " + testName.getMethodName())
         mode = ArrayList()
     }
@@ -213,5 +198,23 @@ class ModeListenerTest {
         assertThat(isOn).isFalse()
         // As opposed to the bare RadioModeListener, similar consecutive event are discarded
         assertThat(mode).isEmpty()
+    }
+
+    companion object {
+        internal fun setupSatelliteModeToOn(
+            resolver: ContentResolver,
+            looper: Looper,
+            callback: (m: Boolean) -> Unit,
+        ) {
+            enableSensitive(resolver, looper, SETTINGS_SATELLITE_MODE_RADIOS)
+            enableMode(resolver, looper, SETTINGS_SATELLITE_MODE_ENABLED)
+
+            initialize(looper, resolver, callback)
+        }
+
+        internal fun setupSatelliteModeToOff(resolver: ContentResolver, looper: Looper) {
+            disableSensitive(resolver, looper, SETTINGS_SATELLITE_MODE_RADIOS)
+            disableMode(resolver, looper, SETTINGS_SATELLITE_MODE_ENABLED)
+        }
     }
 }

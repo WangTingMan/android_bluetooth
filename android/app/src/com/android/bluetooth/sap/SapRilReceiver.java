@@ -25,13 +25,11 @@ import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.util.Log;
 
-import com.android.modules.utils.build.SdkLevel;
-
 import java.util.concurrent.atomic.AtomicLong;
 
-/** SapRiilReceiver is the AIDL implementation of ISapRilReceiver */
+/** SapRilReceiver is the AIDL implementation of ISapRilReceiver */
 public class SapRilReceiver implements ISapRilReceiver {
-    private static final String TAG = "SapRilReceiver";
+    private static final String TAG = SapRilReceiver.class.getSimpleName();
 
     // todo: add support for slot2 and slot3
     private static final String HAL_INSTANCE_NAME = ISap.DESCRIPTOR + "/slot1";
@@ -105,7 +103,7 @@ public class SapRilReceiver implements ISapRilReceiver {
     /**
      * Set callback that has response and unsolicited indication functions
      *
-     * @param sapCallback Object containing response and unosolicited indication callbacks
+     * @param sapCallback Object containing response and unsolicited indication callbacks
      */
     @Override
     public void setCallback(android.hardware.radio.sap.ISapCallback sapCallback)
@@ -170,7 +168,7 @@ public class SapRilReceiver implements ISapRilReceiver {
             Log.d(TAG, "serviceDied");
             // todo: temp hack to send delayed message so that rild is back up by then
             mSapServerMsgHandler.sendMessageDelayed(
-                    mSapServerMsgHandler.obtainMessage(SapServer.SAP_PROXY_DEAD, (long) 0),
+                    mSapServerMsgHandler.obtainMessage(SapServer.SAP_PROXY_DEAD, 0L),
                     SapServer.ISAP_GET_SERVICE_DELAY_MILLIS);
         }
     }
@@ -361,7 +359,7 @@ public class SapRilReceiver implements ISapRilReceiver {
 
     /** Check if AIDL is supported */
     public static boolean isAidlSupported() {
-        return SdkLevel.isAtLeastU() && ServiceManager.isDeclared(HAL_INSTANCE_NAME);
+        return ServiceManager.isDeclared(HAL_INSTANCE_NAME);
     }
 
     /** Obtain a valid sapProxy */

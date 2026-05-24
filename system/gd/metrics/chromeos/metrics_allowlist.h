@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,8 @@ namespace bluetooth {
 namespace metrics {
 
 bool IsDeviceInfoInAllowlist(int vendor_id_source, int vendor_id, int product_id);
-bool IsChipsetInfoInAllowList(int vendor_id, int product_id, int transport, const char* chipset_string, uint64_t* hval);
+bool IsChipsetInfoInAllowList(int vendor_id, int product_id, int transport,
+                              const char* chipset_string, uint64_t* hval);
 
 }  // namespace metrics
 }  // namespace bluetooth

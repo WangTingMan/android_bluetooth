@@ -13,40 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.btservice;
 
 import android.app.Application;
 import android.util.Log;
 
-public class AdapterApp extends Application {
-    private static final String TAG = "BluetoothAdapterApp";
-    // For Debugging only
-    private static int sRefCount = 0;
+import com.android.bluetooth.Utils;
 
-    public AdapterApp() {
-        super();
-        synchronized (AdapterApp.class) {
-            sRefCount++;
-            Log.d(TAG, "REFCOUNT: Constructed " + this + " Instance Count = " + sRefCount);
-        }
-    }
+public class AdapterApp extends Application {
+    private static final String TAG = Utils.BT_PREFIX + AdapterApp.class.getSimpleName();
 
     @Override
     public void onCreate() {
         super.onCreate();
         Log.d(TAG, "onCreate");
-        try {
-            DataMigration.run(this);
-        } catch (Exception e) {
-            Log.e(TAG, "Migration failure: ", e);
-        }
-    }
-
-    @Override
-    protected void finalize() {
-        synchronized (AdapterApp.class) {
-            sRefCount--;
-            Log.d(TAG, "REFCOUNT: Finalized: " + this + ", Instance Count = " + sRefCount);
-        }
     }
 }

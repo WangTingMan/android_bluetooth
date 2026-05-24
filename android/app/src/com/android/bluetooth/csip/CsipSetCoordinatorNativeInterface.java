@@ -17,114 +17,55 @@
 
 package com.android.bluetooth.csip;
 
-import android.bluetooth.BluetoothAdapter;
+import static java.util.Objects.requireNonNull;
+
 import android.bluetooth.BluetoothDevice;
 import android.util.Log;
 
 import com.android.bluetooth.Utils;
-import com.android.internal.annotations.GuardedBy;
+import com.android.bluetooth.btservice.AdapterService;
 import com.android.internal.annotations.VisibleForTesting;
 
 import java.util.UUID;
 
 /** CSIP Set Coordinator role native interface */
 public class CsipSetCoordinatorNativeInterface {
-    private static final String TAG = "CsipSetCoordinatorNativeInterface";
-    private BluetoothAdapter mAdapter;
+    private static final String TAG = CsipSetCoordinatorNativeInterface.class.getSimpleName();
 
-    @GuardedBy("INSTANCE_LOCK")
-    private static CsipSetCoordinatorNativeInterface sInstance;
+    private final AdapterService mAdapterService;
+    private final CsipSetCoordinatorService mService;
 
-    private static final Object INSTANCE_LOCK = new Object();
-
-    private CsipSetCoordinatorNativeInterface() {
-        mAdapter = BluetoothAdapter.getDefaultAdapter();
-        if (mAdapter == null) {
-            Log.wtf(TAG, "No Bluetooth Adapter Available");
-        }
+    CsipSetCoordinatorNativeInterface(
+            AdapterService adapterService, CsipSetCoordinatorService service) {
+        mAdapterService = requireNonNull(adapterService);
+        mService = service;
     }
 
-    /** Get singleton instance. */
-    public static CsipSetCoordinatorNativeInterface getInstance() {
-        synchronized (INSTANCE_LOCK) {
-            if (sInstance == null) {
-                sInstance = new CsipSetCoordinatorNativeInterface();
-            }
-            return sInstance;
-        }
-    }
-
-    /** Set singleton instance. */
-    @VisibleForTesting
-    public static void setInstance(CsipSetCoordinatorNativeInterface instance) {
-        synchronized (INSTANCE_LOCK) {
-            sInstance = instance;
-        }
-    }
-
-    /**
-     * Initializes the native interface.
-     *
-     * <p>priorities to configure.
-     */
-    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PACKAGE)
-    public void init() {
+    void init() {
         initNative();
     }
 
-    /** Cleanup the native interface. */
-    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PACKAGE)
-    public void cleanup() {
+    void cleanup() {
         cleanupNative();
     }
 
-    /**
-     * Initiates CsipSetCoordinator connection to a remote device.
-     *
-     * @param device the remote device
-     * @return true on success, otherwise false.
-     */
-    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PACKAGE)
-    public boolean connect(BluetoothDevice device) {
+    boolean connect(BluetoothDevice device) {
         return connectNative(getByteAddress(device));
     }
 
-    /**
-     * Disconnects CsipSetCoordinator from a remote device.
-     *
-     * @param device the remote device
-     * @return true on success, otherwise false.
-     */
-    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PACKAGE)
-    public boolean disconnect(BluetoothDevice device) {
+    boolean disconnect(BluetoothDevice device) {
         return disconnectNative(getByteAddress(device));
     }
 
-    /**
-     * Get the device by the address
-     *
-     * @return the device
-     */
-    @VisibleForTesting
-    public BluetoothDevice getDevice(byte[] address) {
-        return mAdapter.getRemoteDevice(address);
+    BluetoothDevice getDevice(byte[] address) {
+        return mAdapterService.getRemoteDevice(Utils.getAddressStringFromByte(address));
     }
 
-    private byte[] getByteAddress(BluetoothDevice device) {
+    private static byte[] getByteAddress(BluetoothDevice device) {
         if (device == null) {
             return Utils.getBytesFromAddress("00:00:00:00:00:00");
         }
         return Utils.getBytesFromAddress(device.getAddress());
-    }
-
-    private void sendMessageToService(CsipSetCoordinatorStackEvent event) {
-        CsipSetCoordinatorService service =
-                CsipSetCoordinatorService.getCsipSetCoordinatorService();
-        if (service != null) {
-            service.messageFromNative(event);
-        } else {
-            Log.e(TAG, "Event ignored, service not available: " + event);
-        }
     }
 
     // Callbacks from the native stack back into the Java framework.
@@ -141,7 +82,7 @@ public class CsipSetCoordinatorNativeInterface {
         event.valueInt1 = state;
 
         Log.d(TAG, "onConnectionStateChanged: " + event);
-        sendMessageToService(event);
+        mService.messageFromNative(event);
     }
 
     /** Device availability */
@@ -159,7 +100,7 @@ public class CsipSetCoordinatorNativeInterface {
         event.valueUuid1 = uuid;
 
         Log.d(TAG, "onDeviceAvailable: " + event);
-        sendMessageToService(event);
+        mService.messageFromNative(event);
     }
 
     // Callbacks from the native stack back into the Java framework.
@@ -175,7 +116,7 @@ public class CsipSetCoordinatorNativeInterface {
         event.device = getDevice(address);
         event.valueInt1 = groupId;
         Log.d(TAG, "onSetMemberAvailable: " + event);
-        sendMessageToService(event);
+        mService.messageFromNative(event);
     }
 
     /**
@@ -194,7 +135,7 @@ public class CsipSetCoordinatorNativeInterface {
         event.valueInt2 = status;
         event.valueBool1 = locked;
         Log.d(TAG, "onGroupLockChanged: " + event);
-        sendMessageToService(event);
+        mService.messageFromNative(event);
     }
 
     /**

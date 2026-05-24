@@ -25,7 +25,13 @@ package {
 
 cc_fuzz {
     name: "btdevice_esco_fuzzer",
-    defaults: ["fluoride_defaults"],
+    defaults: [
+        "bluetooth_fuzz_config",
+        "fluoride_defaults",
+    ],
+    cflags: [
+        "-Wno-missing-prototypes",
+    ],
     srcs: [
         ":TestMockMainShimEntry",
         "btdevice_esco_fuzzer.cpp",
@@ -40,38 +46,21 @@ cc_fuzz {
         "liblog",
         "server_configurable_flags",
     ],
-    generated_headers: [
-        "BluetoothGeneratedDumpsysDataSchema_h",
-    ],
     static_libs: [
-        "bluetooth_flags_c_lib",
-        "libbluetooth-types",
+        "bluetooth_flags_c_lib_for_test",
         "libbluetooth_gd",
         "libbluetooth_hci_pdl",
         "libbluetooth_log",
-        "libbt_shim_bridge",
-        "libbt_shim_ffi",
+        "libbluetooth_types",
         "libbtcore",
         "libbtdevice",
         "libchrome",
+        "libcom.android.sysprop.bluetooth.wrapped",
         "libgmock",
         "libosi",
     ],
     include_dirs: [
         "packages/modules/Bluetooth/system",
-        "packages/modules/Bluetooth/system/device/include",
         "packages/modules/Bluetooth/system/gd",
     ],
-    fuzz_config: {
-        cc: ["android-bluetooth-security@google.com"],
-        componentid: 27441,
-        hotlists: [
-            "4593311",
-        ],
-        description: "The fuzzer targets the APIs of libbtdevice library",
-        vector: "local_no_privileges_required",
-        service_privilege: "privileged",
-        users: "multi_user",
-        fuzzed_code_usage: "shipped",
-    },
 }

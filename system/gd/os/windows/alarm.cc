@@ -20,7 +20,6 @@
 
 #include "common/bind.h"
 #include "os/linux_generic/linux.h"
-#include "os/log.h"
 #include "os/utils.h"
 
 #include <osi/include/alarm.h>
@@ -30,12 +29,17 @@ namespace os {
 using common::Closure;
 using common::OnceClosure;
 
-Alarm::Alarm( Handler* handler )
-    : handler_( handler )
+Alarm::Alarm( Thread* thread )
+    : thread_( thread )
     , alarm_( nullptr )
     , token_( nullptr )
 {
     alarm_ = alarm_new( "gd_alarm" );
+}
+
+Alarm::Alarm( Thread* thread, bool isWakeAlarm )
+  : armed_time_( std::chrono::time_point<std::chrono::system_clock>::min() ), thread_( thread ) {
+  alarm_ = alarm_new( "gd_alarm" );
 }
 
 Alarm::~Alarm() {
@@ -78,7 +82,7 @@ void Alarm::on_fire() {
       return;
   }
 
-  handler_->Post(std::move(task));
+  thread_->GetReactor()->PostTask(std::move(task));
 }
 
 }  // namespace os

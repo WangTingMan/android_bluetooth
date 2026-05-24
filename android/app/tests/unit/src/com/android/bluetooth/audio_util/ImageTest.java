@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,11 +33,12 @@ import android.os.Bundle;
 import android.test.mock.MockContentProvider;
 import android.test.mock.MockContentResolver;
 
-import androidx.test.InstrumentationRegistry;
-import androidx.test.runner.AndroidJUnit4;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
 
-import com.android.bluetooth.R;
 import com.android.bluetooth.TestUtils;
+import com.android.bluetooth.tests.R;
+import com.android.tests.bluetooth.MockitoRule;
 
 import org.junit.After;
 import org.junit.Before;
@@ -45,20 +46,18 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
 import java.io.InputStream;
 
+/** Test cases for {@link Image}. */
 @RunWith(AndroidJUnit4.class)
 public class ImageTest {
-    private Context mTargetContext;
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
 
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
+    @Mock private Context mMockContext;
 
-    private @Mock Context mMockContext;
-    private @Mock Resources mMockResources;
-    private Resources mTestResources;
+    private final Resources mTestResources = TestUtils.getTestApplicationResources();
+
     private MockContentResolver mTestContentResolver;
 
     private static final String TEST_AUTHORITY = "com.android.bluetooth.avrcp.test";
@@ -84,13 +83,9 @@ public class ImageTest {
 
     @Before
     public void setUp() throws Exception {
-
-        mTargetContext = InstrumentationRegistry.getTargetContext();
-        mTestResources = TestUtils.getTestApplicationResources(mTargetContext);
-
-        mTestBitmap = loadImage(com.android.bluetooth.tests.R.raw.image_200_200);
-
-        mTestContentResolver = new MockContentResolver(mTargetContext);
+        mTestBitmap = loadImage(R.raw.image_200_200);
+        final var context = InstrumentationRegistry.getInstrumentation().getContext();
+        mTestContentResolver = new MockContentResolver(context);
         mTestContentResolver.addProvider(
                 TEST_AUTHORITY,
                 new MockContentProvider() {
@@ -98,8 +93,7 @@ public class ImageTest {
                     public AssetFileDescriptor openTypedAssetFile(
                             Uri url, String mimeType, Bundle opts) {
                         if (IMAGE_URI_1.equals(url)) {
-                            return mTestResources.openRawResourceFd(
-                                    com.android.bluetooth.tests.R.raw.image_200_200);
+                            return mTestResources.openRawResourceFd(R.raw.image_200_200);
                         } else if (IMAGE_URI_SECURITY_ERROR.equals(url)) {
                             throw new SecurityException();
                         }
@@ -108,17 +102,14 @@ public class ImageTest {
                 });
 
         when(mMockContext.getContentResolver()).thenReturn(mTestContentResolver);
-        when(mMockContext.getResources()).thenReturn(mMockResources);
-        when(mMockResources.getBoolean(R.bool.avrcp_target_cover_art_uri_images)).thenReturn(true);
+        Util.UriImagesSupport.sValue = true;
     }
 
     @After
     public void tearDown() throws Exception {
         mTestContentResolver = null;
         mTestBitmap = null;
-        mTestResources = null;
-        mTargetContext = null;
-        mMockContext = null;
+        Util.UriImagesSupport.sValue = false;
     }
 
     private Bitmap loadImage(int resId) {
@@ -126,7 +117,7 @@ public class ImageTest {
         return BitmapFactory.decodeStream(imageInputStream);
     }
 
-    private MediaMetadata getMediaMetadataWithoutArt() {
+    private static MediaMetadata getMediaMetadataWithoutArt() {
         MediaMetadata.Builder builder =
                 new MediaMetadata.Builder()
                         .putString(MediaMetadata.METADATA_KEY_TITLE, "BT Test Song")
@@ -136,7 +127,7 @@ public class ImageTest {
         return builder.build();
     }
 
-    private MediaMetadata getMediaMetadataWithBitmap(String field, Bitmap image) {
+    private static MediaMetadata getMediaMetadataWithBitmap(String field, Bitmap image) {
         MediaMetadata.Builder builder =
                 new MediaMetadata.Builder()
                         .putString(MediaMetadata.METADATA_KEY_TITLE, "BT Test Song")
@@ -147,7 +138,7 @@ public class ImageTest {
         return builder.build();
     }
 
-    private MediaMetadata getMediaMetadataWithUri(String field, String uri) {
+    private static MediaMetadata getMediaMetadataWithUri(String field, String uri) {
         MediaMetadata.Builder builder =
                 new MediaMetadata.Builder()
                         .putString(MediaMetadata.METADATA_KEY_TITLE, "BT Test Song")
@@ -158,7 +149,7 @@ public class ImageTest {
         return builder.build();
     }
 
-    private MediaDescription getMediaDescriptionWithoutArt() {
+    private static MediaDescription getMediaDescriptionWithoutArt() {
         MediaDescription.Builder builder =
                 new MediaDescription.Builder()
                         .setTitle("BT Test Song")
@@ -166,7 +157,7 @@ public class ImageTest {
         return builder.build();
     }
 
-    private MediaDescription getMediaDescriptionWithBitmap(Bitmap image) {
+    private static MediaDescription getMediaDescriptionWithBitmap(Bitmap image) {
         MediaDescription.Builder builder =
                 new MediaDescription.Builder()
                         .setTitle("BT Test Song")
@@ -175,7 +166,7 @@ public class ImageTest {
         return builder.build();
     }
 
-    private MediaDescription getMediaDescriptionWithUri(Uri uri) {
+    private static MediaDescription getMediaDescriptionWithUri(Uri uri) {
         MediaDescription.Builder builder =
                 new MediaDescription.Builder()
                         .setTitle("BT Test Song")
@@ -184,13 +175,13 @@ public class ImageTest {
         return builder.build();
     }
 
-    private Bundle getBundleWithBitmap(String field, Bitmap image) {
+    private static Bundle getBundleWithBitmap(String field, Bitmap image) {
         Bundle bundle = new Bundle();
         bundle.putParcelable(field, image);
         return bundle;
     }
 
-    private Bundle getBundleWithUri(String field, String uri) {
+    private static Bundle getBundleWithUri(String field, String uri) {
         Bundle bundle = new Bundle();
         bundle.putString(field, uri);
         return bundle;
@@ -287,7 +278,7 @@ public class ImageTest {
      */
     @Test
     public void testCreateImageFromMediaMetadataWithArtUriDisabled() {
-        when(mMockResources.getBoolean(R.bool.avrcp_target_cover_art_uri_images)).thenReturn(false);
+        Util.UriImagesSupport.sValue = false;
         MediaMetadata metadata =
                 getMediaMetadataWithUri(MediaMetadata.METADATA_KEY_ART_URI, IMAGE_STRING_1);
         Image artwork = new Image(mMockContext, metadata);
@@ -302,7 +293,7 @@ public class ImageTest {
      */
     @Test
     public void testCreateImageFromMediaMetadataWithAlbumArtUriDisabled() {
-        when(mMockResources.getBoolean(R.bool.avrcp_target_cover_art_uri_images)).thenReturn(false);
+        Util.UriImagesSupport.sValue = false;
         MediaMetadata metadata =
                 getMediaMetadataWithUri(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, IMAGE_STRING_1);
         Image artwork = new Image(mMockContext, metadata);
@@ -317,7 +308,7 @@ public class ImageTest {
      */
     @Test
     public void testCreateImageFromMediaMetadataWithDisplayIconUriDisabled() {
-        when(mMockResources.getBoolean(R.bool.avrcp_target_cover_art_uri_images)).thenReturn(false);
+        Util.UriImagesSupport.sValue = false;
         MediaMetadata metadata =
                 getMediaMetadataWithUri(
                         MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI, IMAGE_STRING_1);
@@ -459,7 +450,7 @@ public class ImageTest {
      */
     @Test
     public void testCreateImageFromBundleWithArtUriDisabled() {
-        when(mMockResources.getBoolean(R.bool.avrcp_target_cover_art_uri_images)).thenReturn(false);
+        Util.UriImagesSupport.sValue = false;
         Bundle bundle = getBundleWithUri(MediaMetadata.METADATA_KEY_ART_URI, IMAGE_STRING_1);
         Image artwork = new Image(mMockContext, bundle);
         assertThat(artwork.getImage()).isNull();
@@ -473,7 +464,7 @@ public class ImageTest {
      */
     @Test
     public void testCreateImageFromBundleWithAlbumArtUriDisabled() {
-        when(mMockResources.getBoolean(R.bool.avrcp_target_cover_art_uri_images)).thenReturn(false);
+        Util.UriImagesSupport.sValue = false;
         Bundle bundle = getBundleWithUri(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, IMAGE_STRING_1);
         Image artwork = new Image(mMockContext, bundle);
         assertThat(artwork.getImage()).isNull();
@@ -487,7 +478,7 @@ public class ImageTest {
      */
     @Test
     public void testCreateImageFromBundleWithDisplayIconUriDisabled() {
-        when(mMockResources.getBoolean(R.bool.avrcp_target_cover_art_uri_images)).thenReturn(false);
+        Util.UriImagesSupport.sValue = false;
         Bundle bundle =
                 getBundleWithUri(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI, IMAGE_STRING_1);
         Image artwork = new Image(mMockContext, bundle);

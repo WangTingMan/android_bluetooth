@@ -19,16 +19,15 @@
 #ifndef BTIF_GATT_UTIL_H
 #define BTIF_GATT_UTIL_H
 
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/bt_transport.h>
 #include <hardware/bluetooth.h>
 #include <hardware/bt_gatt.h>
 
 #include "bta/include/bta_gatt_api.h"
-#include "types/bt_transport.h"
-#include "types/raw_address.h"
 
 void btif_to_bta_response(tGATTS_RSP* p_dest, btgatt_response_t* p_src);
 
-void btif_gatt_check_encrypted_link(RawAddress bd_addr,
-                                    tBT_TRANSPORT transport);
+void btif_gatt_check_encrypted_link(RawAddress bd_addr, tBT_TRANSPORT transport);
 
 #endif

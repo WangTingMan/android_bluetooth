@@ -16,17 +16,17 @@
 
 #pragma once
 
+#include <bluetooth/types/address.h>
+
 #include <cstdint>
 #include <memory>
-
-#include "types/raw_address.h"
 
 namespace power_telemetry {
 
 struct PowerTelemetryImpl;
 
 class PowerTelemetry {
- public:
+public:
   PowerTelemetry();
 
   void RecordLogDataContainer();
@@ -35,31 +35,26 @@ class PowerTelemetry {
   void LogHciCmdDetail();
   void LogHciEvtDetail();
 
-  void LogLinkDetails(uint16_t handle, const RawAddress& bdaddr,
-                      bool isConnected, bool is_acl_link);
+  void LogLinkDetails(uint16_t handle, const RawAddress& bdaddr, bool isConnected,
+                      bool is_acl_link);
   void LogRxAclPktData(uint16_t len);
   void LogTxAclPktData(uint16_t len);
 
-  void LogChannelConnected(uint16_t psm, int32_t src_id, int32_t dst_id,
-                           const RawAddress& bd_addr);
+  void LogChannelConnected(uint16_t psm, int32_t src_id, int32_t dst_id, const RawAddress& bd_addr);
   void LogChannelDisconnected(uint16_t psm, int32_t src_id, int32_t dst_id,
                               const RawAddress& bd_addr);
-  void LogRxBytes(uint16_t psm, int32_t src_id, int32_t dst_id,
-                  const RawAddress& bd_addr, int32_t num_bytes);
-  void LogTxBytes(uint16_t psm, int32_t src_id, int32_t dst_id,
-                  const RawAddress& bd_addr, int32_t num_bytes);
+  void LogRxBytes(uint16_t psm, int32_t src_id, int32_t dst_id, const RawAddress& bd_addr,
+                  int32_t num_bytes);
+  void LogTxBytes(uint16_t psm, int32_t src_id, int32_t dst_id, const RawAddress& bd_addr,
+                  int32_t num_bytes);
 
   void LogSniffStarted(uint16_t handle, const RawAddress& bdaddr);
   void LogSniffStopped(uint16_t handle, const RawAddress& bdaddr);
-  void LogAclTxPowerLevel(uint16_t handle, uint8_t txPower);
   void LogInqScanStarted();
   void LogInqScanStopped();
   void LogBleScan(uint16_t num_resps);
   void LogBleAdvStarted();
   void LogBleAdvStopped();
-
-  void LogTxPower(void* res);
-  void LogTrafficData();
 
   void Dumpsys(int32_t fd);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ namespace hal {
 namespace fuzz {
 
 class FuzzHciHal : public HciHal {
- public:
+public:
   void registerIncomingPacketCallback(HciHalCallbacks* callbacks) override;
   void unregisterIncomingPacketCallback() override;
 
@@ -36,18 +36,7 @@ class FuzzHciHal : public HciHal {
 
   void injectArbitrary(FuzzedDataProvider& fdp);
 
-  std::string ToString() const override {
-    return "HciHalFuzz";
-  }
-
-  static const ModuleFactory Factory;
-
- protected:
-  void ListDependencies(ModuleList* /* list */) const override {}
-  void Start() override {}
-  void Stop() override {}
-
- private:
+private:
   void injectAclData(std::vector<uint8_t> data);
   void injectHciEvent(std::vector<uint8_t> data);
   void injectScoData(std::vector<uint8_t> data);

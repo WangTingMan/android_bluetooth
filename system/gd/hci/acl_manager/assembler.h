@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@
 #include "hci/acl_manager/acl_connection.h"
 #include "hci/address_with_type.h"
 #include "os/handler.h"
-#include "os/log.h"
 #include "packet/packet_view.h"
 
 #include "main/shim/stack.h"
@@ -42,22 +41,18 @@ constexpr size_t kL2capBasicFrameHeaderSize = 4;
 namespace {
 // This is a helper class to keep the state of the assembler and expose PacketView<>::Append.
 class PacketViewForRecombination : public packet::PacketView<packet::kLittleEndian> {
- public:
+public:
   PacketViewForRecombination(const PacketView& packetView)
       : PacketView(packetView), received_first_(true) {}
 
   PacketViewForRecombination()
       : PacketView(PacketView<packet::kLittleEndian>(std::make_shared<std::vector<uint8_t>>())) {}
 
-  void AppendPacketView(packet::PacketView<packet::kLittleEndian> to_append) {
-    Append(to_append);
-  }
+  void AppendPacketView(packet::PacketView<packet::kLittleEndian> to_append) { Append(to_append); }
 
-  bool ReceivedFirstPacket() {
-    return received_first_;
-  }
+  bool ReceivedFirstPacket() { return received_first_; }
 
- private:
+private:
   bool received_first_{};
 };
 
@@ -73,8 +68,9 @@ size_t GetL2capPduSize(packet::PacketView<packet::kLittleEndian> pdu) {
 
 }  // namespace
 
-struct assembler : public std::enable_shared_from_this<assembler> {
-  assembler(AddressWithType address_with_type, AclConnection::QueueDownEnd* down_end, os::Handler* handler)
+struct assembler {
+  assembler(AddressWithType address_with_type, AclConnection::QueueDownEnd* down_end,
+            os::Handler* handler)
       : address_with_type_(address_with_type), down_end_(down_end), handler_(handler) {}
   AddressWithType address_with_type_;
   AclConnection::QueueDownEnd* down_end_;
@@ -120,8 +116,8 @@ struct assembler : public std::enable_shared_from_this<assembler> {
     auto packet_boundary_flag = packet.GetPacketBoundaryFlag();
     if (packet_boundary_flag == PacketBoundaryFlag::FIRST_NON_AUTOMATICALLY_FLUSHABLE) {
       log::error(
-          "Controller is not allowed to send FIRST_NON_AUTOMATICALLY_FLUSHABLE to host except "
-          "loopback mode");
+              "Controller is not allowed to send FIRST_NON_AUTOMATICALLY_FLUSHABLE to host except "
+              "loopback mode");
       return;
     }
     if (packet_boundary_flag == PacketBoundaryFlag::CONTINUING_FRAGMENT) {
@@ -133,8 +129,9 @@ struct assembler : public std::enable_shared_from_this<assembler> {
     } else if (packet_boundary_flag == PacketBoundaryFlag::FIRST_AUTOMATICALLY_FLUSHABLE) {
       if (recombination_stage_.ReceivedFirstPacket()) {
         log::error(
-            "Controller sent a starting packet without finishing previous packet. Drop previous "
-            "one.");
+                "Controller sent a starting packet without finishing previous packet. Drop "
+                "previous "
+                "one.");
       }
       recombination_stage_ = payload;
     }
@@ -160,14 +157,14 @@ struct assembler : public std::enable_shared_from_this<assembler> {
     auto assembled_packet_ = incoming_queue_.front();
     incoming_queue_.pop();
     auto packet_view = std::make_unique<PacketView<packet::kLittleEndian>>( assembled_packet_ );
-    handler_->Post( common::BindOnce( &shim::legacy::Acl::HandleAssembledL2capPacket,
+    handler_->Post( common::BindOnce( &::bluetooth::shim::Acl::HandleAssembledL2capPacket,
       base::Unretained( ::bluetooth::shim::Stack::GetInstance()->GetAcl() ),
       acl_handle,
       std::move( packet_view ) ) );
 #else
     if (!enqueue_registered_->exchange(true)) {
-      down_end_->RegisterEnqueue(
-          handler_, common::Bind(&assembler::on_data_ready, shared_from_this()));
+      down_end_->RegisterEnqueue(handler_,
+                                 common::Bind(&assembler::on_data_ready, common::Unretained(this)));
     }
 #endif
   }

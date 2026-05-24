@@ -13,23 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/hci_role.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <cstdint>
 
-#include "common/init_flags.h"
-#include "hci/controller_interface_mock.h"
+#include "hci/controller_mock.h"
 #include "stack/acl/acl.h"
 #include "stack/btm/btm_int_types.h"
+#include "stack/btm/internal/btm_api.h"
 #include "stack/btm/security_device_record.h"
 #include "stack/include/acl_api.h"
 #include "stack/include/acl_hci_link_interface.h"
 #include "stack/include/hcidefs.h"
 #include "test/common/mock_functions.h"
 #include "test/mock/mock_main_shim_entry.h"
-#include "types/hci_role.h"
-#include "types/raw_address.h"
 
 tBTM_CB btm_cb;
 
@@ -46,17 +46,15 @@ std::set<const RawAddress> copy_of_connected_with_both_public_and_random_set();
 }  // namespace bluetooth
 
 class StackAclTest : public testing::Test {
- protected:
+protected:
   void SetUp() override {
     reset_mock_function_count_map();
-    bluetooth::hci::testing::mock_controller_ = &controller_;
+    bluetooth::hci::testing::mock_controller_ =
+            std::make_unique<bluetooth::hci::testing::MockController>();
   }
-  void TearDown() override {
-    bluetooth::hci::testing::mock_controller_ = nullptr;
-  }
+  void TearDown() override { bluetooth::hci::testing::mock_controller_.reset(); }
 
   tBTM_SEC_DEV_REC device_record_;
-  bluetooth::hci::testing::MockControllerInterface controller_;
 };
 
 TEST_F(StackAclTest, nop) {}
@@ -65,16 +63,17 @@ TEST_F(StackAclTest, acl_process_extended_features) {
   const uint16_t hci_handle = 0x123;
   const tBT_TRANSPORT transport = BT_TRANSPORT_LE;
   const tHCI_ROLE link_role = HCI_ROLE_CENTRAL;
+  const tAclLinkSpec link_spec = {.addrt = {.type = BLE_ADDR_PUBLIC, .bda = kRawAddress},
+                                  .transport = transport};
 
-  btm_acl_created(kRawAddress, hci_handle, link_role, transport);
+  btm_acl_created(link_spec, hci_handle, link_role);
   tACL_CONN* p_acl = btm_acl_for_bda(kRawAddress, transport);
   ASSERT_NE(nullptr, p_acl);
 
   // Handle typical case
   {
     const uint8_t max_page = 3;
-    memset((void*)p_acl->peer_lmp_feature_valid, 0,
-           HCI_EXT_FEATURES_PAGE_MAX + 1);
+    memset((void*)p_acl->peer_lmp_feature_valid, 0, HCI_EXT_FEATURES_PAGE_MAX + 1);
     acl_process_extended_features(hci_handle, 1, max_page, 0xf123456789abcde);
     acl_process_extended_features(hci_handle, 2, max_page, 0xef123456789abcd);
     acl_process_extended_features(hci_handle, 3, max_page, 0xdef123456789abc);
@@ -89,11 +88,10 @@ TEST_F(StackAclTest, acl_process_extended_features) {
   // Handle extreme case
   {
     const uint8_t max_page = 255;
-    memset((void*)p_acl->peer_lmp_feature_valid, 0,
-           HCI_EXT_FEATURES_PAGE_MAX + 1);
+    memset((void*)p_acl->peer_lmp_feature_valid, 0, HCI_EXT_FEATURES_PAGE_MAX + 1);
     for (int i = 1; i < HCI_EXT_FEATURES_PAGE_MAX + 1; i++) {
-      acl_process_extended_features(hci_handle, static_cast<uint8_t>(i),
-                                    max_page, 0x123456789abcdef);
+      acl_process_extended_features(hci_handle, static_cast<uint8_t>(i), max_page,
+                                    0x123456789abcdef);
     }
     /* page 0 is the standard feature set */
     ASSERT_FALSE(p_acl->peer_lmp_feature_valid[0]);
@@ -104,8 +102,7 @@ TEST_F(StackAclTest, acl_process_extended_features) {
 
   // Handle case where device returns max page of zero
   {
-    memset((void*)p_acl->peer_lmp_feature_valid, 0,
-           HCI_EXT_FEATURES_PAGE_MAX + 1);
+    memset((void*)p_acl->peer_lmp_feature_valid, 0, HCI_EXT_FEATURES_PAGE_MAX + 1);
     acl_process_extended_features(hci_handle, 1, 0, 0xdef123456789abc);
     ASSERT_FALSE(p_acl->peer_lmp_feature_valid[0]);
     ASSERT_TRUE(p_acl->peer_lmp_feature_valid[1]);

@@ -26,13 +26,14 @@
 #ifndef HIDD_INT_H
 #define HIDD_INT_H
 
+#include <bluetooth/types/address.h>
+
 #include <cstdint>
 
 #include "stack/hid/hid_conn.h"
 #include "stack/include/bt_hdr.h"
 #include "stack/include/hidd_api.h"
-#include "stack/include/l2c_api.h"  // tL2CAP_CFG_INFO && FLOW_SPEC
-#include "types/raw_address.h"
+#include "stack/include/l2cap_types.h"
 
 enum { HIDD_DEV_NO_CONN, HIDD_DEV_CONNECTED };
 
@@ -72,9 +73,8 @@ tHID_STATUS hidd_conn_reg(void);
 void hidd_conn_dereg(void);
 tHID_STATUS hidd_conn_initiate(void);
 tHID_STATUS hidd_conn_disconnect(void);
-tHID_STATUS hidd_conn_send_data(uint8_t channel, uint8_t msg_type,
-                                uint8_t param, uint8_t data, uint16_t len,
-                                uint8_t* p_data);
+tHID_STATUS hidd_conn_send_data(uint8_t channel, uint8_t msg_type, uint8_t param, uint8_t data,
+                                uint16_t len, uint8_t* p_data);
 
 #ifdef __cplusplus
 extern "C" {

@@ -13,9 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package android.bluetooth;
 
 import android.annotation.NonNull;
+import android.annotation.RequiresNoPermission;
 import android.os.Parcel;
 import android.os.ParcelUuid;
 import android.os.Parcelable;
@@ -52,7 +54,7 @@ public class BluetoothGattIncludedService implements Parcelable {
 
     @Override
     public void writeToParcel(Parcel out, int flags) {
-        out.writeParcelable(new ParcelUuid(mUuid), 0);
+        (new ParcelUuid(mUuid)).writeToParcel(out, flags);
         out.writeInt(mInstanceId);
         out.writeInt(mServiceType);
     }
@@ -69,7 +71,7 @@ public class BluetoothGattIncludedService implements Parcelable {
             };
 
     private BluetoothGattIncludedService(Parcel in) {
-        mUuid = ((ParcelUuid) in.readParcelable(null)).getUuid();
+        mUuid = ParcelUuid.CREATOR.createFromParcel(in).getUuid();
         mInstanceId = in.readInt();
         mServiceType = in.readInt();
     }
@@ -79,6 +81,7 @@ public class BluetoothGattIncludedService implements Parcelable {
      *
      * @return UUID of this service
      */
+    @RequiresNoPermission
     public UUID getUuid() {
         return mUuid;
     }
@@ -87,15 +90,17 @@ public class BluetoothGattIncludedService implements Parcelable {
      * Returns the instance ID for this service
      *
      * <p>If a remote device offers multiple services with the same UUID (ex. multiple battery
-     * services for different batteries), the instance ID is used to distuinguish services.
+     * services for different batteries), the instance ID is used to distinguish services.
      *
      * @return Instance ID of this service
      */
+    @RequiresNoPermission
     public int getInstanceId() {
         return mInstanceId;
     }
 
     /** Get the type of this service (primary/secondary) */
+    @RequiresNoPermission
     public int getType() {
         return mServiceType;
     }

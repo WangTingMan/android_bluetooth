@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -47,20 +47,19 @@ import com.android.obex.ResponseCodes;
 import com.android.obex.ServerOperation;
 import com.android.vcard.VCardComposer;
 import com.android.vcard.VCardConfig;
-import com.android.vcard.VCardPhoneNumberTranslationCallback;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.regex.Pattern;
 
 // Next tag value for ContentProfileErrorReportUtils.report(): 22
 public class BluetoothPbapVcardManager {
-    private static final String TAG = "BluetoothPbapVcardManager";
+    private static final String TAG = BluetoothPbapVcardManager.class.getSimpleName();
 
-    private ContentResolver mResolver;
-
-    private Context mContext;
+    private final ContentResolver mResolver;
+    private final Context mContext;
 
     static final String SORT_ORDER_PHONE_NUMBER = CommonDataKinds.Phone.NUMBER + " ASC";
 
@@ -77,7 +76,7 @@ public class BluetoothPbapVcardManager {
 
     static final int CONTACTS_NAME_COLUMN_INDEX = 1;
 
-    static long sLastFetchedTimeStamp;
+    private long mLastFetchedTimeStamp;
 
     // call histories use dynamic handles, and handles should order by date; the
     // most recently one should be the first handle. In table "calls", _id and
@@ -87,10 +86,15 @@ public class BluetoothPbapVcardManager {
 
     private static final int NEED_SEND_BODY = -1;
 
+    private static final String SEPARATOR = System.getProperty("line.separator");
+    private static final Pattern SEPARATOR_PATTERN = Pattern.compile(SEPARATOR);
+    private static final Pattern PROPERTY_PATTERN = Pattern.compile("[;:]");
+    private static final Pattern ATTRIBUTE_PATTERN = Pattern.compile(":");
+
     public BluetoothPbapVcardManager(final Context context) {
         mContext = context;
         mResolver = mContext.getContentResolver();
-        sLastFetchedTimeStamp = System.currentTimeMillis();
+        mLastFetchedTimeStamp = System.currentTimeMillis();
     }
 
     /** Create an owner vcard from the configured profile */
@@ -131,19 +135,15 @@ public class BluetoothPbapVcardManager {
 
     public final int getPhonebookSize(
             final int type, BluetoothPbapSimVcardManager vCardSimManager) {
-        int size;
-        switch (type) {
-            case BluetoothPbapObexServer.ContentType.PHONEBOOK:
-            case BluetoothPbapObexServer.ContentType.FAVORITES:
-                size = getContactsSize(type);
-                break;
-            case BluetoothPbapObexServer.ContentType.SIM_PHONEBOOK:
-                size = vCardSimManager.getSIMContactsSize();
-                break;
-            default:
-                size = getCallHistorySize(type);
-                break;
-        }
+        int size =
+                switch (type) {
+                    case BluetoothPbapObexServer.ContentType.PHONEBOOK,
+                            BluetoothPbapObexServer.ContentType.FAVORITES ->
+                            getContactsSize(type);
+                    case BluetoothPbapObexServer.ContentType.SIM_PHONEBOOK ->
+                            vCardSimManager.getSIMContactsSize();
+                    default -> getCallHistorySize(type);
+                };
         Log.v(TAG, "getPhonebookSize size = " + size + " type = " + type);
         return size;
     }
@@ -238,7 +238,7 @@ public class BluetoothPbapVcardManager {
                 new String[] {Calls.NUMBER, Calls.CACHED_NAME, Calls.NUMBER_PRESENTATION};
 
         Cursor callCursor = null;
-        ArrayList<String> list = new ArrayList<String>();
+        ArrayList<String> list = new ArrayList<>();
         try {
             callCursor =
                     BluetoothMethodProxy.getInstance()
@@ -282,7 +282,7 @@ public class BluetoothPbapVcardManager {
     }
 
     public final List<String> getPhonebookNameList(final int orderByWhat) {
-        List<String> nameList = new ArrayList<String>();
+        List<String> nameList = new ArrayList<>();
         // Owner vCard enhancement. Use "ME" profile if configured
         String ownerName = null;
         if (BluetoothPbapConfig.useProfileForOwnerVcard()) {
@@ -347,7 +347,7 @@ public class BluetoothPbapVcardManager {
             int pbSize,
             byte[] selector,
             String vCardSelectorOperator) {
-        List<String> nameList = new ArrayList<String>();
+        List<String> nameList = new ArrayList<>();
         PropertySelector vcardselector = new PropertySelector(selector);
         int vcardType;
 
@@ -360,17 +360,10 @@ public class BluetoothPbapVcardManager {
         VCardComposer composer =
                 BluetoothPbapUtils.createFilteredVCardComposer(mContext, vcardType, null);
         composer.setPhoneNumberTranslationCallback(
-                new VCardPhoneNumberTranslationCallback() {
-
-                    @Override
-                    public String onValueReceived(
-                            String rawValue, int type, String label, boolean isPrimary) {
-                        String numberWithControlSequence =
-                                rawValue.replace(PhoneNumberUtils.PAUSE, 'p')
-                                        .replace(PhoneNumberUtils.WAIT, 'w');
-                        return numberWithControlSequence;
-                    }
-                });
+                (rawValue, type, label, isPrimary) ->
+                        convertAndStrip(rawValue)
+                                .replace(PhoneNumberUtils.PAUSE, 'p')
+                                .replace(PhoneNumberUtils.WAIT, 'w'));
 
         // Owner vCard enhancement. Use "ME" profile if configured
         String ownerName = null;
@@ -396,7 +389,7 @@ public class BluetoothPbapVcardManager {
                                     null,
                                     Phone.CONTACT_ID);
 
-            ArrayList<String> contactNameIdList = new ArrayList<String>();
+            ArrayList<String> contactNameIdList = new ArrayList<>();
             appendDistinctNameIdList(
                     contactNameIdList,
                     mContext.getString(android.R.string.unknownName),
@@ -481,7 +474,7 @@ public class BluetoothPbapVcardManager {
     }
 
     public final List<String> getContactNamesByNumber(final String phoneNumber) {
-        List<String> nameList = new ArrayList<String>();
+        List<String> nameList = new ArrayList<>();
 
         Cursor contactCursor = null;
         Uri uri = null;
@@ -528,9 +521,9 @@ public class BluetoothPbapVcardManager {
     byte[] getCallHistoryPrimaryFolderVersion(final int type) {
         final Uri myUri = CallLog.Calls.CONTENT_URI;
         String selection = BluetoothPbapObexServer.createSelectionPara(type);
-        selection = selection + " AND date >= " + sLastFetchedTimeStamp;
+        selection = selection + " AND date >= " + mLastFetchedTimeStamp;
 
-        Log.d(TAG, "LAST_FETCHED_TIME_STAMP is " + sLastFetchedTimeStamp);
+        Log.d(TAG, "LAST_FETCHED_TIME_STAMP is " + mLastFetchedTimeStamp);
         Cursor callCursor = null;
         long count = 0;
         long primaryVcMsb = 0;
@@ -555,7 +548,7 @@ public class BluetoothPbapVcardManager {
             }
         }
 
-        sLastFetchedTimeStamp = System.currentTimeMillis();
+        mLastFetchedTimeStamp = System.currentTimeMillis();
         Log.d(TAG, "getCallHistoryPrimaryFolderVersion count is " + count + " type is " + type);
         ByteBuffer pvc = ByteBuffer.allocate(16);
         pvc.putLong(primaryVcMsb);
@@ -871,19 +864,14 @@ public class BluetoothPbapVcardManager {
             // other formatting
             // done by vCard library by default.
             composer.setPhoneNumberTranslationCallback(
-                    new VCardPhoneNumberTranslationCallback() {
-                        @Override
-                        public String onValueReceived(
-                                String rawValue, int type, String label, boolean isPrimary) {
-                            // 'p' and 'w' are the standard characters for pause and
-                            // wait
-                            // (see RFC 3601)
-                            // so use those when exporting phone numbers via vCard.
-                            String numberWithControlSequence =
-                                    rawValue.replace(PhoneNumberUtils.PAUSE, 'p')
-                                            .replace(PhoneNumberUtils.WAIT, 'w');
-                            return numberWithControlSequence;
-                        }
+                    (rawValue, type, label, isPrimary) -> {
+                        // 'p' and 'w' are the standard characters for pause and
+                        // wait
+                        // (see RFC 3601)
+                        // so use those when exporting phone numbers via vCard.
+                        return convertAndStrip(rawValue)
+                                .replace(PhoneNumberUtils.PAUSE, 'p')
+                                .replace(PhoneNumberUtils.WAIT, 'w');
                     });
             buffer = new HandlerForStringBuffer(op, ownerVCard);
             Log.v(TAG, "contactIdCursor size: " + contactIdCursor.getCount());
@@ -990,17 +978,11 @@ public class BluetoothPbapVcardManager {
             /* BT does want PAUSE/WAIT conversion while it doesn't want the
              * other formatting done by vCard library by default. */
             composer.setPhoneNumberTranslationCallback(
-                    new VCardPhoneNumberTranslationCallback() {
-                        @Override
-                        public String onValueReceived(
-                                String rawValue, int type, String label, boolean isPrimary) {
-                            /* 'p' and 'w' are the standard characters for pause and wait
-                             * (see RFC 3601) so use those when exporting phone numbers via vCard.*/
-                            String numberWithControlSequence =
-                                    rawValue.replace(PhoneNumberUtils.PAUSE, 'p')
-                                            .replace(PhoneNumberUtils.WAIT, 'w');
-                            return numberWithControlSequence;
-                        }
+                    (rawValue, type, label, isPrimary) -> {
+                        /* 'p' and 'w' are the standard characters for pause and wait
+                         * (see RFC 3601) so use those when exporting phone numbers via vCard.*/
+                        return rawValue.replace(PhoneNumberUtils.PAUSE, 'p')
+                                .replace(PhoneNumberUtils.WAIT, 'w');
                     });
             buffer = new HandlerForStringBuffer(op, ownerVCard);
             Log.v(TAG, "contactIdCursor size: " + contactIdCursor.getCount());
@@ -1100,16 +1082,14 @@ public class BluetoothPbapVcardManager {
             byte[] filter,
             byte[] selector,
             String vcardselectorop,
-            boolean vCardSelct) {
+            boolean vCardSelect) {
         long timestamp = System.currentTimeMillis();
 
-        BluetoothPbapCallLogComposer composer = null;
         HandlerForStringBuffer buffer = null;
 
-        try {
+        try (BluetoothPbapCallLogComposer composer = new BluetoothPbapCallLogComposer(mContext)) {
             VCardFilter vcardfilter = new VCardFilter(ignorefilter ? null : filter);
             PropertySelector vcardselector = new PropertySelector(selector);
-            composer = new BluetoothPbapCallLogComposer(mContext);
             buffer = new HandlerForStringBuffer(op, ownerVCard);
             if (!composer.init(CallLog.Calls.CONTENT_URI, selection, null, CALLLOG_SORT_ORDER)
                     || !buffer.init()) {
@@ -1123,7 +1103,7 @@ public class BluetoothPbapVcardManager {
                     break;
                 }
                 String vcard = composer.createOneEntry(vcardType21);
-                if (vCardSelct) {
+                if (vCardSelect) {
                     if (!vcardselector.checkVCardSelector(vcard, vcardselectorop)) {
                         Log.e(TAG, "Checking vcard selector for call log");
                         ContentProfileErrorReportUtils.report(
@@ -1178,13 +1158,10 @@ public class BluetoothPbapVcardManager {
                     buffer.writeVCard(vcard);
                 }
             }
-            if (needSendBody != NEED_SEND_BODY && vCardSelct) {
+            if (needSendBody != NEED_SEND_BODY && vCardSelect) {
                 return pbSize;
             }
         } finally {
-            if (composer != null) {
-                composer.terminate();
-            }
             if (buffer != null) {
                 buffer.terminate();
             }
@@ -1199,12 +1176,11 @@ public class BluetoothPbapVcardManager {
     }
 
     public String stripTelephoneNumber(String vCard) {
-        String separator = System.getProperty("line.separator");
-        String[] attr = vCard.split(separator);
+        String[] attr = SEPARATOR_PATTERN.split(vCard);
         String stripedVCard = "";
         for (int i = 0; i < attr.length; i++) {
             if (attr[i].startsWith("TEL")) {
-                String[] vTagAndTel = attr[i].split(":", 2);
+                String[] vTagAndTel = ATTRIBUTE_PATTERN.split(attr[i], 2);
                 int telLenBefore = vTagAndTel[1].length();
                 // Remove '-', '(', ')' or ' ' from TEL number
                 vTagAndTel[1] =
@@ -1215,19 +1191,14 @@ public class BluetoothPbapVcardManager {
                                 .replace(" ", "");
                 if (vTagAndTel[1].length() < telLenBefore) {
                     Log.v(TAG, "Fixing vCard TEL to " + vTagAndTel[1]);
-                    attr[i] =
-                            new StringBuilder()
-                                    .append(vTagAndTel[0])
-                                    .append(":")
-                                    .append(vTagAndTel[1])
-                                    .toString();
+                    attr[i] = vTagAndTel[0] + ":" + vTagAndTel[1];
                 }
             }
         }
 
         for (int i = 0; i < attr.length; i++) {
             if (!attr[i].isEmpty()) {
-                stripedVCard = stripedVCard.concat(attr[i] + separator);
+                stripedVCard = stripedVCard.concat(attr[i] + SEPARATOR);
             }
         }
         Log.v(TAG, "vCard with stripped telephone no.: " + stripedVCard);
@@ -1250,10 +1221,10 @@ public class BluetoothPbapVcardManager {
             NICKNAME(23, "NICKNAME", false, true),
             DATETIME(28, "X-IRMC-CALL-DATETIME", false, false);
 
-            public final int pos;
-            public final String prop;
-            public final boolean onlyCheckV21;
-            public final boolean excludeForV21;
+            final int pos;
+            final String prop;
+            final boolean onlyCheckV21;
+            final boolean excludeForV21;
 
             FilterBit(int pos, String prop, boolean onlyCheckV21, boolean excludeForV21) {
                 this.pos = pos;
@@ -1263,7 +1234,6 @@ public class BluetoothPbapVcardManager {
             }
         }
 
-        private static final String SEPARATOR = System.getProperty("line.separator");
         private final byte[] mFilter;
 
         // This function returns true if the attributes needs to be included in the filtered vcard.
@@ -1294,7 +1264,7 @@ public class BluetoothPbapVcardManager {
             if (mFilter == null) {
                 return vCard;
             }
-            String[] lines = vCard.split(SEPARATOR);
+            String[] lines = SEPARATOR_PATTERN.split(vCard);
             StringBuilder filteredVCard = new StringBuilder();
             boolean filteredIn = false;
 
@@ -1302,7 +1272,7 @@ public class BluetoothPbapVcardManager {
                 // Check whether the current property is changing (ignoring multi-line properties)
                 // and determine if the current property is filtered in.
                 if (!Character.isWhitespace(line.charAt(0)) && !line.startsWith("=")) {
-                    String currentProp = line.split("[;:]")[0];
+                    String currentProp = PROPERTY_PATTERN.split(line, 2)[0];
                     filteredIn = true;
 
                     for (FilterBit bit : FilterBit.values()) {
@@ -1325,7 +1295,7 @@ public class BluetoothPbapVcardManager {
 
                 // Build filtered vCard
                 if (filteredIn) {
-                    filteredVCard.append(line + SEPARATOR);
+                    filteredVCard.append(line).append(SEPARATOR);
                 }
             }
 
@@ -1353,8 +1323,8 @@ public class BluetoothPbapVcardManager {
             NICKNAME(23, "NICKNAME"),
             DATETIME(28, "DATETIME");
 
-            public final int mBitPosition;
-            public final String mProperty;
+            final int mBitPosition;
+            final String mProperty;
 
             PropertyMask(int bitPosition, String property) {
                 this.mBitPosition = bitPosition;
@@ -1362,7 +1332,6 @@ public class BluetoothPbapVcardManager {
             }
         }
 
-        private static final String SEPARATOR = System.getProperty("line.separator");
         private final byte[] mSelector;
 
         PropertySelector(byte[] selector) {
@@ -1473,7 +1442,7 @@ public class BluetoothPbapVcardManager {
 
     @VisibleForTesting
     static String getNameFromVCard(String vCard) {
-        String[] lines = vCard.split(PropertySelector.SEPARATOR);
+        String[] lines = SEPARATOR_PATTERN.split(vCard);
         String name = "";
         for (String line : lines) {
             if (!Character.isWhitespace(line.charAt(0)) && !line.startsWith("=")) {
@@ -1487,15 +1456,21 @@ public class BluetoothPbapVcardManager {
     }
 
     private static boolean doesVCardHaveProperty(String vCard, String property) {
-        String[] lines = vCard.split(PropertySelector.SEPARATOR);
+        String[] lines = SEPARATOR_PATTERN.split(vCard);
         for (String line : lines) {
             if (!Character.isWhitespace(line.charAt(0)) && !line.startsWith("=")) {
-                String currentProperty = line.split("[;:]")[0];
+                String currentProperty = PROPERTY_PATTERN.split(line)[0];
                 if (property.equals(currentProperty)) {
                     return true;
                 }
             }
         }
         return false;
+    }
+
+    // Copy from PhoneNumberUtils.convertAndStrip
+    private static String convertAndStrip(String phoneNumber) {
+        return PhoneNumberUtils.stripSeparators(
+                PhoneNumberUtils.convertKeypadLettersToDigits(phoneNumber));
     }
 }

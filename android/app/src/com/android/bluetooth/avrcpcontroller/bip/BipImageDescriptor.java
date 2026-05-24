@@ -16,6 +16,7 @@
 
 package com.android.bluetooth.avrcpcontroller;
 
+import android.annotation.SuppressLint;
 import android.util.Log;
 import android.util.Xml;
 
@@ -28,6 +29,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 
 /**
  * Contains the metadata that describes either (1) the desired size of a image to be downloaded or
@@ -49,12 +51,15 @@ import java.nio.charset.StandardCharsets;
  * size=“500000”/> < /image-descriptor >
  */
 public class BipImageDescriptor {
-    private static final String TAG = "avrcpcontroller.BipImageDescriptor";
+    private static final String TAG =
+            AvrcpControllerUtils.TAG_PREFIX_AVRCP_CONTROLLER
+                    + BipImageDescriptor.class.getSimpleName();
+
     private static final String sVersion = "1.0";
 
     /** A Builder for an ImageDescriptor object */
     public static class Builder {
-        private BipImageDescriptor mImageDescriptor = new BipImageDescriptor();
+        private final BipImageDescriptor mImageDescriptor = new BipImageDescriptor();
 
         /**
          * Set the encoding for the descriptor you're building using a BipEncoding object
@@ -85,7 +90,7 @@ public class BipImageDescriptor {
          * @param encoding The encoding you would like to set as a BIP spec defined string
          * @return This object so you can continue building
          */
-        public Builder setPropietaryEncoding(String encoding) {
+        public Builder setProprietaryEncoding(String encoding) {
             mImageDescriptor.mEncoding = new BipEncoding(BipEncoding.USR_XXX, encoding);
             return this;
         }
@@ -127,7 +132,7 @@ public class BipImageDescriptor {
         /**
          * Set the max file size of the image for the descriptor you're building
          *
-         * @param size The maxe image size in bytes
+         * @param size The max image size in bytes
          * @return This object so you can continue building
          */
         public Builder setMaxFileSize(int size) {
@@ -179,23 +184,19 @@ public class BipImageDescriptor {
             xpp.setInput(inputStream, "utf-8");
             int event = xpp.getEventType();
             while (event != XmlPullParser.END_DOCUMENT) {
-                switch (event) {
-                    case XmlPullParser.START_TAG:
-                        String tag = xpp.getName();
-                        if (tag.equals("image")) {
-                            mEncoding = new BipEncoding(xpp.getAttributeValue(null, "encoding"));
-                            mPixel = new BipPixel(xpp.getAttributeValue(null, "pixel"));
-                            mSize = parseInt(xpp.getAttributeValue(null, "size"));
-                            mMaxSize = parseInt(xpp.getAttributeValue(null, "maxsize"));
-                            mTransformation =
-                                    new BipTransformation(
-                                            xpp.getAttributeValue(null, "transformation"));
-                        } else {
-                            Log.w(TAG, "Unrecognized tag in x-bt/img-Description object: " + tag);
-                        }
-                        break;
-                    case XmlPullParser.END_TAG:
-                        break;
+                if (event == XmlPullParser.START_TAG) {
+                    String tag = xpp.getName();
+                    if (!tag.equals("image")) {
+                        Log.w(TAG, "Unrecognized tag in x-bt/img-Description object: " + tag);
+                    } else {
+                        mEncoding = new BipEncoding(xpp.getAttributeValue(null, "encoding"));
+                        mPixel = new BipPixel(xpp.getAttributeValue(null, "pixel"));
+                        mSize = parseInt(xpp.getAttributeValue(null, "size"));
+                        mMaxSize = parseInt(xpp.getAttributeValue(null, "maxsize"));
+                        mTransformation =
+                                new BipTransformation(
+                                        xpp.getAttributeValue(null, "transformation"));
+                    }
                 }
                 event = xpp.next();
             }
@@ -250,18 +251,28 @@ public class BipImageDescriptor {
 
     @Override
     public boolean equals(Object o) {
-        if (o == this) return true;
-        if (!(o instanceof BipImageDescriptor)) return false;
+        if (o == this) {
+            return true;
+        }
+        if (!(o instanceof BipImageDescriptor d)) {
+            return false;
+        }
 
-        BipImageDescriptor d = (BipImageDescriptor) o;
-        return d.getEncoding() == getEncoding()
-                && d.getPixel() == getPixel()
-                && d.getTransformation() == getTransformation()
+        return Objects.equals(d.getEncoding(), getEncoding())
+                && Objects.equals(d.getPixel(), getPixel())
+                && Objects.equals(d.getTransformation(), getTransformation())
                 && d.getSize() == getSize()
                 && d.getMaxSize() == getMaxSize();
     }
 
     @Override
+    public int hashCode() {
+        return Objects.hash(
+                getEncoding(), getPixel(), getTransformation(), getSize(), getMaxSize());
+    }
+
+    @Override
+    @SuppressLint("ToStringReturnsNull") // Since this is used for encoding to xml
     public String toString() {
         if (mEncoding == null || mPixel == null) {
             error(

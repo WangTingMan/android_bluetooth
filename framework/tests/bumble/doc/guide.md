@@ -84,7 +84,7 @@ First, create your file under `p/m/Blueooth/frameworks/bumble/src/android/blueto
 
 ```shell
 cd p/m/Bluetooth/frameworks/bumble/src/android/bluetooth
-touch DckTest.kt # We usualy name our test file <test_suite_name>Test.kt/.java
+touch DckTest.kt # We usually name our test file <test_suite_name>Test.kt/.java
 ```
 
 Then add the minimum requirements:
@@ -178,7 +178,7 @@ verify(gattCallback, timeout(TIMEOUT))
     .onConnectionStateChange(
         any(),
         eq(BluetoothGatt.GATT_SUCCESS),
-        eq(BluetoothProfile.STATE_CONNECTED)
+        eq(STATE_CONNECTED)
     )
 ```
 ### 6. Discover and Verify GATT Services
@@ -209,7 +209,7 @@ verify(gattCallback, timeout(TIMEOUT))
     .onConnectionStateChange(
         any(),
         eq(BluetoothGatt.GATT_SUCCESS),
-        eq(BluetoothProfile.STATE_DISCONNECTED)
+        eq(STATE_DISCONNECTED)
     )
 ```
 

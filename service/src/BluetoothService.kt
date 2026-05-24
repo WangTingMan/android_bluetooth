@@ -13,59 +13,100 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.server.bluetooth
 
-import android.bluetooth.BluetoothAdapter
 import android.content.Context
+import android.os.Handler
 import android.os.HandlerThread
 import android.os.UserManager
+import com.android.bluetooth.flags.Flags
 import com.android.server.SystemService
-import com.android.server.SystemService.TargetUser
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.android.asCoroutineDispatcher
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+
+// See BluetoothServiceManager.BLUETOOTH_MANAGER_SERVICE
+private const val SERVICE_NAME = "bluetooth_manager"
 
 class BluetoothService(context: Context) : SystemService(context) {
-    private val mHandlerThread: HandlerThread
-    private val mBluetoothManagerService: BluetoothManagerService
+    private val looper = HandlerThread("BluetoothSystemServer").apply { start() }.looper
+    private val serviceDispatcher = Handler(looper).asCoroutineDispatcher()
+    private val scope = CoroutineScope(serviceDispatcher + SupervisorJob())
+
+    private var supervisor: BluetoothSupervisor
     private var mInitialized = false
 
     init {
-        mHandlerThread = HandlerThread("BluetoothManagerService")
-        mHandlerThread.start()
-        mBluetoothManagerService = BluetoothManagerService(context, mHandlerThread.getLooper())
-    }
+        Log.d("Booting now")
+        val bluetoothComponent =
+            if (Flags.userRestrictionRefactor()) {
+                BluetoothComponent(context)
+            } else {
+                null
+            }
+        // Run BluetoothManagerService on the correct thread even during constructor
+        supervisor =
+            runBlocking(serviceDispatcher) {
+                BluetoothSupervisor(context, looper, bluetoothComponent)
+            }
 
-    private fun initialize(user: TargetUser) {
-        if (!mInitialized) {
-            mBluetoothManagerService.handleOnBootPhase(user.userHandle)
-            mInitialized = true
+        runOnBmsThread {
+            if (Flags.userRestrictionRefactor()) {
+                BluetoothRestriction.initialize(context, looper, supervisor::onBluetoothDisallowed)
+            }
         }
     }
 
-    override fun onStart() {}
+    // Run any lambda on the BluetoothSystemServer thread without waiting for its completion
+    private fun runOnBmsThread(block: suspend CoroutineScope.() -> Unit) = scope.launch { block() }
 
-    override fun onBootPhase(phase: Int) {
-        if (phase == SystemService.PHASE_SYSTEM_SERVICES_READY) {
-            publishBinderService(
-                BluetoothAdapter.BLUETOOTH_MANAGER_SERVICE,
-                mBluetoothManagerService.getBinder()
-            )
-        }
+    override fun onStart() {
+        publishBinderService(
+            SERVICE_NAME,
+            BluetoothServiceBinder(looper, supervisor.api(), context),
+        )
     }
 
     override fun onUserStarting(user: TargetUser) {
-        if (!UserManager.isHeadlessSystemUserMode()) {
-            initialize(user)
+        if (mInitialized) {
+            Log.i("onUserStarting($user) but already initialized")
+            return
         }
+        if (Flags.userVisibleOnUserStarting()) {
+            val isUserVisible =
+                context
+                    .createContextAsUser(user.userHandle, 0)
+                    .getSystemService(android.os.UserManager::class.java)!!
+                    .isUserVisible
+            if (!isUserVisible) {
+                Log.i("onUserStarting($user) Skipping non visible user ")
+                return
+            }
+            Log.i("onUserStarting($user) Initializing for visible user ")
+        } else {
+            val isForeground =
+                context
+                    .createContextAsUser(user.userHandle, 0)
+                    .getSystemService(android.os.UserManager::class.java)!!
+                    .isUserForeground
+            if (!isForeground) {
+                Log.i("onUserStarting($user) Skipping non foreground user ")
+                return
+            }
+            Log.i("onUserStarting($user) Initializing for foreground user ")
+        }
+        runOnBmsThread { supervisor.handleOnBootPhase(user.userHandle) }
+        mInitialized = true
     }
 
     override fun onUserSwitching(_from: TargetUser?, to: TargetUser) {
+        Log.d("onUserSwitching($to)")
         if (!mInitialized) {
-            initialize(to)
-        } else {
-            mBluetoothManagerService.onSwitchUser(to.userHandle)
+            throw IllegalStateException("Initialize did not happen")
         }
-    }
-
-    override fun onUserUnlocking(user: TargetUser) {
-        mBluetoothManagerService.handleOnUnlockUser(user.userHandle)
+        runOnBmsThread { supervisor.onUserSwitching(to.userHandle) }
     }
 }

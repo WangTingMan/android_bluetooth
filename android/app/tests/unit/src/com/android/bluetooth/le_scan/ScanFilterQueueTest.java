@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,14 @@ package com.android.bluetooth.le_scan;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import android.bluetooth.BluetoothUuid;
 import android.bluetooth.le.ScanFilter;
 import android.os.ParcelUuid;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.SmallTest;
-import androidx.test.runner.AndroidJUnit4;
+
+import com.google.common.primitives.Bytes;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -33,6 +36,14 @@ import java.util.UUID;
 @SmallTest
 @RunWith(AndroidJUnit4.class)
 public class ScanFilterQueueTest {
+    private static final String TEST_UUID_STRING = "00001805-0000-1000-8000-00805f9b34fb";
+    private static final String UNMATCHED_UUID_STRING = "00001815-0000-1000-8000-00805f9b34fb";
+    private static final byte[] TEST_SERVICE_DATA = new byte[] {(byte) 0x18, (byte) 0x0F};
+    private static final byte[] PARTIALLY_MATCHED_SERVICE_DATA =
+            new byte[] {(byte) 0x08, (byte) 0x0F, (byte) 0xAB, (byte) 0xCD};
+    private static final byte[] UNMATCHED_SERVICE_DATA = new byte[] {(byte) 0x08, (byte) 0x0E};
+    private static final byte[] PARTIAL_SERVICE_DATA_MASK = new byte[] {(byte) 0x00, (byte) 0xFF};
+    private static final byte[] FULL_SERVICE_DATA_MASK = new byte[] {(byte) 0xFF, (byte) 0xFF};
 
     @Test
     public void scanFilterQueueParams() {
@@ -42,8 +53,6 @@ public class ScanFilterQueueTest {
         byte type = 1;
         byte[] irk = new byte[] {0x02};
         queue.addDeviceAddress(address, type, irk);
-
-        queue.addServiceChanged();
 
         UUID uuid = UUID.randomUUID();
         queue.addUuid(uuid);
@@ -76,42 +85,39 @@ public class ScanFilterQueueTest {
         queue.addAdvertisingDataType(adType, adData, adDataMask);
 
         ScanFilterQueue.Entry[] entries = queue.toArray();
-        int entriesLength = 10;
+        int entriesLength = 9;
         assertThat(entries.length).isEqualTo(entriesLength);
 
         for (ScanFilterQueue.Entry entry : entries) {
             switch (entry.type) {
-                case ScanFilterQueue.TYPE_DEVICE_ADDRESS:
+                case ScanFilterQueue.TYPE_DEVICE_ADDRESS -> {
                     assertThat(entry.address).isEqualTo(address);
                     assertThat(entry.addr_type).isEqualTo(type);
                     assertThat(entry.irk).isEqualTo(irk);
-                    break;
-                case ScanFilterQueue.TYPE_SERVICE_DATA_CHANGED:
+                }
+                case ScanFilterQueue.TYPE_SERVICE_DATA_CHANGED -> {
                     assertThat(entry).isNotNull();
-                    break;
-                case ScanFilterQueue.TYPE_SERVICE_UUID:
-                    assertThat(entry.uuid).isEqualTo(uuid);
-                    break;
-                case ScanFilterQueue.TYPE_SOLICIT_UUID:
+                }
+                case ScanFilterQueue.TYPE_SERVICE_UUID -> assertThat(entry.uuid).isEqualTo(uuid);
+                case ScanFilterQueue.TYPE_SOLICIT_UUID -> {
                     assertThat(entry.uuid).isEqualTo(solicitUuid);
                     assertThat(entry.uuid_mask).isEqualTo(solicitUuidMask);
-                    break;
-                case ScanFilterQueue.TYPE_LOCAL_NAME:
-                    assertThat(entry.name).isEqualTo(name);
-                    break;
-                case ScanFilterQueue.TYPE_MANUFACTURER_DATA:
+                }
+                case ScanFilterQueue.TYPE_LOCAL_NAME -> assertThat(entry.name).isEqualTo(name);
+                case ScanFilterQueue.TYPE_MANUFACTURER_DATA -> {
                     assertThat(entry.company).isEqualTo(company);
                     assertThat(entry.data).isEqualTo(data);
-                    break;
-                case ScanFilterQueue.TYPE_SERVICE_DATA:
+                }
+                case ScanFilterQueue.TYPE_SERVICE_DATA -> {
                     assertThat(entry.data).isEqualTo(serviceData);
                     assertThat(entry.data_mask).isEqualTo(serviceDataMask);
-                    break;
-                case ScanFilterQueue.TYPE_ADVERTISING_DATA_TYPE:
+                }
+                case ScanFilterQueue.TYPE_ADVERTISING_DATA_TYPE -> {
                     assertThat(entry.ad_type).isEqualTo(adType);
                     assertThat(entry.data).isEqualTo(adData);
                     assertThat(entry.data_mask).isEqualTo(adDataMask);
-                    break;
+                }
+                default -> {} // Nothing to do
             }
         }
     }
@@ -194,5 +200,99 @@ public class ScanFilterQueueTest {
 
         int numOfEntries = 7;
         assertThat(queue.toArray().length).isEqualTo(numOfEntries);
+    }
+
+    @Test
+    public void serviceDataFilterNoMask1() {
+        ScanFilter filter =
+                new ScanFilter.Builder()
+                        .setServiceData(ParcelUuid.fromString(TEST_UUID_STRING), TEST_SERVICE_DATA)
+                        .build();
+        testServiceDataFilter(filter, false);
+    }
+
+    @Test
+    public void serviceDataFilterWithFullMask() {
+        ScanFilter filter =
+                new ScanFilter.Builder()
+                        .setServiceData(
+                                ParcelUuid.fromString(TEST_UUID_STRING),
+                                TEST_SERVICE_DATA,
+                                FULL_SERVICE_DATA_MASK)
+                        .build();
+        testServiceDataFilter(filter, false);
+    }
+
+    @Test
+    public void serviceDataFilterWithPartialMask() {
+        ScanFilter filter =
+                new ScanFilter.Builder()
+                        .setServiceData(
+                                ParcelUuid.fromString(TEST_UUID_STRING),
+                                TEST_SERVICE_DATA,
+                                PARTIAL_SERVICE_DATA_MASK)
+                        .build();
+        testServiceDataFilter(filter, true);
+    }
+
+    private static void testServiceDataFilter(
+            ScanFilter filter, boolean partialServiceDataMatchResult) {
+        ScanFilterQueue queue = new ScanFilterQueue();
+        queue.addScanFilter(filter);
+        ScanFilterQueue.Entry entry = queue.pop();
+        assertThat(entry.type).isEqualTo(ScanFilterQueue.TYPE_SERVICE_DATA);
+        assertThat(entry.data)
+                .isEqualTo(
+                        Bytes.concat(
+                                BluetoothUuid.uuidToBytes(ParcelUuid.fromString(TEST_UUID_STRING)),
+                                TEST_SERVICE_DATA));
+        assertThat(
+                        serviceDataMatches(
+                                entry.data,
+                                Bytes.concat(
+                                        BluetoothUuid.uuidToBytes(
+                                                ParcelUuid.fromString(TEST_UUID_STRING)),
+                                        TEST_SERVICE_DATA),
+                                entry.data_mask))
+                .isTrue();
+        assertThat(
+                        serviceDataMatches(
+                                entry.data,
+                                Bytes.concat(
+                                        BluetoothUuid.uuidToBytes(
+                                                ParcelUuid.fromString(UNMATCHED_UUID_STRING)),
+                                        TEST_SERVICE_DATA),
+                                entry.data_mask))
+                .isFalse();
+        assertThat(
+                        serviceDataMatches(
+                                entry.data,
+                                Bytes.concat(
+                                        BluetoothUuid.uuidToBytes(
+                                                ParcelUuid.fromString(TEST_UUID_STRING)),
+                                        UNMATCHED_SERVICE_DATA),
+                                entry.data_mask))
+                .isFalse();
+        assertThat(
+                        serviceDataMatches(
+                                entry.data,
+                                Bytes.concat(
+                                        BluetoothUuid.uuidToBytes(
+                                                ParcelUuid.fromString(TEST_UUID_STRING)),
+                                        PARTIALLY_MATCHED_SERVICE_DATA),
+                                entry.data_mask))
+                .isEqualTo(partialServiceDataMatchResult);
+    }
+
+    private static boolean serviceDataMatches(byte[] filterData, byte[] resultData, byte[] mask) {
+        if (filterData.length > resultData.length || filterData.length != mask.length) {
+            return false;
+        }
+        for (int i = 0; i < filterData.length; i++) {
+            if ((filterData[i] & mask[i]) != (resultData[i] & mask[i])) {
+                return false;
+            }
+        }
+        return true;
     }
 }

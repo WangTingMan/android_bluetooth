@@ -8,19 +8,12 @@ package {
     default_applicable_licenses: ["system_bt_license"],
 }
 
-filegroup {
-    name: "BluetoothCryptoToolboxTestSources",
-    srcs: [
-        "crypto_toolbox_test.cc",
-    ],
-}
-
 cc_library {
     name: "libbluetooth_crypto_toolbox",
     defaults: ["fluoride_defaults"],
     host_supported: true,
-    apex_available: ["com.android.btservices"],
-    min_sdk_version: "29",
+    apex_available: ["com.android.bt"],
+    min_sdk_version: "36",
     include_dirs: [
         "packages/modules/Bluetooth/system/gd",
     ],

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,11 @@
 
 #pragma once
 
-#include <base/strings/stringprintf.h>
+#include <android_bluetooth_sysprop.h>
 #include <bluetooth/log.h>
+#include <bluetooth/metrics/bluetooth_event.h>
+#include <bluetooth/metrics/os_metrics.h>
+#include <com_android_bluetooth_flags.h>
 
 #include <cstdint>
 #include <memory>
@@ -26,21 +29,31 @@
 #include <vector>
 
 #include "common/bind.h"
-#include "common/init_flags.h"
+#include "common/le_conn_params.h"
 #include "hci/acl_manager/assembler.h"
-#include "hci/acl_manager/le_acceptlist_callbacks.h"
+#include "hci/acl_manager/classic_acl_count_provider.h"
 #include "hci/acl_manager/le_acl_connection.h"
 #include "hci/acl_manager/le_connection_callbacks.h"
 #include "hci/acl_manager/le_connection_management_callbacks.h"
 #include "hci/acl_manager/round_robin_scheduler.h"
 #include "hci/controller.h"
-#include "hci/hci_layer.h"
+#include "hci/hci_interface.h"
 #include "hci/hci_packets.h"
 #include "hci/le_address_manager.h"
 #include "macros.h"
+#include "main/shim/helpers.h"
 #include "os/alarm.h"
 #include "os/handler.h"
 #include "os/system_properties.h"
+#include "stack/include/btm_ble_api_types.h"
+#include "storage/config_keys.h"
+#include "storage/storage_module.h"
+
+extern bool btm_random_pseudo_to_identity_addr(RawAddress* random_pseudo,
+                                               tBLE_ADDR_TYPE* p_identity_addr_type);
+
+extern bool btm_identity_addr_to_random_pseudo(RawAddress* bd_addr, tBLE_ADDR_TYPE* p_addr_type,
+                                               bool refresh);
 
 namespace bluetooth {
 namespace hci {
@@ -52,12 +65,12 @@ constexpr uint16_t kConnIntervalMin = 0x0018;
 constexpr uint16_t kConnIntervalMax = 0x0028;
 constexpr uint16_t kConnLatency = 0x0000;
 constexpr uint16_t kSupervisionTimeout = 0x01f4;
-constexpr uint16_t kScanIntervalFast = 0x0060;    /* 30 ~ 60 ms (use 60)  = 96 *0.625 */
-constexpr uint16_t kScanWindowFast = 0x0030;      /* 30 ms = 48 *0.625 */
-constexpr uint16_t kScanWindow2mFast = 0x0018;    /* 15 ms = 24 *0.625 */
-constexpr uint16_t kScanWindowCodedFast = 0x0018; /* 15 ms = 24 *0.625 */
-constexpr uint16_t kScanIntervalSlow = 0x0800;    /* 1.28 s = 2048 *0.625 */
-constexpr uint16_t kScanWindowSlow = 0x0030;      /* 30 ms = 48 *0.625 */
+constexpr uint16_t kScanIntervalFast = 0x0060;          /* 30 ~ 60 ms (use 60)  = 96 *0.625 */
+constexpr uint16_t kScanWindowFast = 0x0030;            /* 30 ms = 48 *0.625 */
+constexpr uint16_t kScanWindow2mFast = 0x0018;          /* 15 ms = 24 *0.625 */
+constexpr uint16_t kScanWindowCodedFast = 0x0018;       /* 15 ms = 24 *0.625 */
+constexpr uint16_t kScanIntervalSlow = 0x0800;          /* 1.28 s = 2048 *0.625 */
+constexpr uint16_t kScanWindowSlow = 0x00C0;            /* 120 ms = 192 *0.625 */
 constexpr uint16_t kScanIntervalSystemSuspend = 0x0400; /* 640 ms = 1024 * 0.625 */
 constexpr uint16_t kScanWindowSystemSuspend = 0x0012;   /* 11.25ms = 18 * 0.625 */
 constexpr uint32_t kCreateConnectionTimeoutMs = 30 * 1000;
@@ -71,20 +84,31 @@ constexpr bool kEnableBleOnlyInit1mPhy = false;
 static const std::string kPropertyMinConnInterval = "bluetooth.core.le.min_connection_interval";
 static const std::string kPropertyMaxConnInterval = "bluetooth.core.le.max_connection_interval";
 static const std::string kPropertyConnLatency = "bluetooth.core.le.connection_latency";
-static const std::string kPropertyConnSupervisionTimeout = "bluetooth.core.le.connection_supervision_timeout";
+static const std::string kPropertyConnSupervisionTimeout =
+        "bluetooth.core.le.connection_supervision_timeout";
 static const std::string kPropertyDirectConnTimeout = "bluetooth.core.le.direct_connection_timeout";
-static const std::string kPropertyConnScanIntervalFast = "bluetooth.core.le.connection_scan_interval_fast";
-static const std::string kPropertyConnScanWindowFast = "bluetooth.core.le.connection_scan_window_fast";
-static const std::string kPropertyConnScanWindow2mFast = "bluetooth.core.le.connection_scan_window_2m_fast";
-static const std::string kPropertyConnScanWindowCodedFast = "bluetooth.core.le.connection_scan_window_coded_fast";
-static const std::string kPropertyConnScanIntervalSlow = "bluetooth.core.le.connection_scan_interval_slow";
-static const std::string kPropertyConnScanWindowSlow = "bluetooth.core.le.connection_scan_window_slow";
+static const std::string kPropertyConnScanIntervalFast =
+        "bluetooth.core.le.connection_scan_interval_fast";
+static const std::string kPropertyConnScanWindowFast =
+        "bluetooth.core.le.connection_scan_window_fast";
+static const std::string kPropertyConnScanWindow2mFast =
+        "bluetooth.core.le.connection_scan_window_2m_fast";
+static const std::string kPropertyConnScanWindowCodedFast =
+        "bluetooth.core.le.connection_scan_window_coded_fast";
+static const std::string kPropertyConnScanIntervalSlow =
+        "bluetooth.core.le.connection_scan_interval_slow";
+static const std::string kPropertyConnScanWindowSlow =
+        "bluetooth.core.le.connection_scan_window_slow";
 static const std::string kPropertyConnScanIntervalSystemSuspend =
-    "bluetooth.core.le.connection_scan_interval_system_suspend";
+        "bluetooth.core.le.connection_scan_interval_system_suspend";
 static const std::string kPropertyConnScanWindowSystemSuspend =
-    "bluetooth.core.le.connection_scan_window_system_suspend";
+        "bluetooth.core.le.connection_scan_window_system_suspend";
 static const std::string kPropertyEnableBlePrivacy = "bluetooth.core.gap.le.privacy.enabled";
-static const std::string kPropertyEnableBleOnlyInit1mPhy = "bluetooth.core.gap.le.conn.only_init_1m_phy.enabled";
+static const std::string kPropertyEnableBleOnlyInit1mPhy =
+        "bluetooth.core.gap.le.conn.only_init_1m_phy.enabled";
+
+const std::optional<hci::Uuid> UUID_ASCS = hci::Uuid::FromString("184E");
+const std::optional<hci::Uuid> UUID_BASS = hci::Uuid::FromString("184F");
 
 enum class ConnectabilityState {
   DISARMED = 0,
@@ -92,6 +116,8 @@ enum class ConnectabilityState {
   ARMED = 2,
   DISARMING = 3,
 };
+
+enum class ConnectionMode { RELAXED = 0, AGGRESSIVE = 1, AGGRESSIVE_ISO = 2 };
 
 inline std::string connectability_state_machine_text(const ConnectabilityState& state) {
   switch (state) {
@@ -103,16 +129,13 @@ inline std::string connectability_state_machine_text(const ConnectabilityState& 
 }
 
 struct le_acl_connection {
-  le_acl_connection(
-      AddressWithType remote_address,
-      std::unique_ptr<LeAclConnection> pending_connection,
-      AclConnection::QueueDownEnd* queue_down_end,
-      os::Handler* handler)
+  le_acl_connection(AddressWithType remote_address,
+                    std::unique_ptr<LeAclConnection> pending_connection,
+                    AclConnection::QueueDownEnd* queue_down_end, os::Handler* handler)
       : remote_address_(remote_address),
         pending_connection_(std::move(pending_connection)),
-        assembler_(std::make_shared<acl_manager::assembler>(remote_address, queue_down_end, handler)) {}
-  ~le_acl_connection() {
-  }
+        assembler_(new acl_manager::assembler(remote_address, queue_down_end, handler)) {}
+  ~le_acl_connection() {}
   AddressWithType remote_address_;
   std::unique_ptr<LeAclConnection> pending_connection_;
   std::shared_ptr<acl_manager::assembler> assembler_;
@@ -120,27 +143,25 @@ struct le_acl_connection {
 };
 
 struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
-  le_impl(
-      HciLayer* hci_layer,
-      Controller* controller,
-      os::Handler* handler,
-      RoundRobinScheduler* round_robin_scheduler,
-      bool crash_on_unknown_handle)
-      : hci_layer_(hci_layer), controller_(controller), round_robin_scheduler_(round_robin_scheduler) {
-    hci_layer_ = hci_layer;
-    controller_ = controller;
+  le_impl(HciInterface& hci_layer, Controller& controller, os::Handler* handler,
+          RoundRobinScheduler& round_robin_scheduler, storage::StorageModule& storage_module,
+          bool crash_on_unknown_handle,
+          acl_manager::ClassicAclCountProvider& classic_acl_count_provider)
+      : hci_layer_(hci_layer),
+        controller_(controller),
+        round_robin_scheduler_(round_robin_scheduler),
+        storage_module_(storage_module),
+        classic_acl_count_provider_(classic_acl_count_provider) {
     handler_ = handler;
     connections.crash_on_unknown_handle_ = crash_on_unknown_handle;
-    le_acl_connection_interface_ = hci_layer_->GetLeAclConnectionInterface(
-        handler_->BindOn(this, &le_impl::on_le_event),
-        handler_->BindOn(this, &le_impl::on_le_disconnect),
-        handler_->BindOn(this, &le_impl::on_le_read_remote_version_information));
+    le_acl_connection_interface_ = hci_layer_.GetLeAclConnectionInterface(
+            handler_->BindOn(this, &le_impl::on_le_event),
+            handler_->BindOn(this, &le_impl::on_le_disconnect),
+            handler_->BindOn(this, &le_impl::on_le_read_remote_version_information));
     le_address_manager_ = new LeAddressManager(
-        common::Bind(&le_impl::enqueue_command, common::Unretained(this)),
-        handler_,
-        controller->GetMacAddress(),
-        controller->GetLeFilterAcceptListSize(),
-        controller->GetLeResolvingListSize());
+            common::Bind(&le_impl::enqueue_command, common::Unretained(this)), handler_,
+            controller.GetMacAddress(), controller.GetLeFilterAcceptListSize(),
+            controller.GetLeResolvingListSize(), &controller_);
   }
 
   ~le_impl() {
@@ -148,7 +169,7 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
       le_address_manager_->UnregisterSync(this);
     }
     delete le_address_manager_;
-    hci_layer_->PutLeAclConnectionInterface();
+    hci_layer_.PutLeAclConnectionInterface();
     connections.reset();
   }
 
@@ -179,27 +200,36 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
     }
   }
 
- private:
+private:
   static constexpr uint16_t kIllegalConnectionHandle = 0xffff;
   struct {
-   private:
+  private:
     std::map<uint16_t, le_acl_connection> le_acl_connections_;
     mutable std::mutex le_acl_connections_guard_;
     LeConnectionManagementCallbacks* find_callbacks(uint16_t handle) {
       auto connection = le_acl_connections_.find(handle);
-      if (connection == le_acl_connections_.end()) return nullptr;
+      if (connection == le_acl_connections_.end()) {
+        return nullptr;
+      }
       return connection->second.le_connection_management_callbacks_;
     }
     void remove(uint16_t handle) {
       auto connection = le_acl_connections_.find(handle);
       if (connection != le_acl_connections_.end()) {
+        if (connection->second.pending_connection_) {
+          connection->second.pending_connection_->ClearEventCallbacks();
+        }
         connection->second.le_connection_management_callbacks_ = nullptr;
         le_acl_connections_.erase(handle);
       }
     }
 
-   public:
+  public:
     bool crash_on_unknown_handle_ = false;
+    size_t size() const {
+      std::unique_lock<std::mutex> lock(le_acl_connections_guard_);
+      return le_acl_connections_.size();
+    }
     bool is_empty() const {
       std::unique_lock<std::mutex> lock(le_acl_connections_guard_);
       return le_acl_connections_.empty();
@@ -216,45 +246,46 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
       std::unique_lock<std::mutex> lock(le_acl_connections_guard_);
       remove(handle);
     }
-    void execute(
-        uint16_t handle,
-        std::function<void(LeConnectionManagementCallbacks* callbacks)> execute,
-        bool remove_afterwards = false) {
+    void execute(uint16_t handle,
+                 std::function<void(LeConnectionManagementCallbacks* callbacks)> execute,
+                 bool remove_afterwards = false) {
       std::unique_lock<std::mutex> lock(le_acl_connections_guard_);
       auto callbacks = find_callbacks(handle);
-      if (callbacks != nullptr)
+      if (callbacks != nullptr) {
         execute(callbacks);
-      else
-        log::assert_that(
-            !crash_on_unknown_handle_, "Received command for unknown handle:0x{:x}", handle);
-      if (remove_afterwards) remove(handle);
+      } else {
+        log::assert_that(!crash_on_unknown_handle_, "Received command for unknown handle:0x{:x}",
+                         handle);
+      }
+      if (remove_afterwards) {
+        remove(handle);
+      }
     }
     bool send_packet_upward(uint16_t handle, std::function<void(std::shared_ptr<acl_manager::assembler>)> cb) {
       std::unique_lock<std::mutex> lock(le_acl_connections_guard_);
       auto connection = le_acl_connections_.find(handle);
-      if (connection != le_acl_connections_.end()) cb(connection->second.assembler_);
+      if (connection != le_acl_connections_.end()) {
+        cb(connection->second.assembler_);
+      }
       return connection != le_acl_connections_.end();
     }
-    void add(
-        uint16_t handle,
-        const AddressWithType& remote_address,
-        std::unique_ptr<LeAclConnection> pending_connection,
-        AclConnection::QueueDownEnd* queue_end,
-        os::Handler* handler,
-        LeConnectionManagementCallbacks* le_connection_management_callbacks) {
+    void add(uint16_t handle, const AddressWithType& remote_address,
+             std::unique_ptr<LeAclConnection> pending_connection,
+             AclConnection::QueueDownEnd* queue_end, os::Handler* handler,
+             LeConnectionManagementCallbacks* le_connection_management_callbacks) {
       std::unique_lock<std::mutex> lock(le_acl_connections_guard_);
       auto emplace_pair = le_acl_connections_.emplace(
-          std::piecewise_construct,
-          std::forward_as_tuple(handle),
-          std::forward_as_tuple(remote_address, std::move(pending_connection), queue_end, handler));
-      log::assert_that(
-          emplace_pair.second,
-          "assert failed: emplace_pair.second");  // Make sure the connection is unique
-      emplace_pair.first->second.le_connection_management_callbacks_ = le_connection_management_callbacks;
+              std::piecewise_construct, std::forward_as_tuple(handle),
+              std::forward_as_tuple(remote_address, std::move(pending_connection), queue_end,
+                                    handler));
+      log::assert_that(emplace_pair.second,
+                       "assert failed: emplace_pair.second");  // Make sure the connection is unique
+      emplace_pair.first->second.le_connection_management_callbacks_ =
+              le_connection_management_callbacks;
     }
 
     std::unique_ptr<LeAclConnection> record_peripheral_data_and_extract_pending_connection(
-        uint16_t handle, DataAsPeripheral data) {
+            uint16_t handle, DataAsPeripheral data) {
       std::unique_lock<std::mutex> lock(le_acl_connections_guard_);
       auto connection = le_acl_connections_.find(handle);
       if (connection != le_acl_connections_.end() && connection->second.pending_connection_.get()) {
@@ -293,37 +324,54 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
       }
       return false;
     }
-
   } connections;
 
- public:
-  void enqueue_command(std::unique_ptr<CommandBuilder> command_packet) {
-    hci_layer_->EnqueueCommand(
-        std::move(command_packet),
-        handler_->BindOnce(&LeAddressManager::OnCommandComplete, common::Unretained(le_address_manager_)));
+  std::string connection_mode_to_string(ConnectionMode connection_mode) {
+    switch (connection_mode) {
+      case ConnectionMode::RELAXED:
+        return "RELAXED";
+      case ConnectionMode::AGGRESSIVE:
+        return "AGGRESSIVE";
+      case ConnectionMode::AGGRESSIVE_ISO:
+        return "AGGRESSIVE_ISO";
+      default:
+        return "UNKNOWN";
+    }
   }
 
-  bool send_packet_upward(uint16_t handle, std::function<void(std::shared_ptr<acl_manager::assembler>)> cb) {
+public:
+  void enqueue_command(std::unique_ptr<CommandBuilder> command_packet) {
+    hci_layer_.EnqueueCommand(std::move(command_packet),
+                              handler_->BindOnce(&LeAddressManager::OnCommandComplete,
+                                                 common::Unretained(le_address_manager_)));
+  }
+
+  bool send_packet_upward(uint16_t handle,
+                          std::function<void( std::shared_ptr<acl_manager::assembler> )> cb) {
     return connections.send_packet_upward(handle, cb);
   }
 
   void report_le_connection_failure(AddressWithType address, ErrorCode status) {
-    le_client_handler_->Post(common::BindOnce(
-        &LeConnectionCallbacks::OnLeConnectFail,
-        common::Unretained(le_client_callbacks_),
-        address,
-        status));
-    if (le_acceptlist_callbacks_ != nullptr) {
-      le_acceptlist_callbacks_->OnLeConnectFail(address, status);
+    le_client_handler_->Post(common::BindOnce(&LeConnectionCallbacks::OnLeConnectFail,
+                                              common::Unretained(le_client_callbacks_), address,
+                                              status));
+  }
+
+  void set_connectability_state(ConnectabilityState state) {
+    log::debug("{} --> {}", connectability_state_machine_text(connectability_state_),
+               connectability_state_machine_text(state));
+    connectability_state_ = state;
+    if (state == ConnectabilityState::DISARMED && pause_connection) {
+      le_address_manager_->AckPause(this);
     }
   }
 
-  // connection canceled by LeAddressManager.OnPause(), will auto reconnect by LeAddressManager.OnResume()
+  // connection canceled by LeAddressManager.OnPause(), will auto reconnect by
+  // LeAddressManager.OnResume()
   void on_le_connection_canceled_on_pause() {
     log::assert_that(pause_connection, "Connection must be paused to ack the le address manager");
     arm_on_resume_ = true;
-    connectability_state_ = ConnectabilityState::DISARMED;
-    le_address_manager_->AckPause(this);
+    set_connectability_state(ConnectabilityState::DISARMED);
   }
 
   void on_common_le_connection_complete(AddressWithType address_with_type) {
@@ -346,8 +394,8 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
 
     if (packet.GetSubeventCode() == SubeventCode::CONNECTION_COMPLETE) {
       LeConnectionCompleteView connection_complete = LeConnectionCompleteView::Create(packet);
-      log::assert_that(
-          connection_complete.IsValid(), "assert failed: connection_complete.IsValid()");
+      log::assert_that(connection_complete.IsValid(),
+                       "assert failed: connection_complete.IsValid()");
       status = connection_complete.GetStatus();
       address = connection_complete.GetPeerAddress();
       peer_address_type = connection_complete.GetPeerAddressType();
@@ -359,9 +407,9 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
       remote_address = AddressWithType(address, peer_address_type);
     } else if (packet.GetSubeventCode() == SubeventCode::ENHANCED_CONNECTION_COMPLETE) {
       LeEnhancedConnectionCompleteView connection_complete =
-          LeEnhancedConnectionCompleteView::Create(packet);
-      log::assert_that(
-          connection_complete.IsValid(), "assert failed: connection_complete.IsValid()");
+              LeEnhancedConnectionCompleteView::Create(packet);
+      log::assert_that(connection_complete.IsValid(),
+                       "assert failed: connection_complete.IsValid()");
       status = connection_complete.GetStatus();
       address = connection_complete.GetPeerAddress();
       peer_address_type = connection_complete.GetPeerAddressType();
@@ -387,10 +435,12 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
       return;
     }
 
+    bluetooth::metrics::LogMetricLeConnectionStatus(address, true /* is_connect */, status);
+
     const bool in_filter_accept_list = is_device_in_accept_list(remote_address);
 
     if (role == hci::Role::CENTRAL) {
-      connectability_state_ = ConnectabilityState::DISARMED;
+      set_connectability_state(ConnectabilityState::DISARMED);
       if (status == ErrorCode::UNKNOWN_CONNECTION && pause_connection) {
         on_le_connection_canceled_on_pause();
         return;
@@ -406,7 +456,7 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
           log::info("Controller send non-empty address field:{}", remote_address.GetAddress());
         }
         // direct connect canceled due to connection timeout, start background connect
-        create_le_connection(remote_address, false, false);
+        create_le_connection(remote_address, false, false, false);
         return;
       }
 
@@ -416,7 +466,8 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
 
       if (!accept_list.empty()) {
         AddressWithType empty(Address::kEmpty, AddressType::RANDOM_DEVICE_ADDRESS);
-        handler_->Post(common::BindOnce(&le_impl::create_le_connection, common::Unretained(this), empty, false, false));
+        handler_->Post(common::BindOnce(&le_impl::create_le_connection, common::Unretained(this),
+                                        empty, false, false, false));
       }
 
       if (le_client_handler_ == nullptr) {
@@ -443,27 +494,25 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
       }
 
       if (in_filter_accept_list) {
-        log::info(
-            "Received incoming connection of device in filter accept_list, {}", remote_address);
+        log::info("Received incoming connection of device in filter accept_list, {}",
+                  remote_address);
         direct_connect_remove(remote_address);
         remove_device_from_accept_list(remote_address);
       }
     }
 
-    if (!check_connection_parameters(conn_interval, conn_interval, conn_latency, supervision_timeout)) {
+    if (!check_connection_parameters(conn_interval, conn_interval, conn_latency,
+                                     supervision_timeout)) {
       log::error("Receive connection complete with invalid connection parameters");
       return;
     }
     auto role_specific_data = initialize_role_specific_data(role);
     auto queue = std::make_shared<AclConnection::Queue>(10);
     auto queue_down_end = queue->GetDownEnd();
-    round_robin_scheduler_->Register(RoundRobinScheduler::ConnectionType::LE, handle, queue);
-    std::unique_ptr<LeAclConnection> connection(new LeAclConnection(
-        std::move(queue),
-        le_acl_connection_interface_,
-        handle,
-        role_specific_data,
-        remote_address));
+    round_robin_scheduler_.Register(RoundRobinScheduler::ConnectionType::LE, handle, queue);
+    std::unique_ptr<LeAclConnection> connection(
+            new LeAclConnection(std::move(queue), le_acl_connection_interface_, handle,
+                                role_specific_data, remote_address));
     connection->peer_address_with_type_ = AddressWithType(address, peer_address_type);
     connection->interval_ = conn_interval;
     connection->latency_ = conn_latency;
@@ -471,51 +520,48 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
     connection->in_filter_accept_list_ = in_filter_accept_list;
     connection->locally_initiated_ = (role == hci::Role::CENTRAL);
 
+    log::info("addr={}, conn_interval={}", remote_address, conn_interval);
+
     if (packet.GetSubeventCode() == SubeventCode::ENHANCED_CONNECTION_COMPLETE) {
       LeEnhancedConnectionCompleteView connection_complete =
-          LeEnhancedConnectionCompleteView::Create(packet);
-      log::assert_that(
-          connection_complete.IsValid(), "assert failed: connection_complete.IsValid()");
+              LeEnhancedConnectionCompleteView::Create(packet);
+      log::assert_that(connection_complete.IsValid(),
+                       "assert failed: connection_complete.IsValid()");
 
       connection->local_resolvable_private_address_ =
-          connection_complete.GetLocalResolvablePrivateAddress();
+              connection_complete.GetLocalResolvablePrivateAddress();
       connection->peer_resolvable_private_address_ =
-          connection_complete.GetPeerResolvablePrivateAddress();
+              connection_complete.GetPeerResolvablePrivateAddress();
     }
 
-    auto connection_callbacks = connection->GetEventCallbacks(
-        [this](uint16_t handle) { this->connections.invalidate(handle); });
+    auto connection_callbacks = connection->GetEventCallbacks([this](uint16_t handle) {
+      this->connections.invalidate(handle);
+      if (round_robin_scheduler_.IsRegistered(handle)) {
+        log::warn("Unregistering scheduler for invalidated handle {}", handle);
+        round_robin_scheduler_.Unregister(handle);
+      }
+    });
+
     if (std::holds_alternative<DataAsUninitializedPeripheral>(role_specific_data)) {
       // the OnLeConnectSuccess event will be sent after receiving the On Advertising Set Terminated
       // event, since we need it to know what local_address / advertising set the peer connected to.
       // In the meantime, we store it as a pending_connection.
-      connections.add(
-          handle,
-          remote_address,
-          std::move(connection),
-          queue_down_end,
-          handler_,
-          connection_callbacks);
+      connections.add(handle, remote_address, std::move(connection), queue_down_end, handler_,
+                      connection_callbacks);
     } else {
-      connections.add(
-          handle, remote_address, nullptr, queue_down_end, handler_, connection_callbacks);
-      le_client_handler_->Post(common::BindOnce(
-          &LeConnectionCallbacks::OnLeConnectSuccess,
-          common::Unretained(le_client_callbacks_),
-          remote_address,
-          std::move(connection)));
-      if (le_acceptlist_callbacks_ != nullptr) {
-        le_acceptlist_callbacks_->OnLeConnectSuccess(remote_address);
-      }
+      connections.add(handle, remote_address, nullptr, queue_down_end, handler_,
+                      connection_callbacks);
+      le_client_handler_->Post(common::BindOnce(&LeConnectionCallbacks::OnLeConnectSuccess,
+                                                common::Unretained(le_client_callbacks_),
+                                                remote_address, std::move(connection)));
     }
   }
 
   RoleSpecificData initialize_role_specific_data(Role role) {
     if (role == hci::Role::CENTRAL) {
       return DataAsCentral{le_address_manager_->GetInitiatorAddress()};
-    } else if (
-        controller_->SupportsBleExtendedAdvertising() ||
-        controller_->IsSupported(hci::OpCode::LE_MULTI_ADVT)) {
+    } else if (controller_.SupportsBleExtendedAdvertising() ||
+               controller_.IsSupported(hci::OpCode::LE_MULTI_ADVT)) {
       // when accepting connection, we must obtain the address from the advertiser.
       // When we receive "set terminated event", we associate connection handle with advertiser
       // address
@@ -524,9 +570,9 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
       // the exception is if we only support legacy advertising - here, our current address is also
       // our advertised address
       return DataAsPeripheral{
-          le_address_manager_->GetInitiatorAddress(),
-          {},
-          true /* For now, ignore non-discoverable legacy advertising TODO(b/254314964) */};
+              le_address_manager_->GetInitiatorAddress(),
+              {},
+              true /* For now, ignore non-discoverable legacy advertising TODO(b/254314964) */};
     }
   }
 
@@ -536,21 +582,37 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
     bool event_also_routes_to_other_receivers = connections.crash_on_unknown_handle_;
     connections.crash_on_unknown_handle_ = false;
     connections.execute(
-        handle,
-        [=, this](LeConnectionManagementCallbacks* callbacks) {
-          round_robin_scheduler_->Unregister(handle);
-          callbacks->OnDisconnection(reason);
-        },
-        kRemoveConnectionAfterwards);
-    if (le_acceptlist_callbacks_ != nullptr) {
-      le_acceptlist_callbacks_->OnLeDisconnection(remote_address);
-    }
+            handle,
+            [=, this](LeConnectionManagementCallbacks* callbacks) {
+              round_robin_scheduler_.Unregister(handle);
+              callbacks->OnDisconnection(reason);
+            },
+            kRemoveConnectionAfterwards);
     connections.crash_on_unknown_handle_ = event_also_routes_to_other_receivers;
 
     if (background_connections_.count(remote_address) == 1) {
       log::info("re-add device to accept list");
       arm_on_resume_ = true;
       add_device_to_accept_list(remote_address);
+    }
+
+    bluetooth::metrics::LogMetricLeConnectionStatus(remote_address.GetAddress(),
+                                                    false /* is_connect */, reason);
+
+    tBLE_BD_ADDR legacy_addr = ToLegacyAddressWithType(remote_address);
+    if (com::android::bluetooth::flags::prevent_adding_both_pseudo_and_identity_addr() &&
+        remote_address.IsRpa() &&
+        btm_random_pseudo_to_identity_addr(&legacy_addr.bda, &legacy_addr.type)) {
+      log::info("connection with pseudo address is disconnected");
+
+      legacy_addr.type &= ~BLE_ADDR_TYPE_ID_BIT;
+      AddressWithType identity_addr = ToAddressWithTypeFromLegacy(legacy_addr);
+
+      if (background_connections_.contains(identity_addr)) {
+        log::info("re-add device to accept list with identity address");
+        arm_on_resume_ = true;
+        add_device_to_accept_list(identity_addr);
+      }
     }
   }
 
@@ -562,11 +624,9 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
     }
     auto handle = complete_view.GetConnectionHandle();
     connections.execute(handle, [=](LeConnectionManagementCallbacks* callbacks) {
-      callbacks->OnConnectionUpdate(
-          complete_view.GetStatus(),
-          complete_view.GetConnInterval(),
-          complete_view.GetConnLatency(),
-          complete_view.GetSupervisionTimeout());
+      callbacks->OnConnectionUpdate(complete_view.GetStatus(), complete_view.GetConnInterval(),
+                                    complete_view.GetConnLatency(),
+                                    complete_view.GetSupervisionTimeout());
     });
   }
 
@@ -578,14 +638,17 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
     }
     auto handle = complete_view.GetConnectionHandle();
     connections.execute(handle, [=](LeConnectionManagementCallbacks* callbacks) {
-      callbacks->OnPhyUpdate(complete_view.GetStatus(), complete_view.GetTxPhy(), complete_view.GetRxPhy());
+      callbacks->OnPhyUpdate(complete_view.GetStatus(), complete_view.GetTxPhy(),
+                             complete_view.GetRxPhy());
     });
   }
 
-  void on_le_read_remote_version_information(
-      hci::ErrorCode hci_status, uint16_t handle, uint8_t version, uint16_t manufacturer_name, uint16_t sub_version) {
+  void on_le_read_remote_version_information(hci::ErrorCode hci_status, uint16_t handle,
+                                             uint8_t version, uint16_t manufacturer_name,
+                                             uint16_t sub_version) {
     connections.execute(handle, [=](LeConnectionManagementCallbacks* callbacks) {
-      callbacks->OnReadRemoteVersionInformationComplete(hci_status, version, manufacturer_name, sub_version);
+      callbacks->OnReadRemoteVersionInformationComplete(hci_status, version, manufacturer_name,
+                                                        sub_version);
     });
   }
 
@@ -598,10 +661,8 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
     auto handle = data_length_view.GetConnectionHandle();
     connections.execute(handle, [=](LeConnectionManagementCallbacks* callbacks) {
       callbacks->OnDataLengthChange(
-          data_length_view.GetMaxTxOctets(),
-          data_length_view.GetMaxTxTime(),
-          data_length_view.GetMaxRxOctets(),
-          data_length_view.GetMaxRxTime());
+              data_length_view.GetMaxTxOctets(), data_length_view.GetMaxTxTime(),
+              data_length_view.GetMaxRxOctets(), data_length_view.GetMaxRxTime());
     });
   }
 
@@ -612,15 +673,12 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
       return;
     }
 
-    connections.execute(
-        request_view.GetConnectionHandle(),
-        [request_view](LeConnectionManagementCallbacks* callbacks) {
-          callbacks->OnParameterUpdateRequest(
-              request_view.GetIntervalMin(),
-              request_view.GetIntervalMax(),
-              request_view.GetLatency(),
-              request_view.GetTimeout());
-        });
+    connections.execute(request_view.GetConnectionHandle(),
+                        [request_view](LeConnectionManagementCallbacks* callbacks) {
+                          callbacks->OnParameterUpdateRequest(
+                                  request_view.GetIntervalMin(), request_view.GetIntervalMax(),
+                                  request_view.GetLatency(), request_view.GetTimeout());
+                        });
   }
 
   void on_le_subrate_change(LeMetaEventView view) {
@@ -631,70 +689,87 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
     }
     auto handle = subrate_change_view.GetConnectionHandle();
     connections.execute(handle, [=](LeConnectionManagementCallbacks* callbacks) {
-      callbacks->OnLeSubrateChange(
-          subrate_change_view.GetStatus(),
-          subrate_change_view.GetSubrateFactor(),
-          subrate_change_view.GetPeripheralLatency(),
-          subrate_change_view.GetContinuationNumber(),
-          subrate_change_view.GetSupervisionTimeout());
+      callbacks->OnLeSubrateChange(subrate_change_view.GetStatus(),
+                                   subrate_change_view.GetSubrateFactor(),
+                                   subrate_change_view.GetPeripheralLatency(),
+                                   subrate_change_view.GetContinuationNumber(),
+                                   subrate_change_view.GetSupervisionTimeout());
     });
   }
 
-  uint16_t HACK_get_handle(Address address) {
-    return connections.HACK_get_handle(address);
-  }
+  uint16_t HACK_get_handle(Address address) { return connections.HACK_get_handle(address); }
 
   Address HACK_get_address(uint16_t connection_handle) {
     return connections.getAddressWithType(connection_handle).GetAddress();
   }
 
-  void OnAdvertisingSetTerminated(
-      uint16_t conn_handle,
-      uint8_t adv_set_id,
-      hci::AddressWithType adv_set_address,
-      bool is_discoverable) {
+  void OnAdvertisingSetTerminated(uint16_t conn_handle, uint8_t adv_set_id,
+                                  hci::AddressWithType adv_set_address, bool is_discoverable) {
     auto connection = connections.record_peripheral_data_and_extract_pending_connection(
-        conn_handle, DataAsPeripheral{adv_set_address, adv_set_id, is_discoverable});
+            conn_handle, DataAsPeripheral{adv_set_address, adv_set_id, is_discoverable});
 
     if (connection != nullptr) {
-      if (le_acceptlist_callbacks_ != nullptr) {
-        le_acceptlist_callbacks_->OnLeConnectSuccess(connection->GetRemoteAddress());
+      if (!com::android::bluetooth::flags::remove_hop_from_le_adv_set_term()) {
+        le_client_handler_->Post(common::BindOnce(&LeConnectionCallbacks::OnLeConnectSuccess,
+                                                  common::Unretained(le_client_callbacks_),
+                                                  connection->GetRemoteAddress(),
+                                                  std::move(connection)));
+        return;
       }
-      le_client_handler_->Post(common::BindOnce(
-          &LeConnectionCallbacks::OnLeConnectSuccess,
-          common::Unretained(le_client_callbacks_),
-          connection->GetRemoteAddress(),
-          std::move(connection)));
+
+      // Remove one hop from the handling of LE Advertising Set Terminated event.
+      // Serialize the OnLeConnectSuccess call as these are on the same thread and handler.
+      // This is added to handle the LTK and LE Advertising Set Terminated events in the same
+      // order in cases where LTK comes very close to LE Advertising Set Terminated event.
+      le_client_callbacks_->OnLeConnectSuccess(connection->GetRemoteAddress(),
+                                                std::move(connection));
     }
   }
 
-  void direct_connect_add(AddressWithType address_with_type) {
+  void direct_connect_add(AddressWithType address_with_type, bool prefer_relax_mode) {
+    log::debug("{}, {}", address_with_type, prefer_relax_mode);
     direct_connections_.insert(address_with_type);
-    if (create_connection_timeout_alarms_.find(address_with_type) != create_connection_timeout_alarms_.end()) {
+    if (prefer_relax_mode) {
+      relaxed_direct_connections_.insert(address_with_type);
+    }
+    if (create_connection_timeout_alarms_.find(address_with_type) !=
+        create_connection_timeout_alarms_.end()) {
+      log::verbose("Timer already added for {}", address_with_type);
       return;
     }
 
     auto emplace_result = create_connection_timeout_alarms_.emplace(
-        std::piecewise_construct,
-        std::forward_as_tuple(address_with_type.GetAddress(), address_with_type.GetAddressType()),
-        std::forward_as_tuple(handler_));
+            std::piecewise_construct,
+            std::forward_as_tuple(address_with_type.GetAddress(),
+                                  address_with_type.GetAddressType()),
+            std::forward_as_tuple(&handler_->thread()));
     uint32_t connection_timeout =
-        os::GetSystemPropertyUint32(kPropertyDirectConnTimeout, kCreateConnectionTimeoutMs);
+            os::GetSystemPropertyUint32(kPropertyDirectConnTimeout, kCreateConnectionTimeoutMs);
     emplace_result.first->second.Schedule(
-              common::BindOnce(&le_impl::on_create_connection_timeout, common::Unretained(this), address_with_type),
-              std::chrono::milliseconds(connection_timeout));
+            common::BindOnce(&le_impl::on_create_connection_timeout, common::Unretained(this),
+                             address_with_type),
+            std::chrono::milliseconds(connection_timeout));
   }
 
   void direct_connect_remove(AddressWithType address_with_type) {
+    log::debug("{}", address_with_type);
     auto it = create_connection_timeout_alarms_.find(address_with_type);
     if (it != create_connection_timeout_alarms_.end()) {
       it->second.Cancel();
       create_connection_timeout_alarms_.erase(it);
     }
     direct_connections_.erase(address_with_type);
+    relaxed_direct_connections_.erase(address_with_type);
   }
 
   void add_device_to_accept_list(AddressWithType address_with_type) {
+    metrics::LogMetricLeDeviceInAcceptList(address_with_type.GetAddress(), true /* is_add */);
+
+    if (address_with_type.GetAddress().IsEmpty()) {
+      log::warn("Address is empty, return");
+      return;
+    }
+
     if (connections.alreadyConnected(address_with_type)) {
       log::info("Device already connected, return");
       return;
@@ -705,17 +780,19 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
       return;
     }
 
+    log::debug("Adding device to accept list {}", address_with_type);
     accept_list.insert(address_with_type);
     register_with_address_manager();
     le_address_manager_->AddDeviceToFilterAcceptList(
-        address_with_type.ToFilterAcceptListAddressType(), address_with_type.GetAddress());
+            address_with_type.ToFilterAcceptListAddressType(), address_with_type.GetAddress());
   }
 
   bool is_device_in_accept_list(AddressWithType address_with_type) {
-    return (accept_list.find(address_with_type) != accept_list.end());
+    return accept_list.find(address_with_type) != accept_list.end();
   }
 
   void remove_device_from_accept_list(AddressWithType address_with_type) {
+    metrics::LogMetricLeDeviceInAcceptList(address_with_type.GetAddress(), false /* is_add */);
     if (accept_list.find(address_with_type) == accept_list.end()) {
       log::warn("Device not in acceptlist and cannot be removed: {}", address_with_type);
       return;
@@ -724,7 +801,7 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
     connecting_le_.erase(address_with_type);
     register_with_address_manager();
     le_address_manager_->RemoveDeviceFromFilterAcceptList(
-        address_with_type.ToFilterAcceptListAddressType(), address_with_type.GetAddress());
+            address_with_type.ToFilterAcceptListAddressType(), address_with_type.GetAddress());
   }
 
   void clear_filter_accept_list() {
@@ -733,47 +810,39 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
     le_address_manager_->ClearFilterAcceptList();
   }
 
-  void add_device_to_resolving_list(
-      AddressWithType address_with_type,
-      const std::array<uint8_t, 16>& peer_irk,
-      const std::array<uint8_t, 16>& local_irk) {
+  void add_device_to_resolving_list(AddressWithType address_with_type,
+                                    const std::array<uint8_t, 16>& peer_irk,
+                                    const std::array<uint8_t, 16>& local_irk) {
     register_with_address_manager();
-    le_address_manager_->AddDeviceToResolvingList(
-        address_with_type.ToPeerAddressType(), address_with_type.GetAddress(), peer_irk, local_irk);
-    if (le_acceptlist_callbacks_ != nullptr) {
-      le_acceptlist_callbacks_->OnResolvingListChange();
-    }
+    le_address_manager_->AddDeviceToResolvingList(address_with_type.ToPeerAddressType(),
+                                                  address_with_type.GetAddress(), peer_irk,
+                                                  local_irk);
   }
 
   void remove_device_from_resolving_list(AddressWithType address_with_type) {
     register_with_address_manager();
-    le_address_manager_->RemoveDeviceFromResolvingList(
-        address_with_type.ToPeerAddressType(), address_with_type.GetAddress());
-    if (le_acceptlist_callbacks_ != nullptr) {
-      le_acceptlist_callbacks_->OnResolvingListChange();
-    }
+    le_address_manager_->RemoveDeviceFromResolvingList(address_with_type.ToPeerAddressType(),
+                                                       address_with_type.GetAddress());
   }
+
+  void clear_resolving_list() { le_address_manager_->ClearResolvingList(); }
 
   void update_connectability_state_after_armed(const ErrorCode& status) {
     switch (connectability_state_) {
       case ConnectabilityState::DISARMED:
       case ConnectabilityState::ARMED:
       case ConnectabilityState::DISARMING:
-        log::error(
-            "Received connectability arm notification for unexpected state:{} status:{}",
-            connectability_state_machine_text(connectability_state_),
-            ErrorCodeText(status));
+        log::error("Received connectability arm notification for unexpected state:{} status:{}",
+                   connectability_state_machine_text(connectability_state_), ErrorCodeText(status));
         break;
       case ConnectabilityState::ARMING:
         if (status != ErrorCode::SUCCESS) {
           log::error("Le connection state machine armed failed status:{}", ErrorCodeText(status));
         }
-        connectability_state_ =
-            (status == ErrorCode::SUCCESS) ? ConnectabilityState::ARMED : ConnectabilityState::DISARMED;
-        log::info(
-            "Le connection state machine armed state:{} status:{}",
-            connectability_state_machine_text(connectability_state_),
-            ErrorCodeText(status));
+        set_connectability_state((status == ErrorCode::SUCCESS) ? ConnectabilityState::ARMED
+                                                                : ConnectabilityState::DISARMED);
+        log::info("Le connection state machine armed state:{} status:{}",
+                  connectability_state_machine_text(connectability_state_), ErrorCodeText(status));
         if (disarmed_while_arming_) {
           disarmed_while_arming_ = false;
           disarm_connectability();
@@ -784,75 +853,125 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
   void on_extended_create_connection(CommandStatusView status) {
     log::assert_that(status.IsValid(), "assert failed: status.IsValid()");
     log::assert_that(
-        status.GetCommandOpCode() == OpCode::LE_EXTENDED_CREATE_CONNECTION,
-        "assert failed: status.GetCommandOpCode() == OpCode::LE_EXTENDED_CREATE_CONNECTION");
+            status.GetCommandOpCode() == OpCode::LE_EXTENDED_CREATE_CONNECTION,
+            "assert failed: status.GetCommandOpCode() == OpCode::LE_EXTENDED_CREATE_CONNECTION");
     update_connectability_state_after_armed(status.GetStatus());
   }
 
   void on_create_connection(CommandStatusView status) {
     log::assert_that(status.IsValid(), "assert failed: status.IsValid()");
-    log::assert_that(
-        status.GetCommandOpCode() == OpCode::LE_CREATE_CONNECTION,
-        "assert failed: status.GetCommandOpCode() == OpCode::LE_CREATE_CONNECTION");
+    log::assert_that(status.GetCommandOpCode() == OpCode::LE_CREATE_CONNECTION,
+                     "assert failed: status.GetCommandOpCode() == OpCode::LE_CREATE_CONNECTION");
     update_connectability_state_after_armed(status.GetStatus());
   }
 
   void arm_connectability() {
     if (connectability_state_ != ConnectabilityState::DISARMED) {
-      log::error(
-          "Attempting to re-arm le connection state machine in unexpected state:{}",
-          connectability_state_machine_text(connectability_state_));
+      log::error("Attempting to re-arm le connection state machine in unexpected state:{}",
+                 connectability_state_machine_text(connectability_state_));
       return;
     }
     if (accept_list.empty()) {
       log::info(
-          "Ignored request to re-arm le connection state machine when filter accept list is empty");
+              "Ignored request to re-arm le connection state machine when filter accept list is "
+              "empty");
       return;
     }
     AddressWithType empty(Address::kEmpty, AddressType::RANDOM_DEVICE_ADDRESS);
-    connectability_state_ = ConnectabilityState::ARMING;
+    set_connectability_state(ConnectabilityState::ARMING);
     connecting_le_ = accept_list;
 
-    uint16_t le_scan_interval = os::GetSystemPropertyUint32(kPropertyConnScanIntervalSlow, kScanIntervalSlow);
-    uint16_t le_scan_window = os::GetSystemPropertyUint32(kPropertyConnScanWindowSlow, kScanWindowSlow);
+    uint16_t le_scan_interval =
+            os::GetSystemPropertyUint32(kPropertyConnScanIntervalSlow, kScanIntervalSlow);
+    uint16_t le_scan_window =
+            os::GetSystemPropertyUint32(kPropertyConnScanWindowSlow, kScanWindowSlow);
     uint16_t le_scan_window_2m = le_scan_window;
     uint16_t le_scan_window_coded = le_scan_window;
     // If there is any direct connection in the connection list, use the fast parameter
     if (!direct_connections_.empty()) {
-      le_scan_interval = os::GetSystemPropertyUint32(kPropertyConnScanIntervalFast, kScanIntervalFast);
+      le_scan_interval =
+              os::GetSystemPropertyUint32(kPropertyConnScanIntervalFast, kScanIntervalFast);
       le_scan_window = os::GetSystemPropertyUint32(kPropertyConnScanWindowFast, kScanWindowFast);
-      le_scan_window_2m = os::GetSystemPropertyUint32(kPropertyConnScanWindow2mFast, kScanWindow2mFast);
-      le_scan_window_coded = os::GetSystemPropertyUint32(kPropertyConnScanWindowCodedFast, kScanWindowCodedFast);
+      le_scan_window_2m =
+              os::GetSystemPropertyUint32(kPropertyConnScanWindow2mFast, kScanWindow2mFast);
+      le_scan_window_coded =
+              os::GetSystemPropertyUint32(kPropertyConnScanWindowCodedFast, kScanWindowCodedFast);
     }
     // Use specific parameters when in system suspend.
     if (system_suspend_) {
-      le_scan_interval = os::GetSystemPropertyUint32(
-          kPropertyConnScanIntervalSystemSuspend, kScanIntervalSystemSuspend);
-      le_scan_window = os::GetSystemPropertyUint32(
-          kPropertyConnScanWindowSystemSuspend, kScanWindowSystemSuspend);
+      le_scan_interval = os::GetSystemPropertyUint32(kPropertyConnScanIntervalSystemSuspend,
+                                                     kScanIntervalSystemSuspend);
+      le_scan_window = os::GetSystemPropertyUint32(kPropertyConnScanWindowSystemSuspend,
+                                                   kScanWindowSystemSuspend);
       le_scan_window_2m = le_scan_window;
       le_scan_window_coded = le_scan_window;
     }
+    is_using_system_suspend_scan_params_ = system_suspend_;
+
     InitiatorFilterPolicy initiator_filter_policy = InitiatorFilterPolicy::USE_FILTER_ACCEPT_LIST;
-    OwnAddressType own_address_type =
-        static_cast<OwnAddressType>(le_address_manager_->GetInitiatorAddress().GetAddressType());
-    uint16_t conn_interval_min = os::GetSystemPropertyUint32(kPropertyMinConnInterval, kConnIntervalMin);
-    uint16_t conn_interval_max = os::GetSystemPropertyUint32(kPropertyMaxConnInterval, kConnIntervalMax);
+    OwnAddressType own_address_type = static_cast<OwnAddressType>(
+            le_address_manager_->GetInitiatorAddress().GetAddressType());
+
+    uint16_t conn_interval_min;
+    uint16_t conn_interval_max;
+
+    bool prefer_relaxed_connection_interval = false;
+    for (const auto& address_with_type : direct_connections_) {
+      if (relaxed_direct_connections_.count(address_with_type) > 0) {
+        log::info(
+                "Found device {} in direct connection list that prefers using the relaxed "
+                "connection interval",
+                address_with_type);
+        prefer_relaxed_connection_interval = true;
+        break;
+      }
+    }
+
+    if (com::android::bluetooth::flags::initial_conn_params_p1()) {
+      if (prefer_relaxed_connection_interval) {
+        conn_interval_min = LeConnectionParameters::GetMinConnIntervalRelaxed();
+        conn_interval_max = LeConnectionParameters::GetMaxConnIntervalRelaxed();
+        log::debug("conn_interval_min={}, conn_interval_max={}", conn_interval_min,
+                   conn_interval_max);
+      } else {
+        size_t num_classic_acl_connections = classic_acl_count_provider_.GetAclCount();
+        size_t num_acl_connections = connections.size();
+
+        log::debug("ACL connection count: Classic={}, LE={}", num_classic_acl_connections,
+                   num_acl_connections);
+
+        choose_connection_mode(num_classic_acl_connections + num_acl_connections,
+                               &conn_interval_min, &conn_interval_max);
+      }
+    } else {
+      conn_interval_min = os::GetSystemPropertyUint32(kPropertyMinConnInterval, kConnIntervalMin);
+      conn_interval_max = os::GetSystemPropertyUint32(kPropertyMaxConnInterval, kConnIntervalMax);
+    }
+
     uint16_t conn_latency = os::GetSystemPropertyUint32(kPropertyConnLatency, kConnLatency);
-    uint16_t supervision_timeout = os::GetSystemPropertyUint32(kPropertyConnSupervisionTimeout, kSupervisionTimeout);
+    uint16_t supervision_timeout =
+            os::GetSystemPropertyUint32(kPropertyConnSupervisionTimeout, kSupervisionTimeout);
+
     log::assert_that(
-        check_connection_parameters(
-            conn_interval_min, conn_interval_max, conn_latency, supervision_timeout),
-        "assert failed: check_connection_parameters(conn_interval_min, conn_interval_max, "
-        "conn_latency, supervision_timeout)");
+            check_connection_parameters(conn_interval_min, conn_interval_max, conn_latency,
+                                        supervision_timeout),
+            "assert failed: check_connection_parameters(conn_interval_min, conn_interval_max, "
+            "conn_latency, supervision_timeout)");
 
     AddressWithType address_with_type = connection_peer_address_with_type_;
     if (initiator_filter_policy == InitiatorFilterPolicy::USE_FILTER_ACCEPT_LIST) {
       address_with_type = AddressWithType();
     }
 
-    if (controller_->IsSupported(OpCode::LE_EXTENDED_CREATE_CONNECTION)) {
-      bool only_init_1m_phy = os::GetSystemPropertyBool(kPropertyEnableBleOnlyInit1mPhy, kEnableBleOnlyInit1mPhy);
+    if (controller_.IsRpaGenerationSupported() &&
+        own_address_type != OwnAddressType::PUBLIC_DEVICE_ADDRESS) {
+      log::info("Support RPA offload, set own address type RESOLVABLE_OR_RANDOM_ADDRESS");
+      own_address_type = OwnAddressType::RESOLVABLE_OR_RANDOM_ADDRESS;
+    }
+
+    if (controller_.IsSupported(OpCode::LE_EXTENDED_CREATE_CONNECTION)) {
+      bool only_init_1m_phy =
+              os::GetSystemPropertyBool(kPropertyEnableBleOnlyInit1mPhy, kEnableBleOnlyInit1mPhy);
 
       uint8_t initiating_phys = PHY_LE_1M;
       std::vector<LeCreateConnPhyScanParameters> parameters = {};
@@ -867,7 +986,7 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
       scan_parameters.max_ce_length_ = 0x00;
       parameters.push_back(scan_parameters);
 
-      if (controller_->SupportsBle2mPhy() && !only_init_1m_phy) {
+      if (controller_.SupportsBle2mPhy() && !only_init_1m_phy) {
         LeCreateConnPhyScanParameters scan_parameters_2m;
         scan_parameters_2m.scan_interval_ = le_scan_interval;
         scan_parameters_2m.scan_window_ = le_scan_window_2m;
@@ -880,7 +999,7 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
         parameters.push_back(scan_parameters_2m);
         initiating_phys |= PHY_LE_2M;
       }
-      if (controller_->SupportsBleCodedPhy() && !only_init_1m_phy) {
+      if (controller_.SupportsBleCodedPhy() && !only_init_1m_phy) {
         LeCreateConnPhyScanParameters scan_parameters_coded;
         scan_parameters_coded.scan_interval_ = le_scan_interval;
         scan_parameters_coded.scan_window_ = le_scan_window_coded;
@@ -895,42 +1014,99 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
       }
 
       le_acl_connection_interface_->EnqueueCommand(
-          LeExtendedCreateConnectionBuilder::Create(
-              initiator_filter_policy,
-              own_address_type,
-              address_with_type.GetAddressType(),
-              address_with_type.GetAddress(),
-              initiating_phys,
-              parameters),
-          handler_->BindOnce(&le_impl::on_extended_create_connection, common::Unretained(this)));
+              LeExtendedCreateConnectionBuilder::Create(
+                      initiator_filter_policy, own_address_type, address_with_type.GetAddressType(),
+                      address_with_type.GetAddress(), initiating_phys, parameters),
+              handler_->BindOnce(&le_impl::on_extended_create_connection,
+                                 common::Unretained(this)));
     } else {
       le_acl_connection_interface_->EnqueueCommand(
-          LeCreateConnectionBuilder::Create(
-              le_scan_interval,
-              le_scan_window,
-              initiator_filter_policy,
-              address_with_type.GetAddressType(),
-              address_with_type.GetAddress(),
-              own_address_type,
-              conn_interval_min,
-              conn_interval_max,
-              conn_latency,
-              supervision_timeout,
-              0x00,
-              0x00),
-          handler_->BindOnce(&le_impl::on_create_connection, common::Unretained(this)));
+              LeCreateConnectionBuilder::Create(
+                      le_scan_interval, le_scan_window, initiator_filter_policy,
+                      address_with_type.GetAddressType(), address_with_type.GetAddress(),
+                      own_address_type, conn_interval_min, conn_interval_max, conn_latency,
+                      supervision_timeout, 0x00, 0x00),
+              handler_->BindOnce(&le_impl::on_create_connection, common::Unretained(this)));
     }
   }
 
-  void disarm_connectability() {
+  bool accept_list_contains_only_le_audio_devices() {
+    if (accept_list.empty()) {
+      return false;
+    }
 
+    // If found ASCS/BASS UUID in database cache, it is a lea device and reconnection scenario
+    for (auto it = accept_list.begin(); it != accept_list.end(); ++it) {
+      std::optional<std::vector<hci::Uuid>> uuids =
+              storage_module_.GetDeviceByLegacyKey(it->GetAddress()).GetServiceUuidsLe();
+      if (!uuids.has_value() ||
+          std::find_if(uuids->begin(), uuids->end(), [](const hci::Uuid& uuid) {
+            return (uuid == UUID_ASCS) || (uuid == UUID_BASS);
+          }) == uuids->end()) {
+        log::verbose("{} does not support LE audio", it->GetAddress());
+        return false;
+      } else {
+        log::verbose("{} support LE audio", it->GetAddress());
+      }
+    }
+    return true;
+  }
+
+  // Choose which connection mode should be used based on the number of ongoing ACL connections.
+  // According to the connection mode, connection interval min/max values are set.
+  void choose_connection_mode(size_t num_acl_connections, uint16_t* conn_interval_min,
+                              uint16_t* conn_interval_max) {
+    ConnectionMode connection_mode = ConnectionMode::RELAXED;
+
+    uint32_t aggressive_connection_threshold = LeConnectionParameters::GetAggressiveConnThreshold();
+    uint32_t iso_aggressive_connection_threshold =
+            LeConnectionParameters::GetLeIsoAggressiveConnThreshold();
+
+    log::debug(
+            "num_acl_connections={}, aggressive_connection_threshold={}, "
+            "iso_aggressive_connection_threshold={}",
+            num_acl_connections, aggressive_connection_threshold,
+            iso_aggressive_connection_threshold);
+
+    if (num_acl_connections < aggressive_connection_threshold) {
+      connection_mode = ConnectionMode::AGGRESSIVE;
+    }
+
+    if (com::android::bluetooth::flags::leaudio_use_aggressive_params() &&
+        num_acl_connections < iso_aggressive_connection_threshold &&
+        accept_list_contains_only_le_audio_devices()) {
+      connection_mode = ConnectionMode::AGGRESSIVE_ISO;
+    }
+
+    switch (connection_mode) {
+      case ConnectionMode::AGGRESSIVE_ISO:
+        *conn_interval_min = LeConnectionParameters::GetMinConnIntervalLeIsoAggressive();
+        *conn_interval_max = LeConnectionParameters::GetMaxConnIntervalLeIsoAggressive();
+        break;
+      case ConnectionMode::AGGRESSIVE:
+        *conn_interval_min = LeConnectionParameters::GetMinConnIntervalAggressive();
+        *conn_interval_max = LeConnectionParameters::GetMaxConnIntervalAggressive();
+        break;
+      case ConnectionMode::RELAXED:
+      default:
+        *conn_interval_min = LeConnectionParameters::GetMinConnIntervalRelaxed();
+        *conn_interval_max = LeConnectionParameters::GetMaxConnIntervalRelaxed();
+        break;
+    }
+    log::info("Connection mode: {}", connection_mode_to_string(connection_mode));
+    log::debug("conn_interval_min={}, conn_interval_max={}", *conn_interval_min,
+               *conn_interval_max);
+  }
+
+  void disarm_connectability() {
     switch (connectability_state_) {
       case ConnectabilityState::ARMED:
         log::info("Disarming LE connection state machine with create connection cancel");
-        connectability_state_ = ConnectabilityState::DISARMING;
+        set_connectability_state(ConnectabilityState::DISARMING);
         le_acl_connection_interface_->EnqueueCommand(
-            LeCreateConnectionCancelBuilder::Create(),
-            handler_->BindOnce(&le_impl::on_create_connection_cancel_complete, common::Unretained(this)));
+                LeCreateConnectionCancelBuilder::Create(),
+                handler_->BindOnce(&le_impl::on_create_connection_cancel_complete,
+                                   common::Unretained(this)));
         break;
 
       case ConnectabilityState::ARMING:
@@ -939,14 +1115,14 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
         break;
       case ConnectabilityState::DISARMING:
       case ConnectabilityState::DISARMED:
-        log::error(
-            "Attempting to disarm le connection state machine in unexpected state:{}",
-            connectability_state_machine_text(connectability_state_));
+        log::error("Attempting to disarm le connection state machine in unexpected state:{}",
+                   connectability_state_machine_text(connectability_state_));
         break;
     }
   }
 
-  void create_le_connection(AddressWithType address_with_type, bool add_to_accept_list, bool is_direct) {
+  void create_le_connection(AddressWithType address_with_type, bool add_to_accept_list,
+                            bool is_direct, bool prefer_relax_mode) {
     if (le_client_callbacks_ == nullptr) {
       log::error("No callbacks to call");
       return;
@@ -957,6 +1133,19 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
       return;
     }
 
+    if (com::android::bluetooth::flags::prevent_adding_both_pseudo_and_identity_addr()) {
+      tBLE_BD_ADDR legacy_addr = ToLegacyAddressWithType(address_with_type);
+      if (address_with_type.GetAddress() != Address::kEmpty &&
+          btm_identity_addr_to_random_pseudo(&legacy_addr.bda, &legacy_addr.type, false)) {
+        AddressWithType pseudo_addr = ToAddressWithTypeFromLegacy(legacy_addr);
+        if (connections.alreadyConnected(pseudo_addr)) {
+          log::info("Device already connected as pseudo address. Skip adding public addr to "
+                    "accept list");
+          return;
+        }
+      }
+    }
+
     bool already_in_accept_list = accept_list.find(address_with_type) != accept_list.end();
     // TODO: Configure default LE connection parameters?
     if (add_to_accept_list) {
@@ -964,8 +1153,17 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
         add_device_to_accept_list(address_with_type);
       }
 
+      bool in_accept_list_due_to_direct_connect =
+              direct_connections_.find(address_with_type) != direct_connections_.end();
+      if (already_in_accept_list && (in_accept_list_due_to_direct_connect || !is_direct) &&
+          (!com::android::bluetooth::flags::allow_rearm_if_suspend_scan_params_used() ||
+           is_using_system_suspend_scan_params_ == system_suspend_)) {
+        log::info("Device {} already in accept list. Stop here.", address_with_type);
+        return;
+      }
+
       if (is_direct) {
-        direct_connect_add(address_with_type);
+        direct_connect_add(address_with_type, prefer_relax_mode);
       }
     }
 
@@ -985,6 +1183,10 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
       return;
     }
 
+    log::verbose("{}, already_in_accept_list: {}, pause_connection {}, state: {}",
+                 address_with_type, already_in_accept_list, pause_connection,
+                 connectability_state_machine_text(connectability_state_));
+
     switch (connectability_state_) {
       case ConnectabilityState::ARMED:
       case ConnectabilityState::ARMING:
@@ -994,9 +1196,8 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
         } else {
           // Ignored, if we add new device to the filter accept list, create connection command will
           // be sent by OnResume.
-          log::debug(
-              "Deferred until filter accept list updated create connection state {}",
-              connectability_state_machine_text(connectability_state_));
+          log::debug("Deferred until filter accept list updated create connection state {}",
+                     connectability_state_machine_text(connectability_state_));
         }
         break;
       default:
@@ -1021,11 +1222,13 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
     } else {
       remove_device_from_accept_list(address_with_type);
     }
+    // Temporary mapping the error code to PAGE_TIMEOUT
+    bluetooth::metrics::LogLeAclCompletionEvent(address_with_type.GetAddress(),
+                                                ErrorCode::PAGE_TIMEOUT,
+                                                true /* is locally initiated */);
     le_client_handler_->Post(common::BindOnce(
-        &LeConnectionCallbacks::OnLeConnectFail,
-        common::Unretained(le_client_callbacks_),
-        address_with_type,
-        ErrorCode::CONNECTION_ACCEPT_TIMEOUT));
+            &LeConnectionCallbacks::OnLeConnectFail, common::Unretained(le_client_callbacks_),
+            address_with_type, ErrorCode::CONNECTION_ACCEPT_TIMEOUT));
   }
 
   void cancel_connect(AddressWithType address_with_type) {
@@ -1034,88 +1237,46 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
     remove_device_from_accept_list(address_with_type);
   }
 
-  void set_le_suggested_default_data_parameters(uint16_t length, uint16_t time) {
-    auto packet = LeWriteSuggestedDefaultDataLengthBuilder::Create(length, time);
-    le_acl_connection_interface_->EnqueueCommand(
-        std::move(packet), handler_->BindOnce([](CommandCompleteView /* complete */) {}));
-  }
-
-  void LeSetDefaultSubrate(
-      uint16_t subrate_min, uint16_t subrate_max, uint16_t max_latency, uint16_t cont_num, uint16_t sup_tout) {
-    le_acl_connection_interface_->EnqueueCommand(
-        LeSetDefaultSubrateBuilder::Create(subrate_min, subrate_max, max_latency, cont_num, sup_tout),
-        handler_->BindOnce([](CommandCompleteView complete) {
-          auto complete_view = LeSetDefaultSubrateCompleteView::Create(complete);
-          log::assert_that(complete_view.IsValid(), "assert failed: complete_view.IsValid()");
-          ErrorCode status = complete_view.GetStatus();
-          log::assert_that(status == ErrorCode::SUCCESS, "Status = {}", ErrorCodeText(status));
-        }));
-  }
-
-  void clear_resolving_list() {
-    le_address_manager_->ClearResolvingList();
-  }
-
-  void set_privacy_policy_for_initiator_address(
-      LeAddressManager::AddressPolicy address_policy,
-      AddressWithType fixed_address,
-      Octet16 rotation_irk,
-      std::chrono::milliseconds minimum_rotation_time,
-      std::chrono::milliseconds maximum_rotation_time) {
+  void set_privacy_policy_for_initiator_address(LeAddressManager::AddressPolicy address_policy,
+                                                AddressWithType fixed_address, Octet16 rotation_irk,
+                                                std::chrono::milliseconds minimum_rotation_time,
+                                                std::chrono::milliseconds maximum_rotation_time) {
     le_address_manager_->SetPrivacyPolicyForInitiatorAddress(
-        address_policy,
-        fixed_address,
-        rotation_irk,
-        controller_->SupportsBlePrivacy() && os::GetSystemPropertyBool(kPropertyEnableBlePrivacy, kEnableBlePrivacy),
-        minimum_rotation_time,
-        maximum_rotation_time);
+            address_policy, fixed_address, rotation_irk,
+            controller_.SupportsBlePrivacy() &&
+                    os::GetSystemPropertyBool(kPropertyEnableBlePrivacy, kEnableBlePrivacy),
+            minimum_rotation_time, maximum_rotation_time);
   }
 
   // TODO(jpawlowski): remove once we have config file abstraction in cert tests
   void set_privacy_policy_for_initiator_address_for_test(
-      LeAddressManager::AddressPolicy address_policy,
-      AddressWithType fixed_address,
-      Octet16 rotation_irk,
-      std::chrono::milliseconds minimum_rotation_time,
-      std::chrono::milliseconds maximum_rotation_time) {
+          LeAddressManager::AddressPolicy address_policy, AddressWithType fixed_address,
+          Octet16 rotation_irk, std::chrono::milliseconds minimum_rotation_time,
+          std::chrono::milliseconds maximum_rotation_time) {
     le_address_manager_->SetPrivacyPolicyForInitiatorAddressForTest(
-        address_policy, fixed_address, rotation_irk, minimum_rotation_time, maximum_rotation_time);
+            address_policy, fixed_address, rotation_irk, minimum_rotation_time,
+            maximum_rotation_time);
   }
 
   void handle_register_le_callbacks(LeConnectionCallbacks* callbacks, os::Handler* handler) {
-    log::assert_that(
-        le_client_callbacks_ == nullptr, "assert failed: le_client_callbacks_ == nullptr");
+    log::assert_that(le_client_callbacks_ == nullptr,
+                     "assert failed: le_client_callbacks_ == nullptr");
     log::assert_that(le_client_handler_ == nullptr, "assert failed: le_client_handler_ == nullptr");
     le_client_callbacks_ = callbacks;
     le_client_handler_ = handler;
   }
 
-  void handle_register_le_acceptlist_callbacks(LeAcceptlistCallbacks* callbacks) {
-    log::assert_that(
-        le_acceptlist_callbacks_ == nullptr, "assert failed: le_acceptlist_callbacks_ == nullptr");
-    le_acceptlist_callbacks_ = callbacks;
-  }
-
-  void handle_unregister_le_callbacks(LeConnectionCallbacks* callbacks, std::promise<void> promise) {
-    log::assert_that(
-        le_client_callbacks_ == callbacks,
-        "Registered le callback entity is different then unregister request");
+  void handle_unregister_le_callbacks(LeConnectionCallbacks* callbacks,
+                                      std::promise<void> promise) {
+    log::assert_that(le_client_callbacks_ == callbacks,
+                     "Registered le callback entity is different then unregister request");
     le_client_callbacks_ = nullptr;
     le_client_handler_ = nullptr;
     promise.set_value();
   }
 
-  void handle_unregister_le_acceptlist_callbacks(
-      LeAcceptlistCallbacks* callbacks, std::promise<void> promise) {
-    log::assert_that(
-        le_acceptlist_callbacks_ == callbacks,
-        "Registered le callback entity is different then unregister request");
-    le_acceptlist_callbacks_ = nullptr;
-    promise.set_value();
-  }
-
-  bool check_connection_parameters(
-      uint16_t conn_interval_min, uint16_t conn_interval_max, uint16_t conn_latency, uint16_t supervision_timeout) {
+  bool check_connection_parameters(uint16_t conn_interval_min, uint16_t conn_interval_max,
+                                   uint16_t conn_latency, uint16_t supervision_timeout) {
     if (conn_interval_min < 0x0006 || conn_interval_min > 0x0C80 || conn_interval_max < 0x0006 ||
         conn_interval_max > 0x0C80 || conn_latency > 0x01F3 || supervision_timeout < 0x000A ||
         supervision_timeout > 0x0C80) {
@@ -1125,10 +1286,11 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
 
     // The Maximum interval in milliseconds will be conn_interval_max * 1.25 ms
     // The Timeout in milliseconds will be expected_supervision_timeout * 10 ms
-    // The Timeout in milliseconds shall be larger than (1 + Latency) * Interval_Max * 2, where Interval_Max is given in
-    // milliseconds.
+    // The Timeout in milliseconds shall be larger than (1 + Latency) * Interval_Max * 2, where
+    // Interval_Max is given in milliseconds.
     uint32_t supervision_timeout_min = (uint32_t)(1 + conn_latency) * conn_interval_max * 2 + 1;
-    if (supervision_timeout * 8 < supervision_timeout_min || conn_interval_max < conn_interval_min) {
+    if (supervision_timeout * 8 < supervision_timeout_min ||
+        conn_interval_max < conn_interval_min) {
       log::error("Invalid parameter");
       return false;
     }
@@ -1142,10 +1304,6 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
 
   void remove_device_from_background_connection_list(AddressWithType address_with_type) {
     background_connections_.erase(address_with_type);
-  }
-
-  void is_on_background_connection_list(AddressWithType address_with_type, std::promise<bool> promise) {
-    promise.set_value(background_connections_.find(address_with_type) != background_connections_.end());
   }
 
   void OnPause() override {  // bluetooth::hci::LeAddressManagerCallback
@@ -1190,9 +1348,8 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
       }
     }
     if (connectability_state_ != ConnectabilityState::DISARMING) {
-      log::error(
-          "Attempting to disarm le connection state machine in unexpected state:{}",
-          connectability_state_machine_text(connectability_state_));
+      log::error("Attempting to disarm le connection state machine in unexpected state:{}",
+                 connectability_state_machine_text(connectability_state_));
     }
   }
 
@@ -1205,7 +1362,8 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
   }
 
   void check_for_unregister() {
-    if (connections.is_empty() && connecting_le_.empty() && address_manager_registered && ready_to_unregister) {
+    if (connections.is_empty() && connecting_le_.empty() && address_manager_registered &&
+        ready_to_unregister) {
       le_address_manager_->Unregister(this);
       address_manager_registered = false;
       pause_connection = false;
@@ -1213,33 +1371,37 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
     }
   }
 
-  void set_system_suspend_state(bool suspended) {
+  void set_system_suspend_state(bool suspended, std::promise<void> promise) {
     system_suspend_ = suspended;
+    promise.set_value();
   }
 
-  HciLayer* hci_layer_ = nullptr;
-  Controller* controller_ = nullptr;
+  HciInterface& hci_layer_;
+  Controller& controller_;
   os::Handler* handler_ = nullptr;
-  RoundRobinScheduler* round_robin_scheduler_ = nullptr;
+  RoundRobinScheduler& round_robin_scheduler_;
+  storage::StorageModule& storage_module_;
   LeAddressManager* le_address_manager_ = nullptr;
   LeAclConnectionInterface* le_acl_connection_interface_ = nullptr;
+  ClassicAclCountProvider& classic_acl_count_provider_;
   LeConnectionCallbacks* le_client_callbacks_ = nullptr;
   os::Handler* le_client_handler_ = nullptr;
-  LeAcceptlistCallbacks* le_acceptlist_callbacks_ = nullptr;
   std::unordered_set<AddressWithType> connecting_le_{};
   bool arm_on_resume_{};
   bool arm_on_disarm_{};
   std::unordered_set<AddressWithType> direct_connections_{};
+  std::unordered_set<AddressWithType> relaxed_direct_connections_{};
   // Set of devices that will not be removed from accept list after direct connect timeout
   std::unordered_set<AddressWithType> background_connections_;
   /* This is content of controller "Filter Accept List"*/
   std::unordered_set<AddressWithType> accept_list;
-  AddressWithType connection_peer_address_with_type_;  // Direct peer address UNSUPPORTEDD
+  AddressWithType connection_peer_address_with_type_;  // Direct peer address UNSUPPORTED
   bool address_manager_registered = false;
   bool ready_to_unregister = false;
   bool pause_connection = false;
   bool disarmed_while_arming_ = false;
   bool system_suspend_ = false;
+  bool is_using_system_suspend_scan_params_ = false;
   ConnectabilityState connectability_state_{ConnectabilityState::DISARMED};
   std::map<AddressWithType, os::Alarm> create_connection_timeout_alarms_{};
 };

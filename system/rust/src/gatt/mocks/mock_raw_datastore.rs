@@ -1,19 +1,13 @@
 //! Mocked implementation of GattDatastore for use in test
 
-use crate::{
-    gatt::{
-        callbacks::{GattWriteRequestType, RawGattDatastore, TransactionDecision},
-        ffi::AttributeBackingType,
-        ids::{AttHandle, TransportIndex},
-    },
-    packets::AttErrorCode,
-};
+use crate::gatt::callbacks::{GattWriteRequestType, RawGattDatastore, TransactionDecision};
+use crate::gatt::ffi::AttributeBackingType;
+use crate::gatt::ids::{AttHandle, TransportIndex};
+use crate::packets::att::AttErrorCode;
 use async_trait::async_trait;
 use log::info;
-use tokio::sync::{
-    mpsc::{self, unbounded_channel, UnboundedReceiver},
-    oneshot,
-};
+use tokio::sync::mpsc::{self, unbounded_channel, UnboundedReceiver};
+use tokio::sync::oneshot;
 
 /// Routes calls to RawGattDatastore into a channel of MockRawDatastoreEvents
 pub struct MockRawDatastore(mpsc::UnboundedSender<MockRawDatastoreEvents>);
@@ -31,6 +25,7 @@ impl MockRawDatastore {
 pub enum MockRawDatastoreEvents {
     /// A characteristic was read on a given handle. The oneshot is used to
     /// return the value read.
+    #[allow(dead_code)]
     Read(
         TransportIndex,
         AttHandle,
@@ -40,6 +35,7 @@ pub enum MockRawDatastoreEvents {
     ),
     /// A characteristic was written to on a given handle. The oneshot is used
     /// to return whether the write succeeded.
+    #[allow(dead_code)]
     Write(
         TransportIndex,
         AttHandle,
@@ -52,6 +48,7 @@ pub enum MockRawDatastoreEvents {
     WriteNoResponse(TransportIndex, AttHandle, AttributeBackingType, Vec<u8>),
     /// The prepared writes have been committed / aborted. The oneshot is used
     /// to return whether this operation succeeded.
+    #[allow(dead_code)]
     Execute(TransportIndex, TransactionDecision, oneshot::Sender<Result<(), AttErrorCode>>),
 }
 

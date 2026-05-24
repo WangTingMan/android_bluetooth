@@ -56,7 +56,7 @@ import java.util.List;
 /** This provider allows application to interact with Bluetooth OPP manager */
 // Next tag value for ContentProfileErrorReportUtils.report(): 5
 public final class BluetoothOppProvider extends ContentProvider {
-    private static final String TAG = "BluetoothOppProvider";
+    private static final String TAG = BluetoothOppProvider.class.getSimpleName();
 
     /** Database filename */
     private static final String DB_NAME = "btopp.db";
@@ -201,15 +201,11 @@ public final class BluetoothOppProvider extends ContentProvider {
 
     @Override
     public String getType(Uri uri) {
-        int match = sURIMatcher.match(uri);
-        switch (match) {
-            case SHARES:
-                return SHARE_LIST_TYPE;
-            case SHARES_ID:
-                return SHARE_TYPE;
-            default:
-                throw new IllegalArgumentException("Unknown URI in getType(): " + uri);
-        }
+        return switch (sURIMatcher.match(uri)) {
+            case SHARES -> SHARE_LIST_TYPE;
+            case SHARES_ID -> SHARE_TYPE;
+            default -> throw new IllegalArgumentException("Unknown URI in getType(): " + uri);
+        };
     }
 
     private static void copyString(String key, ContentValues from, ContentValues to) {
@@ -381,16 +377,13 @@ public final class BluetoothOppProvider extends ContentProvider {
 
         int match = sURIMatcher.match(uri);
         switch (match) {
-            case SHARES:
-                qb.setTables(DB_TABLE);
-                break;
-            case SHARES_ID:
+            case SHARES -> qb.setTables(DB_TABLE);
+            case SHARES_ID -> {
                 qb.setTables(DB_TABLE);
                 qb.appendWhere(BluetoothShare._ID + "=");
                 qb.appendWhere(uri.getPathSegments().get(1));
-                break;
-            default:
-                throw new IllegalArgumentException("Unknown URI: " + uri);
+            }
+            default -> throw new IllegalArgumentException("Unknown URI: " + uri);
         }
 
         // The following is a large enough debug operation such that we want to guard it with an
@@ -462,32 +455,30 @@ public final class BluetoothOppProvider extends ContentProvider {
 
         int match = sURIMatcher.match(uri);
         switch (match) {
-            case SHARES:
-            case SHARES_ID:
-                {
-                    String myWhere;
-                    if (selection != null) {
-                        if (match == SHARES) {
-                            myWhere = "( " + selection + " )";
-                        } else {
-                            myWhere = "( " + selection + " ) AND ";
-                        }
+            case SHARES, SHARES_ID -> {
+                String myWhere;
+                if (selection != null) {
+                    if (match == SHARES) {
+                        myWhere = "( " + selection + " )";
                     } else {
-                        myWhere = "";
+                        myWhere = "( " + selection + " ) AND ";
                     }
-                    if (match == SHARES_ID) {
-                        String segment = uri.getPathSegments().get(1);
-                        rowId = Long.parseLong(segment);
-                        myWhere += " ( " + BluetoothShare._ID + " = " + rowId + " ) ";
-                    }
-
-                    if (values.size() > 0) {
-                        count = db.update(DB_TABLE, values, myWhere, selectionArgs);
-                    }
-                    break;
+                } else {
+                    myWhere = "";
                 }
-            default:
+                if (match == SHARES_ID) {
+                    String segment = uri.getPathSegments().get(1);
+                    rowId = Long.parseLong(segment);
+                    myWhere = myWhere + " ( " + BluetoothShare._ID + " = " + rowId + " ) ";
+                }
+
+                if (values.size() > 0) {
+                    count = db.update(DB_TABLE, values, myWhere, selectionArgs);
+                }
+            }
+            default -> {
                 throw new UnsupportedOperationException("Cannot update unknown URI: " + uri);
+            }
         }
         getContext().getContentResolver().notifyChange(uri, null);
 
@@ -500,30 +491,28 @@ public final class BluetoothOppProvider extends ContentProvider {
         int count;
         int match = sURIMatcher.match(uri);
         switch (match) {
-            case SHARES:
-            case SHARES_ID:
-                {
-                    String myWhere;
-                    if (selection != null) {
-                        if (match == SHARES) {
-                            myWhere = "( " + selection + " )";
-                        } else {
-                            myWhere = "( " + selection + " ) AND ";
-                        }
+            case SHARES, SHARES_ID -> {
+                String myWhere;
+                if (selection != null) {
+                    if (match == SHARES) {
+                        myWhere = "( " + selection + " )";
                     } else {
-                        myWhere = "";
+                        myWhere = "( " + selection + " ) AND ";
                     }
-                    if (match == SHARES_ID) {
-                        String segment = uri.getPathSegments().get(1);
-                        long rowId = Long.parseLong(segment);
-                        myWhere += " ( " + BluetoothShare._ID + " = " + rowId + " ) ";
-                    }
-
-                    count = db.delete(DB_TABLE, myWhere, selectionArgs);
-                    break;
+                } else {
+                    myWhere = "";
                 }
-            default:
+                if (match == SHARES_ID) {
+                    String segment = uri.getPathSegments().get(1);
+                    long rowId = Long.parseLong(segment);
+                    myWhere = myWhere + " ( " + BluetoothShare._ID + " = " + rowId + " ) ";
+                }
+
+                count = db.delete(DB_TABLE, myWhere, selectionArgs);
+            }
+            default -> {
                 throw new UnsupportedOperationException("Cannot delete unknown URI: " + uri);
+            }
         }
         getContext().getContentResolver().notifyChange(uri, null);
         return count;

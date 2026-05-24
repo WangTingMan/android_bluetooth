@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,8 @@ namespace fake_timer {
 
 int fake_timerfd_create(int clockid, int flags);
 
-int fake_timerfd_settime(int fd, int flags, const struct itimerspec* new_value, struct itimerspec* old_value);
+int fake_timerfd_settime(int fd, int flags, const struct itimerspec* new_value,
+                         struct itimerspec* old_value);
 
 int fake_timerfd_close(int fd);
 

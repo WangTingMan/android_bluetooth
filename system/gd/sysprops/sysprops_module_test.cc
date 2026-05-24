@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 The Android Open Source Project
+ * Copyright (C) 2024 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,10 +25,12 @@
 #include "os/parameter_provider.h"
 #include "os/system_properties.h"
 
+using bluetooth::sysprops::SyspropsModule;
+
 namespace testing {
 
 class SyspropsModuleTest : public Test {
- protected:
+protected:
   void SetUp() override {
     EXPECT_TRUE(bluetooth::os::ClearSystemPropertiesForHost());
     temp_config_ = std::filesystem::temp_directory_path() / "temp_sysprops.conf";
@@ -39,7 +41,7 @@ class SyspropsModuleTest : public Test {
 
   void TearDown() override {
     EXPECT_TRUE(bluetooth::os::ClearSystemPropertiesForHost());
-    test_registry_.StopAll();
+    sysprops_module.reset();
     DeleteConfigFiles();
   }
 
@@ -53,7 +55,7 @@ class SyspropsModuleTest : public Test {
     }
   }
 
-  bluetooth::TestModuleRegistry test_registry_;
+  std::unique_ptr<SyspropsModule> sysprops_module = nullptr;
   std::filesystem::path temp_config_;
   std::filesystem::path temp_override_dir_;
 };
@@ -62,16 +64,16 @@ static const std::string kSupportedSyspropName = "bluetooth.device.class_of_devi
 static const std::string kSupportedSyspropValue = "0,1,4";
 static const std::string kUnsupportedSyspropName = "i.am.an.unsupported.sysprop";
 static const std::string kCorrectPrefixAflagName =
-    "persist.device_config.aconfig_flags.bluetooth.com.android.bluetooth.flags.msft_addr_tracking_"
-    "quirk";
+        "persist.device_config.aconfig_flags.bluetooth.com.android.bluetooth.flags.msft_addr_"
+        "tracking_quirk";
 static const std::string kCorrectPrefixAflagValue = "true";
 static const std::string kIncorrectPrefixAflagName =
-    "persist.device_config.aconfig_flags.not_bluetooth.testing_flag";
+        "persist.device_config.aconfig_flags.not_bluetooth.testing_flag";
 
 static const std::string kParseConfigTestConfig =
-    "[Sysprops]\n" + kSupportedSyspropName + "=" + kSupportedSyspropValue + "\n" +
-    kUnsupportedSyspropName + "=true\n" + "\n" + "[Aflags]\n" + kCorrectPrefixAflagName + "=" +
-    kCorrectPrefixAflagValue + "\n" + kIncorrectPrefixAflagName + "=true\n";
+        "[Sysprops]\n" + kSupportedSyspropName + "=" + kSupportedSyspropValue + "\n" +
+        kUnsupportedSyspropName + "=true\n" + "\n" + "[Aflags]\n" + kCorrectPrefixAflagName + "=" +
+        kCorrectPrefixAflagValue + "\n" + kIncorrectPrefixAflagName + "=true\n";
 
 TEST_F(SyspropsModuleTest, parse_config_test) {
   // Verify the state before test
@@ -81,16 +83,13 @@ TEST_F(SyspropsModuleTest, parse_config_test) {
   EXPECT_THAT(bluetooth::os::GetSystemProperty(kIncorrectPrefixAflagName), std::nullopt);
 
   EXPECT_TRUE(bluetooth::os::WriteToFile(temp_config_.string(), kParseConfigTestConfig));
-  auto* sysprops_module = new bluetooth::sysprops::SyspropsModule();
-  test_registry_.InjectTestModule(&bluetooth::sysprops::SyspropsModule::Factory, sysprops_module);
+  sysprops_module = std::make_unique<bluetooth::sysprops::SyspropsModule>();
 
-  EXPECT_THAT(
-      bluetooth::os::GetSystemProperty(kSupportedSyspropName),
-      Optional(StrEq(kSupportedSyspropValue)));
+  EXPECT_THAT(bluetooth::os::GetSystemProperty(kSupportedSyspropName),
+              Optional(StrEq(kSupportedSyspropValue)));
   EXPECT_THAT(bluetooth::os::GetSystemProperty(kUnsupportedSyspropName), std::nullopt);
-  EXPECT_THAT(
-      bluetooth::os::GetSystemProperty(kCorrectPrefixAflagName),
-      Optional(StrEq(kCorrectPrefixAflagValue)));
+  EXPECT_THAT(bluetooth::os::GetSystemProperty(kCorrectPrefixAflagName),
+              Optional(StrEq(kCorrectPrefixAflagValue)));
   EXPECT_THAT(bluetooth::os::GetSystemProperty(kIncorrectPrefixAflagName), std::nullopt);
 }
 
@@ -102,8 +101,7 @@ TEST_F(SyspropsModuleTest, empty_sysprops_file_path_test) {
   EXPECT_THAT(bluetooth::os::GetSystemProperty(kIncorrectPrefixAflagName), std::nullopt);
 
   bluetooth::os::ParameterProvider::OverrideSyspropsFilePath("");
-  auto* sysprops_module = new bluetooth::sysprops::SyspropsModule();
-  test_registry_.InjectTestModule(&bluetooth::sysprops::SyspropsModule::Factory, sysprops_module);
+  sysprops_module = std::make_unique<bluetooth::sysprops::SyspropsModule>();
 
   EXPECT_THAT(bluetooth::os::GetSystemProperty(kSupportedSyspropName), std::nullopt);
   EXPECT_THAT(bluetooth::os::GetSystemProperty(kUnsupportedSyspropName), std::nullopt);

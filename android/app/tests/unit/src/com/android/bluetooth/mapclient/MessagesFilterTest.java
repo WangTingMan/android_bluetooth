@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,15 @@ package com.android.bluetooth.mapclient;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.SmallTest;
-import androidx.test.runner.AndroidJUnit4;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.util.Calendar;
 
+/** Test cases for {@link MessagesFilter}. */
 @SmallTest
 @RunWith(AndroidJUnit4.class)
 public class MessagesFilterTest {
@@ -39,10 +40,10 @@ public class MessagesFilterTest {
         assertThat(filter.originator).isEqualTo(originator);
 
         filter.setOriginator("");
-        assertThat(filter.originator).isEqualTo(null); // Empty string is stored as null
+        assertThat(filter.originator).isNull(); // Empty string is stored as null
 
         filter.setOriginator(null);
-        assertThat(filter.originator).isEqualTo(null);
+        assertThat(filter.originator).isNull();
     }
 
     @Test
@@ -74,10 +75,10 @@ public class MessagesFilterTest {
         assertThat(filter.recipient).isEqualTo(recipient);
 
         filter.setRecipient("");
-        assertThat(filter.recipient).isEqualTo(null); // Empty string is stored as null
+        assertThat(filter.recipient).isNull(); // Empty string is stored as null
 
         filter.setRecipient(null);
-        assertThat(filter.recipient).isEqualTo(null);
+        assertThat(filter.recipient).isNull();
     }
 
     /** Test Builder creates and sets everything correctly. */
@@ -85,7 +86,7 @@ public class MessagesFilterTest {
     public void testBuilder() {
         String originator = "test_originator";
         String recipient = "test_recipient";
-        byte messageType = MessagesFilter.MESSAGE_TYPE_EMAIL;
+        byte excludedMessageTypes = MessagesFilter.MESSAGE_TYPE_EMAIL;
         byte readStatus = MessagesFilter.READ_STATUS_READ;
         byte priority = MessagesFilter.PRIORITY_HIGH;
         Calendar begin = Calendar.getInstance();
@@ -97,7 +98,7 @@ public class MessagesFilterTest {
                 new MessagesFilter.Builder()
                         .setOriginator(originator)
                         .setRecipient(recipient)
-                        .setMessageType(messageType)
+                        .setExcludedMessageTypes(excludedMessageTypes)
                         .setReadStatus(readStatus)
                         .setPriority(priority)
                         .setPeriod(begin.getTime(), end.getTime())
@@ -105,7 +106,7 @@ public class MessagesFilterTest {
 
         assertThat(filter.originator).isEqualTo(originator);
         assertThat(filter.recipient).isEqualTo(recipient);
-        assertThat(filter.messageType).isEqualTo(messageType);
+        assertThat(filter.excludedMessageTypes).isEqualTo(excludedMessageTypes);
         assertThat(filter.readStatus).isEqualTo(readStatus);
         assertThat(filter.priority).isEqualTo(priority);
         assertThat(filter.periodBegin).isEqualTo((new ObexTime(begin.getTime())).toString());

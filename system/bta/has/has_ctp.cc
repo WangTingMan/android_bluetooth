@@ -18,8 +18,17 @@
 #include "has_ctp.h"
 
 #include <bluetooth/log.h>
+#include <bluetooth/types/address.h>
 
-#include "os/log.h"
+#include <cstdint>
+#include <cstring>
+#include <optional>
+#include <ostream>
+#include <type_traits>
+#include <variant>
+#include <vector>
+
+#include "has_preset.h"
 #include "stack/include/bt_types.h"
 
 using namespace bluetooth;
@@ -27,8 +36,7 @@ using namespace bluetooth;
 namespace bluetooth::le_audio {
 namespace has {
 
-static bool ParsePresetGenericUpdate(uint16_t& len, const uint8_t* value,
-                                     HasCtpNtf& ntf) {
+static bool ParsePresetGenericUpdate(uint16_t& len, const uint8_t* value, HasCtpNtf& ntf) {
   if (len < sizeof(ntf.prev_index) + HasPreset::kCharValueMinSize) {
     log::error("Invalid preset value length={} for generic update.", len);
     return false;
@@ -41,8 +49,7 @@ static bool ParsePresetGenericUpdate(uint16_t& len, const uint8_t* value,
   return true;
 }
 
-static bool ParsePresetIndex(uint16_t& len, const uint8_t* value,
-                             HasCtpNtf& ntf) {
+static bool ParsePresetIndex(uint16_t& len, const uint8_t* value, HasCtpNtf& ntf) {
   if (len < sizeof(ntf.index)) {
     log::error("Invalid preset value length={} for generic update.", len);
     return false;
@@ -53,8 +60,7 @@ static bool ParsePresetIndex(uint16_t& len, const uint8_t* value,
   return true;
 }
 
-static bool ParsePresetReadResponse(uint16_t& len, const uint8_t* value,
-                                    HasCtpNtf& ntf) {
+static bool ParsePresetReadResponse(uint16_t& len, const uint8_t* value, HasCtpNtf& ntf) {
   if (len < sizeof(ntf.is_last) + HasPreset::kCharValueMinSize) {
     log::error("Invalid preset value length={}", len);
     return false;
@@ -67,8 +73,7 @@ static bool ParsePresetReadResponse(uint16_t& len, const uint8_t* value,
   return true;
 }
 
-static bool ParsePresetChanged(uint16_t len, const uint8_t* value,
-                               HasCtpNtf& ntf) {
+static bool ParsePresetChanged(uint16_t len, const uint8_t* value, HasCtpNtf& ntf) {
   if (len < sizeof(ntf.is_last) + sizeof(ntf.change_id)) {
     log::error("Invalid preset value length={}", len);
     return false;
@@ -77,8 +82,8 @@ static bool ParsePresetChanged(uint16_t len, const uint8_t* value,
   uint8_t change_id;
   STREAM_TO_UINT8(change_id, value);
   len -= 1;
-  if (change_id > static_cast<std::underlying_type_t<PresetCtpChangeId>>(
-                      PresetCtpChangeId::CHANGE_ID_MAX_)) {
+  if (change_id >
+      static_cast<std::underlying_type_t<PresetCtpChangeId>>(PresetCtpChangeId::CHANGE_ID_MAX_)) {
     log::error("Invalid preset chenge_id={}", change_id);
     return false;
   }
@@ -102,8 +107,7 @@ static bool ParsePresetChanged(uint16_t len, const uint8_t* value,
   return true;
 }
 
-std::optional<HasCtpNtf> HasCtpNtf::FromCharacteristicValue(
-    uint16_t len, const uint8_t* value) {
+std::optional<HasCtpNtf> HasCtpNtf::FromCharacteristicValue(uint16_t len, const uint8_t* value) {
   if (len < 3) {
     log::error("Invalid Cp notification.");
     return std::nullopt;
@@ -114,9 +118,9 @@ std::optional<HasCtpNtf> HasCtpNtf::FromCharacteristicValue(
   --len;
 
   if ((op != static_cast<std::underlying_type_t<PresetCtpOpcode>>(
-                 PresetCtpOpcode::READ_PRESET_RESPONSE)) &&
-      (op != static_cast<std::underlying_type_t<PresetCtpOpcode>>(
-                 PresetCtpOpcode::PRESET_CHANGED))) {
+                     PresetCtpOpcode::READ_PRESET_RESPONSE)) &&
+      (op !=
+       static_cast<std::underlying_type_t<PresetCtpOpcode>>(PresetCtpOpcode::PRESET_CHANGED))) {
     log::error("Received invalid opcode in control point notification: {}", op);
     return std::nullopt;
   }
@@ -124,11 +128,14 @@ std::optional<HasCtpNtf> HasCtpNtf::FromCharacteristicValue(
   HasCtpNtf ntf;
   ntf.opcode = PresetCtpOpcode(op);
   if (ntf.opcode == bluetooth::le_audio::has::PresetCtpOpcode::PRESET_CHANGED) {
-    if (!ParsePresetChanged(len, value, ntf)) return std::nullopt;
+    if (!ParsePresetChanged(len, value, ntf)) {
+      return std::nullopt;
+    }
 
-  } else if (ntf.opcode ==
-             bluetooth::le_audio::has::PresetCtpOpcode::READ_PRESET_RESPONSE) {
-    if (!ParsePresetReadResponse(len, value, ntf)) return std::nullopt;
+  } else if (ntf.opcode == bluetooth::le_audio::has::PresetCtpOpcode::READ_PRESET_RESPONSE) {
+    if (!ParsePresetReadResponse(len, value, ntf)) {
+      return std::nullopt;
+    }
   }
 
   return ntf;
@@ -144,8 +151,7 @@ std::vector<uint8_t> HasCtpOp::ToCharacteristicValue() const {
     case PresetCtpOpcode::READ_PRESETS:
       value.resize(3);
       pp = value.data();
-      UINT8_TO_STREAM(
-          pp, static_cast<std::underlying_type_t<PresetCtpOpcode>>(opcode));
+      UINT8_TO_STREAM(pp, static_cast<std::underlying_type_t<PresetCtpOpcode>>(opcode));
       UINT8_TO_STREAM(pp, index);
       UINT8_TO_STREAM(pp, num_of_indices);
       break;
@@ -153,8 +159,7 @@ std::vector<uint8_t> HasCtpOp::ToCharacteristicValue() const {
     case PresetCtpOpcode::SET_ACTIVE_PRESET_SYNC:
       value.resize(2);
       pp = value.data();
-      UINT8_TO_STREAM(
-          pp, static_cast<std::underlying_type_t<PresetCtpOpcode>>(opcode));
+      UINT8_TO_STREAM(pp, static_cast<std::underlying_type_t<PresetCtpOpcode>>(opcode));
       UINT8_TO_STREAM(pp, index);
       break;
 
@@ -164,8 +169,7 @@ std::vector<uint8_t> HasCtpOp::ToCharacteristicValue() const {
     case PresetCtpOpcode::SET_PREV_PRESET_SYNC:
       value.resize(1);
       pp = value.data();
-      UINT8_TO_STREAM(
-          pp, static_cast<std::underlying_type_t<PresetCtpOpcode>>(opcode));
+      UINT8_TO_STREAM(pp, static_cast<std::underlying_type_t<PresetCtpOpcode>>(opcode));
       break;
 
     case PresetCtpOpcode::WRITE_PRESET_NAME: {
@@ -173,8 +177,7 @@ std::vector<uint8_t> HasCtpOp::ToCharacteristicValue() const {
       value.resize(2 + name_str.length());
       pp = value.data();
 
-      UINT8_TO_STREAM(
-          pp, static_cast<std::underlying_type_t<PresetCtpOpcode>>(opcode));
+      UINT8_TO_STREAM(pp, static_cast<std::underlying_type_t<PresetCtpOpcode>>(opcode));
       UINT8_TO_STREAM(pp, index);
       memcpy(pp, name_str.c_str(), name_str.length());
     } break;
@@ -232,14 +235,13 @@ std::ostream& operator<<(std::ostream& out, const HasCtpOp& op) {
   if (std::holds_alternative<int>(op.addr_or_group)) {
     out << "\"group_id\": " << std::get<int>(op.addr_or_group);
   } else if (std::holds_alternative<RawAddress>(op.addr_or_group)) {
-    out << "\"address\": \""
-    << ADDRESS_TO_LOGGABLE_STR(std::get<RawAddress>(op.addr_or_group)) << "\"";
+    out << "\"address\": \"" << std::get<RawAddress>(op.addr_or_group).ToRedactedStringForLogging()
+        << "\"";
   } else {
     out << "\"bad value\"";
   }
   out << ", \"id\": " << op.op_id << ", \"opcode\": \"" << op.opcode << "\""
-      << ", \"index\": " << +op.index << ", \"name\": \""
-      << op.name.value_or("<none>") << "\""
+      << ", \"index\": " << +op.index << ", \"name\": \"" << op.name.value_or("<none>") << "\""
       << "}";
   return out;
 }

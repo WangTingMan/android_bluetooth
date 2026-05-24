@@ -19,16 +19,17 @@
  *   Functions generated:11
  */
 
+#include <bluetooth/types/address.h>
+
 #include <cstdint>
 
 #include "stack/include/bt_hdr.h"
 #include "stack/include/hiddefs.h"
 #include "stack/include/hidh_api.h"
 #include "test/common/mock_functions.h"
-#include "types/raw_address.h"
 
-tHID_STATUS HID_HostAddDev(const RawAddress& /* addr */,
-                           uint16_t /* attr_mask */, uint8_t* /* handle */) {
+tHID_STATUS HID_HostAddDev(const RawAddress& /* addr */, uint16_t /* attr_mask */,
+                           uint8_t* /* handle */) {
   inc_func_call_count(__func__);
   return HID_SUCCESS;
 }
@@ -40,10 +41,8 @@ tHID_STATUS HID_HostDeregister(void) {
   inc_func_call_count(__func__);
   return HID_SUCCESS;
 }
-tHID_STATUS HID_HostGetSDPRecord(const RawAddress& /* addr */,
-                                 tSDP_DISCOVERY_DB* /* p_db */,
-                                 uint32_t /* db_len */,
-                                 tHID_HOST_SDP_CALLBACK* /* sdp_cback */) {
+tHID_STATUS HID_HostGetSDPRecord(const RawAddress& /* addr */, tSDP_DISCOVERY_DB* /* p_db */,
+                                 uint32_t /* db_len */, tHID_HOST_SDP_CALLBACK* /* sdp_cback */) {
   inc_func_call_count(__func__);
   return HID_SUCCESS;
 }
@@ -63,14 +62,11 @@ tHID_STATUS HID_HostRemoveDev(uint8_t /* dev_handle */) {
   inc_func_call_count(__func__);
   return HID_SUCCESS;
 }
-tHID_STATUS HID_HostWriteDev(uint8_t /* dev_handle */, uint8_t /* t_type */,
-                             uint8_t /* param */, uint16_t /* data */,
-                             uint8_t /* report_id */, BT_HDR* /* pbuf */) {
+tHID_STATUS HID_HostWriteDev(uint8_t /* dev_handle */, uint8_t /* t_type */, uint8_t /* param */,
+                             uint16_t /* data */, uint8_t /* report_id */, BT_HDR* /* pbuf */) {
   inc_func_call_count(__func__);
   return HID_SUCCESS;
 }
 void HID_HostInit(void) { inc_func_call_count(__func__); }
-void hidh_get_str_attr(tSDP_DISC_REC* /* p_rec */, uint16_t /* attr_id */,
-                       uint16_t /* max_len */, char* /* str */) {
-  inc_func_call_count(__func__);
-}
+
+void HID_HostDump(int /* fd */) { inc_func_call_count(__func__); }

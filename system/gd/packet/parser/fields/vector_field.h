@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@
 #include "type_def.h"
 
 class VectorField : public PacketField {
- public:
+public:
   VectorField(std::string name, int element_size, std::string size_modifier, ParseLocation loc);
 
   VectorField(std::string name, TypeDef* type_def, std::string size_modifier, ParseLocation loc);

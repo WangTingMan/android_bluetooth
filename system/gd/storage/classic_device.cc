@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,16 +25,13 @@ namespace storage {
 
 const std::unordered_set<std::string_view> ClassicDevice::kLinkKeyProperties = {"LinkKey"};
 
-ClassicDevice::ClassicDevice(ConfigCache* config, ConfigCache* memory_only_config, std::string section)
+ClassicDevice::ClassicDevice(ConfigCache* config, ConfigCache* memory_only_config,
+                             std::string section)
     : config_(config), memory_only_config_(memory_only_config), section_(std::move(section)) {}
 
-Device ClassicDevice::Parent() {
-  return Device(config_, memory_only_config_, section_);
-}
+Device ClassicDevice::Parent() { return Device(config_, memory_only_config_, section_); }
 
-std::string ClassicDevice::ToLogString() const {
-  return section_;
-}
+std::string ClassicDevice::ToLogString() const { return section_; }
 
 hci::Address ClassicDevice::GetAddress() const {
   // section name of a classic device is its MAC address

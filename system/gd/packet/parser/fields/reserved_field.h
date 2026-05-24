@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@
 #include "parse_location.h"
 
 class ReservedField : public PacketField {
- public:
+public:
   ReservedField(int size, ParseLocation loc);
 
   static const std::string kFieldType;
@@ -47,7 +47,7 @@ class ReservedField : public PacketField {
 
   virtual void GenValidator(std::ostream&) const override;
 
- private:
+private:
   std::string name_;
   int size_;
   static int unique_id_;

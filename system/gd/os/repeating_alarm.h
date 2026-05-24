@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@
 #include <mutex>
 
 #include "common/callback.h"
-#include "os/handler.h"
 #include "os/thread.h"
 #include "os/utils.h"
 
@@ -31,12 +30,12 @@ namespace bluetooth {
 namespace os {
 
 // A repeating alarm for reactor-based thread, implemented by Linux timerfd.
-// When it's constructed, it will register a reactable on the specified thread; when it's destroyed, it will unregister
-// itself from the thread.
+// When it's constructed, it will register a reactable on the specified thread; when it's destroyed,
+// it will unregister itself from the thread.
 class RepeatingAlarm {
- public:
-  // Create and register a repeating alarm on a given handler
-  explicit RepeatingAlarm(Handler* handler);
+public:
+  // Create and register a repeating alarm on a given thread
+  explicit RepeatingAlarm(Thread* thread);
 
   RepeatingAlarm(const RepeatingAlarm&) = delete;
   RepeatingAlarm& operator=(const RepeatingAlarm&) = delete;
@@ -50,9 +49,9 @@ class RepeatingAlarm {
   // Cancel the alarm. No-op if it's not armed.
   void Cancel();
 
- private:
+private:
   common::Closure task_;
-  Handler* handler_;
+  Thread* thread_;
 #ifdef _MSC_VER
   static void alarm_on_fire_callback( void* data );
   alarm_t* alarm__;

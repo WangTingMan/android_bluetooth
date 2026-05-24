@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,26 +14,26 @@
  * limitations under the License.
  */
 #pragma once
-#if TARGET_FLOSS
 
+#include "hal/hci_hal.h"
+#include "hci/hci_interface.h"
 #include "hci/hci_packets.h"
 #include "hci/le_scanning_callback.h"
-#include "module.h"
 
 struct MsftAdvMonitor;
 
 namespace bluetooth {
 namespace hci {
 
-class MsftExtensionManager : public bluetooth::Module {
- public:
-  MsftExtensionManager();
-
+class MsftExtensionManager {
+public:
+  MsftExtensionManager(os::Handler* handler, hal::HciHal* hal, hci::HciInterface* hci_layer);
   MsftExtensionManager(const MsftExtensionManager&) = delete;
   MsftExtensionManager& operator=(const MsftExtensionManager&) = delete;
+  virtual ~MsftExtensionManager();
 
   using MsftAdvMonitorAddCallback =
-      base::Callback<void(uint8_t /* monitor_handle */, ErrorCode /* status */)>;
+          base::Callback<void(uint8_t /* monitor_handle */, ErrorCode /* status */)>;
   using MsftAdvMonitorRemoveCallback = base::Callback<void(ErrorCode /* status */)>;
   using MsftAdvMonitorEnableCallback = base::Callback<void(ErrorCode /* status */)>;
 
@@ -43,22 +43,10 @@ class MsftExtensionManager : public bluetooth::Module {
   void MsftAdvMonitorEnable(bool enable, MsftAdvMonitorEnableCallback cb);
   void SetScanningCallback(ScanningCallback* callbacks);
 
-  static const ModuleFactory Factory;
-
- protected:
-  void ListDependencies(ModuleList* list) const override;
-
-  void Start() override;
-
-  void Stop() override;
-
-  std::string ToString() const override;
-
- private:
+private:
   struct impl;
   std::unique_ptr<impl> pimpl_;
 };
 
 }  // namespace hci
 }  // namespace bluetooth
-#endif

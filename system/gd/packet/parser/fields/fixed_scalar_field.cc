@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 
 #include "fields/fixed_scalar_field.h"
+
 #include "util.h"
 
 const std::string FixedScalarField::kFieldType = "FixedScalarField";
@@ -22,18 +23,10 @@ const std::string FixedScalarField::kFieldType = "FixedScalarField";
 FixedScalarField::FixedScalarField(int size, int64_t value, ParseLocation loc)
     : FixedField("fixed_scalar", size, loc), value_(value) {}
 
-const std::string& FixedScalarField::GetFieldType() const {
-  return FixedScalarField::kFieldType;
-}
+const std::string& FixedScalarField::GetFieldType() const { return FixedScalarField::kFieldType; }
 
-std::string FixedScalarField::GetDataType() const {
-  return util::GetTypeForSize(GetSize().bits());
-}
+std::string FixedScalarField::GetDataType() const { return util::GetTypeForSize(GetSize().bits()); }
 
-void FixedScalarField::GenValue(std::ostream& s) const {
-  s << value_;
-}
+void FixedScalarField::GenValue(std::ostream& s) const { s << value_; }
 
-void FixedScalarField::GenStringRepresentation(std::ostream& s, std::string) const {
-  s << value_;
-}
+void FixedScalarField::GenStringRepresentation(std::ostream& s, std::string) const { s << value_; }

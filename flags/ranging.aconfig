@@ -1,5 +1,5 @@
 package: "com.android.bluetooth.flags"
-container: "com.android.btservices"
+container: "com.android.bt"
 
 flag {
     name: "channel_sounding"
@@ -10,8 +10,8 @@ flag {
 }
 
 flag {
-    name: "channel_sounding_in_stack"
+    name:"channel_sounding_offload"
     namespace: "bluetooth"
-    description: "Enable Channel Sounding in the Bluetooth stack"
-    bug: "324185011"
+    description: "Add mechanism to handle channel sounding offload"
+    bug: "423421929"
 }

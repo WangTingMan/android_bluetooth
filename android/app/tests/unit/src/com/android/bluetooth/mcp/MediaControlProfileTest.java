@@ -16,32 +16,39 @@
 
 package com.android.bluetooth.mcp;
 
-import static androidx.test.platform.app.InstrumentationRegistry.getInstrumentation;
+import static com.android.bluetooth.TestUtils.getTestDevice;
 
-import static org.mockito.Mockito.*;
+import static com.google.common.truth.Truth.assertThat;
 
-import android.bluetooth.BluetoothAdapter;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyFloat;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothUuid;
-import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.media.session.PlaybackState;
 import android.os.ParcelUuid;
 
-import androidx.test.InstrumentationRegistry;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.MediumTest;
-import androidx.test.runner.AndroidJUnit4;
 
-import com.android.bluetooth.TestUtils;
 import com.android.bluetooth.audio_util.MediaData;
 import com.android.bluetooth.audio_util.MediaPlayerList;
 import com.android.bluetooth.audio_util.MediaPlayerWrapper;
 import com.android.bluetooth.audio_util.Metadata;
 import com.android.bluetooth.btservice.AdapterService;
+import com.android.tests.bluetooth.MockitoRule;
 
 import org.junit.After;
-import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -49,108 +56,71 @@ import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.UUID;
 
+/** Test cases for {@link MediaControlProfile}. */
 @MediumTest
 @RunWith(AndroidJUnit4.class)
 public class MediaControlProfileTest {
-    private final String mFlagDexmarker = System.getProperty("dexmaker.share_classloader", "false");
-
-    private BluetoothAdapter mAdapter;
-    private MediaControlProfile mMediaControlProfile;
-
-    private String packageName = "TestPackage";
-
-    private String name = "TestPlayer";
-    private CharSequence charSequence = "TestPlayer";
-    private MediaControlServiceCallbacks mMcpServiceCallbacks;
-
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
 
     @Mock private AdapterService mAdapterService;
-    @Mock private MediaData mMockMediaData;
-    @Mock private MediaPlayerList mMockMediaPlayerList;
-    @Mock private Metadata mMockMetadata;
-    @Mock private MediaPlayerWrapper mMockMediaPlayerWrapper;
-    @Mock private PackageManager mMockPackageManager;
-    @Mock private ApplicationInfo mMockApplicationInfo;
-    @Mock private MediaControlGattServiceInterface mMockGMcsService;
-    @Mock private McpService mMockMcpService;
+    @Mock private MediaData mMediaData;
+    @Mock private MediaPlayerList mMediaPlayerList;
+    @Mock private Metadata mMetadata;
+    @Mock private MediaPlayerWrapper mMediaPlayerWrapper;
+    @Mock private PackageManager mPackageManager;
+    @Mock private ApplicationInfo mApplicationInfo;
+    @Mock private MediaControlGattServiceInterface mGMcsService;
+    @Mock private McpService mMcpService;
 
     @Captor private ArgumentCaptor<HashMap> stateMapCaptor;
     @Captor private ArgumentCaptor<Long> positionCaptor;
     @Captor private ArgumentCaptor<MediaControlProfile.ListCallback> listCallbackCaptor;
 
-    @Before
-    public void setUp() throws Exception {
-        if (!mFlagDexmarker.equals("true")) {
-            System.setProperty("dexmaker.share_classloader", "true");
-        }
+    private MediaControlProfile mMediaControlProfile;
+    private MediaControlServiceCallbacks mMcpServiceCallbacks;
 
+    @Before
+    public void setUp() throws PackageManager.NameNotFoundException {
         MediaControlProfile.ListCallback listCallback;
 
-        TestUtils.setAdapterService(mAdapterService);
-        mAdapter = BluetoothAdapter.getDefaultAdapter();
+        mMediaData.metadata = mMetadata;
 
-        mMockMediaData.metadata = mMockMetadata;
+        mMetadata.duration = "0";
+        doReturn(mMediaPlayerWrapper).when(mMediaPlayerList).getActivePlayer();
+        doReturn(mAdapterService).when(mAdapterService).getApplicationContext();
+        doReturn(mPackageManager).when(mAdapterService).getPackageManager();
+        String packageName = "TestPackage";
+        doReturn(packageName).when(mAdapterService).getPackageName();
+        doReturn("TestPlayer").when(mMediaPlayerWrapper).getPackageName();
+        doReturn("TestPlayer").when(mApplicationInfo).loadLabel(any(PackageManager.class));
+        doReturn(mApplicationInfo).when(mPackageManager).getApplicationInfo(anyString(), anyInt());
 
-        mMockMediaData.state = null;
-        mMockMetadata.duration = Long.toString(0);
-        mMockMetadata.title = null;
-        doReturn(mMockMediaPlayerWrapper).when(mMockMediaPlayerList).getActivePlayer();
-        doReturn(mMockMcpService).when(mMockMcpService).getApplicationContext();
-        doReturn(mMockPackageManager).when(mMockMcpService).getPackageManager();
-        doReturn(getInstrumentation().getTargetContext().getMainThreadHandler())
-                .when(mMockMcpService)
-                .getMainThreadHandler();
-        doReturn(packageName).when(mMockMcpService).getPackageName();
-        doReturn(name).when(mMockMediaPlayerWrapper).getPackageName();
-        doReturn(charSequence).when(mMockApplicationInfo).loadLabel(any(PackageManager.class));
-        doReturn(mMockApplicationInfo)
-                .when(mMockPackageManager)
-                .getApplicationInfo(anyString(), anyInt());
-
-        MediaControlProfile.setsMediaPlayerListForTesting(mMockMediaPlayerList);
-        mMediaControlProfile = new MediaControlProfile(mMockMcpService);
+        mMediaControlProfile = new MediaControlProfile(mAdapterService, mMediaPlayerList);
 
         // this is equivalent of what usually happens inside init class
-        mMediaControlProfile.injectGattServiceForTesting(packageName, mMockGMcsService);
-        mMediaControlProfile.onServiceInstanceRegistered(ServiceStatus.OK, mMockGMcsService);
+        mMediaControlProfile.injectGattServiceForTesting(packageName, mGMcsService);
+        mMediaControlProfile.onServiceInstanceRegistered(ServiceStatus.OK, mGMcsService);
         mMcpServiceCallbacks = mMediaControlProfile;
 
         // Make sure callbacks are not called before it's fully initialized
-        verify(mMockMediaPlayerList, times(0)).init(any());
-        mMediaControlProfile.init();
-        verify(mMockMediaPlayerList).init(listCallbackCaptor.capture());
+        verify(mMediaPlayerList, never()).init(any());
+        mMediaControlProfile.init(mMcpService);
+        verify(mMediaPlayerList).init(listCallbackCaptor.capture());
 
         listCallback = listCallbackCaptor.getValue();
-        listCallback.run(mMockMediaData);
+        listCallback.run(mMediaData);
         // Give some time to verify if post function finishes on update player state method call
         // TODO: Is there a possibility to get rid of this timeout?
-        verify(mMockGMcsService, timeout(100).times(1)).updatePlayerState(any(HashMap.class));
+        verify(mGMcsService, timeout(100).times(1)).updatePlayerState(any(HashMap.class));
     }
 
     @After
-    public void tearDown() throws Exception {
-        TestUtils.clearAdapterService(mAdapterService);
-
-        if (mMediaControlProfile == null) {
-            return;
-        }
-
+    public void tearDown() {
         mMediaControlProfile.cleanup();
-        mMediaControlProfile = null;
-        reset(mMockMediaPlayerList);
-
-        if (!mFlagDexmarker.equals("true")) {
-            System.setProperty("dexmaker.share_classloader", mFlagDexmarker);
-        }
     }
 
     @Test
@@ -158,78 +128,60 @@ public class MediaControlProfileTest {
         long duration = 10;
 
         // Some duration
-        mMockMetadata.duration = Long.toString(duration);
-        Assert.assertEquals(duration, mMediaControlProfile.getCurrentTrackDuration());
+        mMetadata.duration = Long.toString(duration);
+        assertThat(mMediaControlProfile.getCurrentTrackDuration()).isEqualTo(duration);
 
         // No metadata equals no track duration
-        mMockMediaData.metadata = null;
-        Assert.assertEquals(
-                MediaControlGattServiceInterface.TRACK_DURATION_UNAVAILABLE,
-                mMediaControlProfile.getCurrentTrackDuration());
+        mMediaData.metadata = null;
+        assertThat(mMediaControlProfile.getCurrentTrackDuration())
+                .isEqualTo(MediaControlGattServiceInterface.TRACK_DURATION_UNAVAILABLE);
     }
 
     @Test
     public void testPlayerState2McsState() {
-        Assert.assertEquals(
-                mMediaControlProfile.playerState2McsState(PlaybackState.STATE_PLAYING),
-                MediaState.PLAYING);
-        Assert.assertEquals(
-                mMediaControlProfile.playerState2McsState(PlaybackState.STATE_NONE),
-                MediaState.INACTIVE);
-        Assert.assertEquals(
-                mMediaControlProfile.playerState2McsState(PlaybackState.STATE_STOPPED),
-                MediaState.PAUSED);
-        Assert.assertEquals(
-                mMediaControlProfile.playerState2McsState(PlaybackState.STATE_PAUSED),
-                MediaState.PAUSED);
-        Assert.assertEquals(
-                mMediaControlProfile.playerState2McsState(PlaybackState.STATE_PLAYING),
-                MediaState.PLAYING);
-        Assert.assertEquals(
-                mMediaControlProfile.playerState2McsState(PlaybackState.STATE_FAST_FORWARDING),
-                MediaState.SEEKING);
-        Assert.assertEquals(
-                mMediaControlProfile.playerState2McsState(PlaybackState.STATE_REWINDING),
-                MediaState.SEEKING);
-        Assert.assertEquals(
-                mMediaControlProfile.playerState2McsState(PlaybackState.STATE_BUFFERING),
-                MediaState.PAUSED);
-        Assert.assertEquals(
-                mMediaControlProfile.playerState2McsState(PlaybackState.STATE_ERROR),
-                MediaState.INACTIVE);
-        Assert.assertEquals(
-                mMediaControlProfile.playerState2McsState(PlaybackState.STATE_CONNECTING),
-                MediaState.INACTIVE);
-        Assert.assertEquals(
-                mMediaControlProfile.playerState2McsState(PlaybackState.STATE_SKIPPING_TO_PREVIOUS),
-                MediaState.PAUSED);
-        Assert.assertEquals(
-                mMediaControlProfile.playerState2McsState(PlaybackState.STATE_SKIPPING_TO_NEXT),
-                MediaState.PAUSED);
-        Assert.assertEquals(
-                mMediaControlProfile.playerState2McsState(
-                        PlaybackState.STATE_SKIPPING_TO_QUEUE_ITEM),
-                MediaState.PAUSED);
+        assertThat(mMediaControlProfile.playerState2McsState(PlaybackState.STATE_PLAYING))
+                .isEqualTo(MediaState.PLAYING);
+        assertThat(mMediaControlProfile.playerState2McsState(PlaybackState.STATE_NONE))
+                .isEqualTo(MediaState.INACTIVE);
+        assertThat(mMediaControlProfile.playerState2McsState(PlaybackState.STATE_STOPPED))
+                .isEqualTo(MediaState.PAUSED);
+        assertThat(mMediaControlProfile.playerState2McsState(PlaybackState.STATE_PAUSED))
+                .isEqualTo(MediaState.PAUSED);
+        assertThat(mMediaControlProfile.playerState2McsState(PlaybackState.STATE_PLAYING))
+                .isEqualTo(MediaState.PLAYING);
+        assertThat(mMediaControlProfile.playerState2McsState(PlaybackState.STATE_FAST_FORWARDING))
+                .isEqualTo(MediaState.SEEKING);
+        assertThat(mMediaControlProfile.playerState2McsState(PlaybackState.STATE_REWINDING))
+                .isEqualTo(MediaState.SEEKING);
+        assertThat(mMediaControlProfile.playerState2McsState(PlaybackState.STATE_BUFFERING))
+                .isEqualTo(MediaState.PAUSED);
+        assertThat(mMediaControlProfile.playerState2McsState(PlaybackState.STATE_ERROR))
+                .isEqualTo(MediaState.INACTIVE);
+        assertThat(mMediaControlProfile.playerState2McsState(PlaybackState.STATE_CONNECTING))
+                .isEqualTo(MediaState.INACTIVE);
+        assertThat(
+                        mMediaControlProfile.playerState2McsState(
+                                PlaybackState.STATE_SKIPPING_TO_PREVIOUS))
+                .isEqualTo(MediaState.PAUSED);
+        assertThat(mMediaControlProfile.playerState2McsState(PlaybackState.STATE_SKIPPING_TO_NEXT))
+                .isEqualTo(MediaState.PAUSED);
+        assertThat(
+                        mMediaControlProfile.playerState2McsState(
+                                PlaybackState.STATE_SKIPPING_TO_QUEUE_ITEM))
+                .isEqualTo(MediaState.PAUSED);
     }
 
     @Test
     public void testGetLatestTrackPosition() {
-        int state = PlaybackState.STATE_PLAYING;
-        long position = 10;
-        float playback_speed = 1.5f;
+        assertThat(mMcpServiceCallbacks.onGetCurrentTrackPosition())
+                .isEqualTo(MediaControlGattServiceInterface.TRACK_POSITION_UNAVAILABLE);
 
-        Assert.assertEquals(
-                mMcpServiceCallbacks.onGetCurrentTrackPosition(),
-                MediaControlGattServiceInterface.TRACK_POSITION_UNAVAILABLE);
+        mMediaData.state =
+                new PlaybackState.Builder().setState(PlaybackState.STATE_PLAYING, 10, 1.5f).build();
+        doReturn(mMediaData.state).when(mMediaPlayerWrapper).getPlaybackState();
 
-        PlaybackState.Builder bob = new PlaybackState.Builder(mMockMediaData.state);
-        bob.setState(state, position, playback_speed);
-        mMockMediaData.state = bob.build();
-        doReturn(mMockMediaData.state).when(mMockMediaPlayerWrapper).getPlaybackState();
-
-        Assert.assertNotEquals(
-                mMcpServiceCallbacks.onGetCurrentTrackPosition(),
-                MediaControlGattServiceInterface.TRACK_POSITION_UNAVAILABLE);
+        assertThat(mMcpServiceCallbacks.onGetCurrentTrackPosition())
+                .isNotEqualTo(MediaControlGattServiceInterface.TRACK_POSITION_UNAVAILABLE);
     }
 
     @Test
@@ -242,72 +194,69 @@ public class MediaControlProfileTest {
         long duration = 10;
         String title = "TestTrackTitle";
 
-        mMockMetadata.duration = Long.toString(duration);
-        mMockMetadata.title = title;
+        mMetadata.duration = Long.toString(duration);
+        mMetadata.title = title;
 
-        PlaybackState.Builder bob = new PlaybackState.Builder(mMockMediaData.state);
-        bob.setState(state, position, playback_speed, update_time);
-        mMockMediaData.state = bob.build();
+        mMediaData.state =
+                new PlaybackState.Builder(mMediaData.state)
+                        .setState(state, position, playback_speed, update_time)
+                        .build();
 
         mMediaControlProfile.onCurrentPlayerStateUpdated(true, true);
         // First time called from ListCallback. Give some time to verify if post function
         // finishes on update player state method call
         // TODO: Is there a possibility to get rid of this timeout?
-        verify(mMockGMcsService, timeout(100).times(2)).updatePlayerState(stateMapCaptor.capture());
+        verify(mGMcsService, timeout(100).times(2)).updatePlayerState(stateMapCaptor.capture());
         stateMap = stateMapCaptor.getValue();
 
-        Assert.assertTrue(stateMap.containsKey(PlayerStateField.PLAYER_NAME));
+        assertThat(stateMap).containsKey(PlayerStateField.PLAYER_NAME);
 
         // state changed
-        Assert.assertTrue(stateMap.containsKey(PlayerStateField.PLAYBACK_STATE));
-        Assert.assertTrue(stateMap.containsKey(PlayerStateField.OPCODES_SUPPORTED));
-        Assert.assertTrue(stateMap.containsKey(PlayerStateField.SEEKING_SPEED));
-        Assert.assertTrue(stateMap.containsKey(PlayerStateField.PLAYBACK_SPEED));
-        Assert.assertTrue(stateMap.containsKey(PlayerStateField.TRACK_POSITION));
+        assertThat(stateMap).containsKey(PlayerStateField.PLAYBACK_STATE);
+        assertThat(stateMap).containsKey(PlayerStateField.OPCODES_SUPPORTED);
+        assertThat(stateMap).containsKey(PlayerStateField.SEEKING_SPEED);
+        assertThat(stateMap).containsKey(PlayerStateField.PLAYBACK_SPEED);
+        assertThat(stateMap).containsKey(PlayerStateField.TRACK_POSITION);
 
         // metadata changed
-        Assert.assertTrue(stateMap.containsKey(PlayerStateField.TRACK_DURATION));
-        Assert.assertTrue(stateMap.containsKey(PlayerStateField.TRACK_TITLE));
+        assertThat(stateMap).containsKey(PlayerStateField.TRACK_DURATION);
+        assertThat(stateMap).containsKey(PlayerStateField.TRACK_TITLE);
     }
 
     private void testHandleTrackPositionSetRequest(long position, long duration, int times) {
         mMcpServiceCallbacks.onTrackPositionSetRequest(position);
-        verify(mMockMediaPlayerWrapper, timeout(100).times(times)).seekTo(positionCaptor.capture());
+        verify(mMediaPlayerWrapper, timeout(100).times(times)).seekTo(positionCaptor.capture());
 
         // position cannot be negative and bigger than track duration
-        if (position < 0) Assert.assertEquals(positionCaptor.getValue().longValue(), 0);
+        if (position < 0) assertThat(positionCaptor.getValue().longValue()).isEqualTo(0);
         else if (position > duration) {
-            Assert.assertEquals(positionCaptor.getValue().longValue(), duration);
+            assertThat(positionCaptor.getValue().longValue()).isEqualTo(duration);
         } else {
-            Assert.assertEquals(positionCaptor.getValue().longValue(), position);
+            assertThat(positionCaptor.getValue().longValue()).isEqualTo(position);
         }
     }
 
     @Test
     public void testHandleTrackPositionsSetRequest() {
         long duration = 50;
-        long actions = PlaybackState.ACTION_SEEK_TO;
         int times = 1;
 
-        mMockMetadata.duration = Long.toString(duration);
+        mMetadata.duration = Long.toString(duration);
 
-        PlaybackState.Builder bob = new PlaybackState.Builder(mMockMediaData.state);
-        bob.setActions(actions);
-        mMockMediaData.state = bob.build();
+        mMediaData.state =
+                new PlaybackState.Builder().setActions(PlaybackState.ACTION_SEEK_TO).build();
 
         testHandleTrackPositionSetRequest(-duration, duration, times++);
         testHandleTrackPositionSetRequest(duration + duration, duration, times++);
         testHandleTrackPositionSetRequest(duration / 2, duration, times++);
 
-        actions = 0;
-        bob.setActions(actions);
-        mMockMediaData.state = bob.build();
+        mMediaData.state = new PlaybackState.Builder(mMediaData.state).setActions(0).build();
 
         mMcpServiceCallbacks.onTrackPositionSetRequest(duration);
         // First time called from ListCallback. Give some time to verify if post function
         // finishes on update player state method call
         // TODO: Is there a possibility to get rid of this timeout?
-        verify(mMockGMcsService, timeout(100).times(2)).updatePlayerState(any(HashMap.class));
+        verify(mGMcsService, timeout(100).times(2)).updatePlayerState(any(HashMap.class));
     }
 
     @Test
@@ -316,12 +265,12 @@ public class MediaControlProfileTest {
         int times = 1;
 
         mMcpServiceCallbacks.onPlaybackSpeedSetRequest(speed);
-        verify(mMockMediaPlayerWrapper, timeout(100).times(times)).setPlaybackSpeed(anyFloat());
+        verify(mMediaPlayerWrapper, timeout(100).times(times)).setPlaybackSpeed(anyFloat());
 
         // Playback speed wouldn't be set if no active player
-        doReturn(null).when(mMockMediaPlayerList).getActivePlayer();
+        doReturn(null).when(mMediaPlayerList).getActivePlayer();
         mMcpServiceCallbacks.onPlaybackSpeedSetRequest(speed);
-        verify(mMockMediaPlayerWrapper, timeout(100).times(times)).setPlaybackSpeed(anyFloat());
+        verify(mMediaPlayerWrapper, timeout(100).times(times)).setPlaybackSpeed(anyFloat());
     }
 
     @Test
@@ -337,60 +286,56 @@ public class MediaControlProfileTest {
                         | PlaybackState.ACTION_SEEK_TO;
         long duration = 10;
 
-        PlaybackState.Builder bob = new PlaybackState.Builder(mMockMediaData.state);
-        bob.setActions(actions);
-        mMockMediaData.state = bob.build();
+        mMediaData.state = new PlaybackState.Builder().setActions(actions).build();
 
         Request request = new Request(Request.Opcodes.PLAY, 0);
         mMcpServiceCallbacks.onMediaControlRequest(request);
-        verify(mMockMediaPlayerWrapper, timeout(100)).playCurrent();
+        verify(mMediaPlayerWrapper, timeout(100)).playCurrent();
         request = new Request(Request.Opcodes.PAUSE, 0);
         mMcpServiceCallbacks.onMediaControlRequest(request);
-        verify(mMockMediaPlayerWrapper, timeout(100)).pauseCurrent();
+        verify(mMediaPlayerWrapper, timeout(100)).pauseCurrent();
         request = new Request(Request.Opcodes.STOP, 0);
         mMcpServiceCallbacks.onMediaControlRequest(request);
-        verify(mMockMediaPlayerWrapper, timeout(100)).seekTo(0);
-        verify(mMockMediaPlayerWrapper).stopCurrent();
+        verify(mMediaPlayerWrapper, timeout(100)).seekTo(0);
+        verify(mMediaPlayerWrapper).stopCurrent();
         request = new Request(Request.Opcodes.PREVIOUS_TRACK, 0);
         mMcpServiceCallbacks.onMediaControlRequest(request);
-        verify(mMockMediaPlayerWrapper, timeout(100)).skipToPrevious();
+        verify(mMediaPlayerWrapper, timeout(100)).skipToPrevious();
         request = new Request(Request.Opcodes.NEXT_TRACK, 0);
         mMcpServiceCallbacks.onMediaControlRequest(request);
-        verify(mMockMediaPlayerWrapper, timeout(100)).skipToNext();
+        verify(mMediaPlayerWrapper, timeout(100)).skipToNext();
         request = new Request(Request.Opcodes.FAST_REWIND, 0);
         mMcpServiceCallbacks.onMediaControlRequest(request);
-        verify(mMockMediaPlayerWrapper, timeout(100)).rewind();
+        verify(mMediaPlayerWrapper, timeout(100)).rewind();
         request = new Request(Request.Opcodes.FAST_FORWARD, 0);
         mMcpServiceCallbacks.onMediaControlRequest(request);
-        verify(mMockMediaPlayerWrapper, timeout(100)).fastForward();
+        verify(mMediaPlayerWrapper, timeout(100)).fastForward();
 
-        mMockMetadata.duration = Long.toString(duration);
-        Assert.assertEquals(duration, mMediaControlProfile.getCurrentTrackDuration());
+        mMetadata.duration = Long.toString(duration);
+        assertThat(mMediaControlProfile.getCurrentTrackDuration()).isEqualTo(duration);
         request = new Request(Request.Opcodes.MOVE_RELATIVE, 100);
         mMcpServiceCallbacks.onMediaControlRequest(request);
-        verify(mMockMediaPlayerWrapper, timeout(100)).seekTo(duration);
+        verify(mMediaPlayerWrapper, timeout(100)).seekTo(duration);
 
         // Verify toggle-style play/pause control support
-        clearInvocations(mMockMediaPlayerWrapper);
-        actions = PlaybackState.ACTION_PLAY_PAUSE;
-        bob = new PlaybackState.Builder(mMockMediaData.state);
-        bob.setActions(actions);
-        mMockMediaData.state = bob.build();
+        clearInvocations(mMediaPlayerWrapper);
+        mMediaData.state =
+                new PlaybackState.Builder(mMediaData.state)
+                        .setActions(PlaybackState.ACTION_PLAY_PAUSE)
+                        .build();
 
         request = new Request(Request.Opcodes.PLAY, 0);
         mMcpServiceCallbacks.onMediaControlRequest(request);
-        verify(mMockMediaPlayerWrapper, timeout(100)).playCurrent();
+        verify(mMediaPlayerWrapper, timeout(100)).playCurrent();
         request = new Request(Request.Opcodes.PAUSE, 0);
         mMcpServiceCallbacks.onMediaControlRequest(request);
-        verify(mMockMediaPlayerWrapper, timeout(100)).pauseCurrent();
+        verify(mMediaPlayerWrapper, timeout(100)).pauseCurrent();
     }
 
     @Test
     public void testAvrcpCompatibleActionSet() {
         long actions = PlaybackState.ACTION_SET_RATING;
-        PlaybackState.Builder bob = new PlaybackState.Builder(mMockMediaData.state);
-        bob.setActions(actions);
-        mMockMediaData.state = bob.build();
+        mMediaData.state = new PlaybackState.Builder().setActions(actions).build();
 
         // Same base feature set as the player item features defined in `avrcp/get_foder_items.cc`
         final long baseFeatures =
@@ -401,8 +346,8 @@ public class MediaControlProfileTest {
                         | PlaybackState.ACTION_FAST_FORWARD
                         | PlaybackState.ACTION_SKIP_TO_NEXT
                         | PlaybackState.ACTION_SKIP_TO_PREVIOUS;
-        Assert.assertEquals(
-                actions | baseFeatures, mMediaControlProfile.getCurrentPlayerSupportedActions());
+        assertThat(mMediaControlProfile.getCurrentPlayerSupportedActions())
+                .isEqualTo(actions | baseFeatures);
     }
 
     @Test
@@ -426,28 +371,22 @@ public class MediaControlProfileTest {
                         | Request.SupportedOpcodes.FAST_FORWARD
                         | Request.SupportedOpcodes.MOVE_RELATIVE;
 
-        Assert.assertEquals(
-                mMediaControlProfile.playerActions2McsSupportedOpcodes(actions), opcodes_supported);
+        assertThat(mMediaControlProfile.playerActions2McsSupportedOpcodes(actions))
+                .isEqualTo(opcodes_supported);
 
         // Verify toggle-style play/pause control support
         actions = PlaybackState.ACTION_PLAY_PAUSE;
         opcodes_supported = Request.SupportedOpcodes.PAUSE | Request.SupportedOpcodes.PLAY;
 
-        Assert.assertEquals(
-                mMediaControlProfile.playerActions2McsSupportedOpcodes(actions), opcodes_supported);
+        assertThat(mMediaControlProfile.playerActions2McsSupportedOpcodes(actions))
+                .isEqualTo(opcodes_supported);
     }
 
     @Test
     public void testProcessPendingPlayerStateRequest() {
-        HashMap stateMap;
-        int state = PlaybackState.STATE_PLAYING;
-        long position = 10;
-        float playback_speed = 1.5f;
-
-        PlaybackState.Builder bob = new PlaybackState.Builder(mMockMediaData.state);
-        bob.setState(state, position, playback_speed);
-        mMockMediaData.state = bob.build();
-        doReturn(mMockMediaData.state).when(mMockMediaPlayerWrapper).getPlaybackState();
+        mMediaData.state =
+                new PlaybackState.Builder().setState(PlaybackState.STATE_PLAYING, 10, 1.5f).build();
+        doReturn(mMediaData.state).when(mMediaPlayerWrapper).getPlaybackState();
 
         PlayerStateField[] state_fields =
                 new PlayerStateField[] {
@@ -466,25 +405,25 @@ public class MediaControlProfileTest {
         // First time called from ListCallback. Give some time to verify if post function
         // finishes on update player state method call
         // TODO: Is there a possibility to get rid of this timeout?
-        verify(mMockGMcsService, timeout(100).times(2)).updatePlayerState(stateMapCaptor.capture());
-        stateMap = stateMapCaptor.getValue();
+        verify(mGMcsService, timeout(100).times(2)).updatePlayerState(stateMapCaptor.capture());
+        HashMap stateMap = stateMapCaptor.getValue();
 
-        Assert.assertTrue(stateMap.containsKey(PlayerStateField.PLAYBACK_STATE));
-        Assert.assertTrue(stateMap.containsKey(PlayerStateField.TRACK_DURATION));
-        Assert.assertTrue(stateMap.containsKey(PlayerStateField.PLAYBACK_SPEED));
-        Assert.assertTrue(stateMap.containsKey(PlayerStateField.SEEKING_SPEED));
-        Assert.assertTrue(stateMap.containsKey(PlayerStateField.PLAYING_ORDER));
-        Assert.assertTrue(stateMap.containsKey(PlayerStateField.TRACK_POSITION));
-        Assert.assertTrue(stateMap.containsKey(PlayerStateField.PLAYER_NAME));
-        Assert.assertTrue(stateMap.containsKey(PlayerStateField.PLAYING_ORDER_SUPPORTED));
-        Assert.assertTrue(stateMap.containsKey(PlayerStateField.OPCODES_SUPPORTED));
+        assertThat(stateMap).containsKey(PlayerStateField.PLAYBACK_STATE);
+        assertThat(stateMap).containsKey(PlayerStateField.TRACK_DURATION);
+        assertThat(stateMap).containsKey(PlayerStateField.PLAYBACK_SPEED);
+        assertThat(stateMap).containsKey(PlayerStateField.SEEKING_SPEED);
+        assertThat(stateMap).containsKey(PlayerStateField.PLAYING_ORDER);
+        assertThat(stateMap).containsKey(PlayerStateField.TRACK_POSITION);
+        assertThat(stateMap).containsKey(PlayerStateField.PLAYER_NAME);
+        assertThat(stateMap).containsKey(PlayerStateField.PLAYING_ORDER_SUPPORTED);
+        assertThat(stateMap).containsKey(PlayerStateField.OPCODES_SUPPORTED);
     }
 
     private void testGetCurrentPlayerPlayingOrder(
             PlayingOrder expected_value, boolean is_shuffle_set, boolean is_repeat_set) {
-        doReturn(is_shuffle_set).when(mMockMediaPlayerWrapper).isShuffleSet();
-        doReturn(is_repeat_set).when(mMockMediaPlayerWrapper).isRepeatSet();
-        Assert.assertEquals(expected_value, mMediaControlProfile.getCurrentPlayerPlayingOrder());
+        doReturn(is_shuffle_set).when(mMediaPlayerWrapper).isShuffleSet();
+        doReturn(is_repeat_set).when(mMediaPlayerWrapper).isRepeatSet();
+        assertThat(mMediaControlProfile.getCurrentPlayerPlayingOrder()).isEqualTo(expected_value);
     }
 
     @Test
@@ -504,10 +443,10 @@ public class MediaControlProfileTest {
             else expected_value |= SupportedPlayingOrder.SHUFFLE_ONCE;
         }
 
-        doReturn(is_shuffle_set).when(mMockMediaPlayerWrapper).isShuffleSupported();
-        doReturn(is_repeat_set).when(mMockMediaPlayerWrapper).isRepeatSupported();
-        Assert.assertEquals(
-                expected_value, mMediaControlProfile.getSupportedPlayingOrder().intValue());
+        doReturn(is_shuffle_set).when(mMediaPlayerWrapper).isShuffleSupported();
+        doReturn(is_repeat_set).when(mMediaPlayerWrapper).isRepeatSupported();
+        assertThat(mMediaControlProfile.getSupportedPlayingOrder().intValue())
+                .isEqualTo(expected_value);
     }
 
     @Test
@@ -523,16 +462,14 @@ public class MediaControlProfileTest {
         final ParcelUuid charUuid1 = new ParcelUuid(UUID.randomUUID());
         final int ccid1 = BluetoothDevice.METADATA_GMCS_CCCD;
 
-        doReturn(ccid1).when(mMockGMcsService).getContentControlId();
-        doReturn(BluetoothUuid.GENERIC_MEDIA_CONTROL.getUuid())
-                .when(mMockGMcsService)
-                .getServiceUuid();
+        doReturn(ccid1).when(mGMcsService).getContentControlId();
+        doReturn(BluetoothUuid.GENERIC_MEDIA_CONTROL.getUuid()).when(mGMcsService).getServiceUuid();
 
         // BluetoothDevice class is not mockable
-        BluetoothDevice bluetoothDevice = TestUtils.getTestDevice(mAdapter, 0);
+        BluetoothDevice bluetoothDevice = getTestDevice(0);
         mMediaControlProfile.setNotificationSubscription(ccid1, bluetoothDevice, charUuid1, true);
-        Assert.assertNotNull(
-                mMediaControlProfile.getNotificationSubscriptions(ccid1, bluetoothDevice));
+        assertThat(mMediaControlProfile.getNotificationSubscriptions(ccid1, bluetoothDevice))
+                .isNotNull();
     }
 
     @Test

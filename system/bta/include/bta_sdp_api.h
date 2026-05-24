@@ -24,7 +24,8 @@
 #ifndef BTA_SDP_API_H
 #define BTA_SDP_API_H
 
-#include <base/strings/stringprintf.h>
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/uuid.h>
 
 #include <cstdint>
 #include <string>
@@ -32,8 +33,6 @@
 #include "include/hardware/bt_sdp.h"  // bluetooth_sdp_record
 #include "macros.h"
 #include "stack/sdp/sdp_discovery_db.h"
-#include "types/bluetooth/uuid.h"
-#include "types/raw_address.h"
 
 using bluetooth::Uuid;
 
@@ -50,7 +49,7 @@ inline std::string bta_sdp_status_text(const tBTA_SDP_STATUS& status) {
     CASE_RETURN_TEXT(BTA_SDP_FAILURE);
     CASE_RETURN_TEXT(BTA_SDP_BUSY);
     default:
-      return base::StringPrintf("UNKNOWN[%d]", status);
+      return std::format("UNKNOWN[{}]", static_cast<uint8_t>(status));
   }
 }
 
@@ -82,8 +81,7 @@ typedef union {
 } tBTA_SDP;
 
 /* SDP DM Interface callback */
-typedef void(tBTA_SDP_DM_CBACK)(tBTA_SDP_EVT event, tBTA_SDP* p_data,
-                                void* user_data);
+typedef void(tBTA_SDP_DM_CBACK)(tBTA_SDP_EVT event, tBTA_SDP* p_data, void* user_data);
 
 /* MCE configuration structure */
 typedef struct {
@@ -119,8 +117,7 @@ tBTA_SDP_STATUS BTA_SdpEnable(tBTA_SDP_DM_CBACK* p_cback);
  *                  BTA_SDP_FAIL if internal failure.
  *
  ******************************************************************************/
-tBTA_SDP_STATUS BTA_SdpSearch(const RawAddress& bd_addr,
-                              const bluetooth::Uuid& uuid);
+tBTA_SDP_STATUS BTA_SdpSearch(const RawAddress& bd_addr, const bluetooth::Uuid& uuid);
 
 /*******************************************************************************
  *

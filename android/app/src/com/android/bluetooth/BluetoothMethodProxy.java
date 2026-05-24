@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,21 +17,17 @@
 package com.android.bluetooth;
 
 import android.annotation.NonNull;
-import android.annotation.RequiresPermission;
+import android.annotation.SuppressLint;
+import android.app.ComponentCaller;
 import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
-import android.bluetooth.le.PeriodicAdvertisingCallback;
-import android.bluetooth.le.PeriodicAdvertisingManager;
-import android.bluetooth.le.ScanResult;
 import android.content.ContentProviderClient;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.res.AssetFileDescriptor;
 import android.database.Cursor;
-import android.media.session.MediaController;
-import android.media.session.MediaSessionManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.CancellationSignal;
@@ -43,7 +39,6 @@ import android.os.ParcelFileDescriptor;
 import android.provider.Telephony;
 import android.util.Log;
 
-import com.android.bluetooth.bass_client.BassClientPeriodicAdvertisingManager;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.obex.HeaderSet;
 
@@ -51,12 +46,14 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.List;
 import java.util.Set;
 
 /** Proxy class for method calls to help with unit testing */
+// TODO: Remove this entire class, as it is abused and provide helper to call framework code which
+// should be avoided
 public class BluetoothMethodProxy {
     private static final String TAG = BluetoothMethodProxy.class.getSimpleName();
+
     private static final Object INSTANCE_LOCK = new Object();
     private static BluetoothMethodProxy sInstance;
 
@@ -98,7 +95,13 @@ public class BluetoothMethodProxy {
             final String selection,
             final String[] selectionArgs,
             final String sortOrder) {
-        return contentResolver.query(contentUri, projection, selection, selectionArgs, sortOrder);
+        try {
+            return contentResolver.query(
+                    contentUri, projection, selection, selectionArgs, sortOrder);
+        } catch (Exception e) {
+            Log.e(TAG, "Exception happened" + e + "\n" + Log.getStackTraceString(new Throwable()));
+            return null;
+        }
     }
 
     /** Proxies {@link ContentResolver#query(Uri, String[], Bundle, CancellationSignal)}. */
@@ -108,7 +111,12 @@ public class BluetoothMethodProxy {
             final String[] projection,
             final Bundle queryArgs,
             final CancellationSignal cancellationSignal) {
-        return contentResolver.query(contentUri, projection, queryArgs, cancellationSignal);
+        try {
+            return contentResolver.query(contentUri, projection, queryArgs, cancellationSignal);
+        } catch (Exception e) {
+            Log.e(TAG, "Exception happened " + e + "\n" + Log.getStackTraceString(new Throwable()));
+            return null;
+        }
     }
 
     /** Proxies {@link ContentResolver#insert(Uri, ContentValues)}. */
@@ -141,13 +149,6 @@ public class BluetoothMethodProxy {
     /** Proxies {@link BluetoothAdapter#isEnabled()}. */
     public boolean bluetoothAdapterIsEnabled(BluetoothAdapter adapter) {
         return adapter.isEnabled();
-    }
-
-    /**
-     * Proxies {@link BluetoothAdapter#getRemoteLeDevice(String, int)} on default Bluetooth Adapter.
-     */
-    public BluetoothDevice getDefaultAdapterRemoteLeDevice(String address, int addressType) {
-        return BluetoothAdapter.getDefaultAdapter().getRemoteLeDevice(address, addressType);
     }
 
     /** Proxies {@link ContentResolver#openFileDescriptor(Uri, String)}. */
@@ -183,7 +184,8 @@ public class BluetoothMethodProxy {
     }
 
     /** Proxies {@link Context#sendBroadcast(Intent)}. */
-    public void contextSendBroadcast(Context context, @RequiresPermission Intent intent) {
+    @SuppressLint("AndroidFrameworkRequiresPermission") // only intent is ACTION_OPEN
+    public void contextSendBroadcast(Context context, Intent intent) {
         context.sendBroadcast(intent);
     }
 
@@ -213,54 +215,6 @@ public class BluetoothMethodProxy {
         return Telephony.Threads.getOrCreateThreadId(context, recipients);
     }
 
-    /**
-     * Proxies {@link
-     * BassClientPeriodicAdvertisingManager#initializePeriodicAdvertisingManagerOnDefaultAdapter}.
-     */
-    public boolean initializePeriodicAdvertisingManagerOnDefaultAdapter() {
-        return BassClientPeriodicAdvertisingManager
-                .initializePeriodicAdvertisingManagerOnDefaultAdapter();
-    }
-
-    /**
-     * Proxies {@link PeriodicAdvertisingManager#registerSync(ScanResult, int, int,
-     * PeriodicAdvertisingCallback, Handler)}.
-     */
-    public void periodicAdvertisingManagerRegisterSync(
-            PeriodicAdvertisingManager manager,
-            ScanResult scanResult,
-            int skip,
-            int timeout,
-            PeriodicAdvertisingCallback callback,
-            Handler handler) {
-        manager.registerSync(scanResult, skip, timeout, callback, handler);
-    }
-
-    /** Proxies {@link PeriodicAdvertisingManager#unregisterSync(PeriodicAdvertisingCallback)}. */
-    public void periodicAdvertisingManagerUnregisterSync(
-            PeriodicAdvertisingManager manager, PeriodicAdvertisingCallback callback) {
-        manager.unregisterSync(callback);
-    }
-
-    /** Proxies {@link PeriodicAdvertisingManager#transferSync}. */
-    public void periodicAdvertisingManagerTransferSync(
-            PeriodicAdvertisingManager manager,
-            BluetoothDevice bda,
-            int serviceData,
-            int syncHandle) {
-        manager.transferSync(bda, serviceData, syncHandle);
-    }
-
-    /** Proxies {@link PeriodicAdvertisingManager#transferSetInfo}. */
-    public void periodicAdvertisingManagerTransferSetInfo(
-            PeriodicAdvertisingManager manager,
-            BluetoothDevice bda,
-            int serviceData,
-            int advHandle,
-            PeriodicAdvertisingCallback callback) {
-        manager.transferSetInfo(bda, serviceData, advHandle, callback);
-    }
-
     /** Proxies {@link Thread#start()}. */
     public void threadStart(Thread thread) {
         thread.start();
@@ -271,9 +225,28 @@ public class BluetoothMethodProxy {
         return handlerThread.getLooper();
     }
 
-    /** Peoziws {@link MediaSessionManager#getActiveSessions} */
-    public @NonNull List<MediaController> mediaSessionManagerGetActiveSessions(
-            MediaSessionManager manager) {
-        return manager.getActiveSessions(null);
+    /** Proxies {@link ComponentCaller#checkContentUriPermission(Uri, int)}. } */
+    public int componentCallerCheckContentUriPermission(
+            ComponentCaller caller, Uri uri, int modeFlags) {
+        return caller.checkContentUriPermission(uri, modeFlags);
+    }
+
+    /** Proxies {@link Context#grantUriPermission(String, Uri, int)}. } */
+    public void grantUriPermission(Context context, String packageName, Uri uri, int modeFlags) {
+        try {
+            context.grantUriPermission(packageName, uri, modeFlags);
+        } catch (Exception e) {
+            Log.e(TAG, "Exception happened:" + e);
+        }
+    }
+
+    /** Proxies {@link Context#getPackageManager()}. } */
+    public PackageManager getPackageManager(Context context) {
+        return context.getPackageManager();
+    }
+
+    /** Proxies {@link Context#getContentResolver()}. */
+    public ContentResolver getContentResolver(Context context) {
+        return context.getContentResolver();
     }
 }

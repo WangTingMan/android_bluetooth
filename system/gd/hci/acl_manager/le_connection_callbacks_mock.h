@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,14 +30,12 @@ namespace hci {
 namespace acl_manager {
 
 class MockLeConnectionCallbacks : public LeConnectionCallbacks {
- public:
-  MOCK_METHOD(
-      void,
-      OnLeConnectSuccess,
-      (AddressWithType address_with_type, std::unique_ptr<LeAclConnection> connection),
-      (override));
-  MOCK_METHOD(
-      void, OnLeConnectFail, (AddressWithType address_with_type, ErrorCode reason), (override));
+public:
+  MOCK_METHOD(void, OnLeConnectSuccess,
+              (AddressWithType address_with_type, std::unique_ptr<LeAclConnection> connection),
+              (override));
+  MOCK_METHOD(void, OnLeConnectFail, (AddressWithType address_with_type, ErrorCode reason),
+              (override));
 };
 
 }  // namespace acl_manager

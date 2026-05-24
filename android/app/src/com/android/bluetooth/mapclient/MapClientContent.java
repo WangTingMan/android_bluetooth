@@ -16,6 +16,9 @@
 
 package com.android.bluetooth.mapclient;
 
+import static android.telephony.PhoneNumberUtils.areSamePhoneNumber;
+import static android.telephony.PhoneNumberUtils.extractNetworkPortion;
+
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothMapClient;
 import android.content.ContentResolver;
@@ -24,13 +27,13 @@ import android.content.Context;
 import android.database.ContentObserver;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.UserManager;
 import android.provider.BaseColumns;
 import android.provider.Telephony;
 import android.provider.Telephony.Mms;
 import android.provider.Telephony.MmsSms;
 import android.provider.Telephony.Sms;
 import android.provider.Telephony.Threads;
-import android.telephony.PhoneNumberUtils;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
@@ -38,6 +41,8 @@ import android.util.ArraySet;
 import android.util.Log;
 
 import com.android.bluetooth.Utils;
+import com.android.bluetooth.btservice.AdapterService;
+import com.android.bluetooth.flags.Flags;
 import com.android.bluetooth.map.BluetoothMapbMessageMime;
 import com.android.bluetooth.map.BluetoothMapbMessageMime.MimePart;
 import com.android.vcard.VCardConstants;
@@ -55,6 +60,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 class MapClientContent {
@@ -79,17 +85,20 @@ class MapClientContent {
         SENT
     }
 
-    final BluetoothDevice mDevice;
+    private final HashMap<String, Uri> mHandleToUriMap = new HashMap<>();
+    private final HashMap<Uri, MessageStatus> mUriToHandleMap = new HashMap<>();
+
+    final ContentObserver mContentObserver;
     private final Context mContext;
+    private final BluetoothDevice mDevice;
     private final Callbacks mCallbacks;
     private final ContentResolver mResolver;
-    ContentObserver mContentObserver;
+    private final SubscriptionManager mSubscriptionManager;
+    private final TelephonyManager mTelephonyManager;
+
     String mPhoneNumber = null;
+
     private int mSubscriptionId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
-    private SubscriptionManager mSubscriptionManager;
-    private TelephonyManager mTelephonyManager;
-    private HashMap<String, Uri> mHandleToUriMap = new HashMap<>();
-    private HashMap<Uri, MessageStatus> mUriToHandleMap = new HashMap<>();
 
     /** Callbacks API to notify about statusChanges as observed from the content provider */
     interface Callbacks {
@@ -108,17 +117,16 @@ class MapClientContent {
      * the interface to send outbound updates such as when a message is read locally device: the
      * associated Bluetooth device used for associating messages with a subscription
      */
-    MapClientContent(Context context, Callbacks callbacks, BluetoothDevice device) {
-        mContext = context;
+    MapClientContent(AdapterService adapterService, Callbacks callbacks, BluetoothDevice device) {
+        mContext = adapterService;
         mDevice = device;
         mCallbacks = callbacks;
         mResolver = mContext.getContentResolver();
-
         mSubscriptionManager = mContext.getSystemService(SubscriptionManager.class);
         mTelephonyManager = mContext.getSystemService(TelephonyManager.class);
         mSubscriptionManager.addSubscriptionInfoRecord(
                 mDevice.getAddress(),
-                Utils.getName(mDevice),
+                adapterService.getRemoteName(mDevice),
                 0,
                 SubscriptionManager.SUBSCRIPTION_TYPE_REMOTE_SIM);
         SubscriptionInfo info =
@@ -227,23 +235,26 @@ class MapClientContent {
                         + ", folder="
                         + message.getFolder());
 
+        if (Flags.ignoreMessageSmsDisallowed()) {
+            UserManager userManager = mContext.getSystemService(UserManager.class);
+            if (userManager != null
+                    && userManager.getUserRestrictions().getBoolean(UserManager.DISALLOW_SMS)) {
+                warn("SMS is disallowed for the user, skip storing message");
+                return;
+            }
+        }
+
         switch (message.getType()) {
-            case MMS:
-                storeMms(message, handle, timestamp, seen);
-                return;
-            case SMS_CDMA:
-            case SMS_GSM:
-                storeSms(message, handle, timestamp, seen);
-                return;
-            default:
-                debug("Request to store unsupported message type: " + message.getType());
+            case MMS -> storeMms(message, handle, timestamp, seen);
+            case SMS_CDMA, SMS_GSM -> storeSms(message, handle, timestamp, seen);
+            default -> debug("Request to store unsupported message type: " + message.getType());
         }
     }
 
     private void storeSms(Bmessage message, String handle, Long timestamp, boolean seen) {
         debug("storeSms");
         verbose(message.toString());
-        String recipients;
+        final String recipients;
         if (INBOX_PATH.equals(message.getFolder())) {
             recipients = getOriginatorNumber(message);
         } else {
@@ -470,12 +481,14 @@ class MapClientContent {
         Log.d(TAG, "[AllDevices] clearMessages(subscriptionId=" + subscriptionId);
 
         ContentResolver resolver = context.getContentResolver();
-        String threads = new String();
+        StringBuilder threadsBuilder = new StringBuilder();
 
         Uri uri = Threads.CONTENT_URI.buildUpon().appendQueryParameter("simple", "true").build();
         try (Cursor threadCursor = resolver.query(uri, null, null, null, null)) {
             while (threadCursor.moveToNext()) {
-                threads += threadCursor.getInt(threadCursor.getColumnIndex(Threads._ID)) + ", ";
+                threadsBuilder
+                        .append(threadCursor.getInt(threadCursor.getColumnIndex(Threads._ID)))
+                        .append(", ");
             }
         }
 
@@ -487,17 +500,16 @@ class MapClientContent {
                 Mms.CONTENT_URI,
                 Mms.SUBSCRIPTION_ID + " =? ",
                 new String[] {Integer.toString(subscriptionId)});
-        if (threads.length() > 2) {
-            threads = threads.substring(0, threads.length() - 2);
+        if (threadsBuilder.length() > 2) {
+            String threads = threadsBuilder.substring(0, threadsBuilder.length() - 2);
             resolver.delete(Threads.CONTENT_URI, Threads._ID + " IN (" + threads + ")", null);
         }
     }
 
     /** getThreadId utilize the originator and recipients to obtain the thread id */
     private long getThreadId(Bmessage message) {
-
         Set<String> messageContacts = new ArraySet<>();
-        String originator = PhoneNumberUtils.extractNetworkPortion(getOriginatorNumber(message));
+        String originator = extractNetworkPortion(getOriginatorNumber(message));
         if (originator != null) {
             messageContacts.add(originator);
         }
@@ -509,30 +521,24 @@ class MapClientContent {
             if (mPhoneNumber == null) {
                 warn("getThreadId called, mPhoneNumber never found.");
             }
+            final String networkCountryIso = mTelephonyManager.getNetworkCountryIso();
             messageContacts.removeIf(
-                    number ->
-                            (PhoneNumberUtils.areSamePhoneNumber(
-                                    number,
-                                    mPhoneNumber,
-                                    mTelephonyManager.getNetworkCountryIso())));
+                    number -> areSamePhoneNumber(number, mPhoneNumber, networkCountryIso));
         }
 
         verbose("Contacts = " + messageContacts.toString());
         return Telephony.Threads.getOrCreateThreadId(mContext, messageContacts);
     }
 
-    private void getRecipientsFromMessage(Bmessage message, Set<String> messageContacts) {
-        List<VCardEntry> recipients = message.getRecipients();
-        for (VCardEntry recipient : recipients) {
-            List<VCardEntry.PhoneData> phoneData = recipient.getPhoneList();
-            if (phoneData != null && !phoneData.isEmpty()) {
-                messageContacts.add(
-                        PhoneNumberUtils.extractNetworkPortion(phoneData.get(0).getNumber()));
-            }
-        }
+    private static void getRecipientsFromMessage(Bmessage message, Set<String> messageContacts) {
+        message.getRecipients().stream()
+                .map(recipient -> recipient.getPhoneList())
+                .filter(phoneData -> phoneData != null && !phoneData.isEmpty())
+                .map(phoneData -> extractNetworkPortion(phoneData.get(0).getNumber()))
+                .forEach(messageContacts::add);
     }
 
-    private String getOriginatorNumber(Bmessage message) {
+    private static String getOriginatorNumber(Bmessage message) {
         VCardEntry originator = message.getOriginator();
         if (originator == null) {
             return null;
@@ -543,10 +549,10 @@ class MapClientContent {
             return null;
         }
 
-        return PhoneNumberUtils.extractNetworkPortion(phoneData.get(0).getNumber());
+        return extractNetworkPortion(phoneData.get(0).getNumber());
     }
 
-    private String getFirstRecipientNumber(Bmessage message) {
+    private static String getFirstRecipientNumber(Bmessage message) {
         List<VCardEntry> recipients = message.getRecipients();
         if (recipients == null || recipients.isEmpty()) {
             return null;
@@ -666,20 +672,25 @@ class MapClientContent {
     }
 
     private List<MessageDumpElement> getRecentMessagesFromFolder(Folder folder) {
-        Uri smsUri = null;
-        Uri mmsUri = null;
-        if (folder == Folder.INBOX) {
-            smsUri = Sms.Inbox.CONTENT_URI;
-            mmsUri = Mms.Inbox.CONTENT_URI;
-        } else if (folder == Folder.SENT) {
-            smsUri = Sms.Sent.CONTENT_URI;
-            mmsUri = Mms.Sent.CONTENT_URI;
-        } else {
-            warn("getRecentMessagesFromFolder: Failed, unsupported folder=" + folder);
-            return null;
+        final Uri smsUri;
+        final Uri mmsUri;
+
+        switch (folder) {
+            case Folder.INBOX -> {
+                smsUri = Sms.Inbox.CONTENT_URI;
+                mmsUri = Mms.Inbox.CONTENT_URI;
+            }
+            case Folder.SENT -> {
+                smsUri = Sms.Sent.CONTENT_URI;
+                mmsUri = Mms.Sent.CONTENT_URI;
+            }
+            default -> { // Folder.UNKNOWN
+                warn("getRecentMessagesFromFolder: Failed, unsupported folder=" + folder);
+                return null;
+            }
         }
 
-        ArrayList<MessageDumpElement> messages = new ArrayList<MessageDumpElement>();
+        List<MessageDumpElement> messages = new ArrayList<>();
         for (Uri uri : new Uri[] {smsUri, mmsUri}) {
             messages.addAll(getMessagesFromUri(uri));
         }
@@ -699,7 +710,7 @@ class MapClientContent {
 
     private List<MessageDumpElement> getMessagesFromUri(Uri uri) {
         debug("getMessagesFromUri: uri=" + uri);
-        ArrayList<MessageDumpElement> messages = new ArrayList<MessageDumpElement>();
+        List<MessageDumpElement> messages = new ArrayList<>();
 
         if (mSubscriptionId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
             warn("getMessagesFromUri: Failed, no subscription ID");
@@ -791,7 +802,7 @@ class MapClientContent {
         return messages;
     }
 
-    private Type getMessageTypeFromUri(Uri uri) {
+    private static Type getMessageTypeFromUri(Uri uri) {
         if (Sms.CONTENT_URI.equals(uri)
                 || Sms.Inbox.CONTENT_URI.equals(uri)
                 || Sms.Sent.CONTENT_URI.equals(uri)) {
@@ -807,35 +818,33 @@ class MapClientContent {
 
     public void dump(StringBuilder sb) {
         sb.append("    Device Message DB:");
-        sb.append("\n      Subscription ID: " + mSubscriptionId);
+        sb.append("\n      Subscription ID: ").append(mSubscriptionId);
         if (mSubscriptionId != SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
-            sb.append(
-                    "\n      SMS Messages (Inbox/Sent/Total): "
-                            + getStoredMessagesCount(Sms.Inbox.CONTENT_URI)
-                            + " / "
-                            + getStoredMessagesCount(Sms.Sent.CONTENT_URI)
-                            + " / "
-                            + getStoredMessagesCount(Sms.CONTENT_URI));
+            sb.append("\n      SMS Messages (Inbox/Sent/Total): ")
+                    .append(getStoredMessagesCount(Sms.Inbox.CONTENT_URI))
+                    .append(" / ")
+                    .append(getStoredMessagesCount(Sms.Sent.CONTENT_URI))
+                    .append(" / ")
+                    .append(getStoredMessagesCount(Sms.CONTENT_URI));
 
-            sb.append(
-                    "\n      MMS Messages (Inbox/Sent/Total): "
-                            + getStoredMessagesCount(Mms.Inbox.CONTENT_URI)
-                            + " / "
-                            + getStoredMessagesCount(Mms.Sent.CONTENT_URI)
-                            + " / "
-                            + getStoredMessagesCount(Mms.CONTENT_URI));
+            sb.append("\n      MMS Messages (Inbox/Sent/Total): ")
+                    .append(getStoredMessagesCount(Mms.Inbox.CONTENT_URI))
+                    .append(" / ")
+                    .append(getStoredMessagesCount(Mms.Sent.CONTENT_URI))
+                    .append(" / ")
+                    .append(getStoredMessagesCount(Mms.CONTENT_URI));
 
-            sb.append("\n      Threads: " + getStoredMessagesCount(Threads.CONTENT_URI));
+            sb.append("\n      Threads: ").append(getStoredMessagesCount(Threads.CONTENT_URI));
 
             sb.append("\n      Most recent 'Sent' messages:");
-            sb.append("\n        " + MessageDumpElement.getFormattedColumnNames());
+            sb.append("\n        ").append(MessageDumpElement.getFormattedColumnNames());
             for (MessageDumpElement e : getRecentMessagesFromFolder(Folder.SENT)) {
-                sb.append("\n        " + e);
+                sb.append("\n        ").append(e);
             }
             sb.append("\n      Most recent 'Inbox' messages:");
-            sb.append("\n        " + MessageDumpElement.getFormattedColumnNames());
+            sb.append("\n        ").append(MessageDumpElement.getFormattedColumnNames());
             for (MessageDumpElement e : getRecentMessagesFromFolder(Folder.INBOX)) {
-                sb.append("\n        " + e);
+                sb.append("\n        ").append(e);
             }
         }
         sb.append("\n");
@@ -858,9 +867,21 @@ class MapClientContent {
         }
 
         @Override
-        public boolean equals(Object other) {
-            return ((other instanceof MessageStatus)
-                    && ((MessageStatus) other).mHandle.equals(mHandle));
+        public boolean equals(Object obj) {
+            if (obj == this) {
+                return true;
+            }
+
+            if (!(obj instanceof MessageStatus other)) {
+                return false;
+            }
+
+            return other.mHandle.equals(mHandle);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(mHandle);
         }
     }
 
@@ -873,22 +894,11 @@ class MapClientContent {
                                 .toLocalDateTime());
     }
 
-    private static class MessageDumpElement implements Comparable<MessageDumpElement> {
-        private String mMessageHandle;
-        private long mTimestamp;
-        private Type mType;
-        private long mThreadId;
-        private Uri mUri;
+    private record MessageDumpElement(
+            String handle, Uri uri, long timestamp, long threadId, Type type)
+            implements Comparable<MessageDumpElement> {
 
-        MessageDumpElement(String handle, Uri uri, long timestamp, long threadId, Type type) {
-            mMessageHandle = handle;
-            mTimestamp = timestamp;
-            mUri = uri;
-            mThreadId = threadId;
-            mType = type;
-        }
-
-        public static String getFormattedColumnNames() {
+        static String getFormattedColumnNames() {
             return String.format(
                     "%-19s %s %-16s %s %s", "Timestamp", "ThreadId", "Handle", "Type", "Uri");
         }
@@ -897,15 +907,15 @@ class MapClientContent {
         public String toString() {
             return String.format(
                     "%-19s %8d %-16s %-4s %s",
-                    toDatetimeString(mTimestamp), mThreadId, mMessageHandle, mType, mUri);
+                    toDatetimeString(timestamp), threadId, handle, type, uri);
         }
 
         @Override
         public int compareTo(MessageDumpElement e) {
             // we want reverse chronological.
-            if (this.mTimestamp < e.mTimestamp) {
+            if (this.timestamp < e.timestamp) {
                 return 1;
-            } else if (this.mTimestamp > e.mTimestamp) {
+            } else if (this.timestamp > e.timestamp) {
                 return -1;
             } else {
                 return 0;

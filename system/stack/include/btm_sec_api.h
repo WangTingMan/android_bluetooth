@@ -17,6 +17,9 @@
 
 #pragma once
 
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/bt_transport.h>
+
 #include <cstdint>
 
 #include "stack/include/bt_dev_class.h"
@@ -24,8 +27,6 @@
 #include "stack/include/bt_octets.h"
 #include "stack/include/btm_api_types.h"
 #include "stack/include/btm_status.h"
-#include "types/bt_transport.h"
-#include "types/raw_address.h"
 
 /*****************************************************************************
  *  SECURITY MANAGEMENT FUNCTIONS
@@ -43,8 +44,8 @@
  * Returns          void
  *
  ******************************************************************************/
-void BTM_SecAddDevice(const RawAddress& bd_addr, const DEV_CLASS dev_class,
-                      LinkKey link_key, uint8_t key_type, uint8_t pin_length);
+void BTM_SecAddDevice(const RawAddress& bd_addr, const DEV_CLASS dev_class, LinkKey link_key,
+                      uint8_t key_type, uint8_t pin_length);
 
 /** Free resources associated with the device associated with |bd_addr| address.
  *
@@ -70,14 +71,14 @@ void BTM_SecClearSecurityFlags(const RawAddress& bd_addr);
 
 /*******************************************************************************
  *
- * Function         btm_sec_is_a_bonded_dev
+ * Function         BTM_IsBonded
  *
- * Description       Is the specified device is a bonded device
+ * Description      Is the specified device is a bonded device
  *
  * Returns          true - dev is bonded
  *
  ******************************************************************************/
-bool btm_sec_is_a_bonded_dev(const RawAddress& bda);
+bool BTM_IsBonded(const RawAddress& bd_addr, tBT_TRANSPORT transport = BT_TRANSPORT_AUTO);
 
 /*******************************************************************************
  *
@@ -92,8 +93,7 @@ bool btm_sec_is_a_bonded_dev(const RawAddress& bda);
  *                                 the results
  *
  ******************************************************************************/
-tBTM_STATUS BTM_DeleteStoredLinkKey(const RawAddress* bd_addr,
-                                    tBTM_CMPL_CB* p_cb);
+tBTM_STATUS BTM_DeleteStoredLinkKey(const RawAddress* bd_addr, tBTM_CMPL_CB* p_cb);
 
 /*******************************************************************************
  *
@@ -102,11 +102,11 @@ tBTM_STATUS BTM_DeleteStoredLinkKey(const RawAddress* bd_addr,
  * Description      This procedure confirms requested to validate set device.
  *
  * Parameter        bd_addr     - BD address of the peer
- *                  res         - confirmation result BTM_SUCCESS if success
+ *                  res         - confirmation result tBTM_STATUS::BTM_SUCCESS if success
  *
  * Returns          void
  *
  ******************************************************************************/
-void BTM_BleSirkConfirmDeviceReply(const RawAddress& bd_addr, uint8_t res);
+void BTM_BleSirkConfirmDeviceReply(const RawAddress& bd_addr, tBTM_STATUS res);
 
 uint8_t btm_ble_read_sec_key_size(const RawAddress& bd_addr);

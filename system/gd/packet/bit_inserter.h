@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ namespace bluetooth {
 namespace packet {
 
 class BitInserter : public ByteInserter {
- public:
+public:
   explicit BitInserter(std::vector<uint8_t>& vector);
   ~BitInserter();
 
@@ -35,7 +35,7 @@ class BitInserter : public ByteInserter {
 
   void insert_byte(uint8_t byte) override;
 
- protected:
+protected:
   size_t num_saved_bits_{0};
   uint8_t saved_bits_{0};
 };

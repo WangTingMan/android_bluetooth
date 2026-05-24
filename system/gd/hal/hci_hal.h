@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,8 @@
 
 #pragma once
 
+#include <cstdint>
 #include <vector>
-
-#include "module.h"
 
 namespace bluetooth {
 namespace hal {
@@ -27,12 +26,12 @@ using HciPacket = std::vector<uint8_t>;
 
 enum class Status : int32_t { SUCCESS, TRANSPORT_ERROR, INITIALIZATION_ERROR, UNKNOWN };
 
-// Mirrors hardware/interfaces/bluetooth/1.0/IBluetoothHciCallbacks.hal in Android, but moved initializationComplete
-// callback to BluetoothInitializationCompleteCallback
+// Mirrors hardware/interfaces/bluetooth/1.0/IBluetoothHciCallbacks.hal in Android, but moved
+// initializationComplete callback to BluetoothInitializationCompleteCallback
 
 // The interface from the Bluetooth Controller to the stack
 class HciHalCallbacks {
- public:
+public:
   virtual ~HciHalCallbacks() = default;
 
   // This function is invoked when an HCI event is received from the
@@ -51,6 +50,10 @@ class HciHalCallbacks {
   // Send an ISO data packet from the controller to the host
   // @param data the ISO HCI packet to be passed to the host stack
   virtual void isoDataReceived(HciPacket data) = 0;
+
+  // This function is invoked when the controller encounters an error requiring
+  // the Bluetooth stack to initiate a reset.
+  virtual void controllerNeedsReset() {}
 };
 
 // Mirrors hardware/interfaces/bluetooth/1.0/IBluetoothHci.hal in Android
@@ -61,10 +64,8 @@ class HciHalCallbacks {
 // the stack and abstracts away power management, initialization, and other
 // implementation-specific details related to the hardware.
 // LINT.IfChange
-class HciHal : public ::bluetooth::Module {
- public:
-  static const ModuleFactory Factory;
-
+class HciHal {
+public:
   virtual ~HciHal() = default;
 
   // Register the callback for incoming packets. All incoming packets are dropped before
@@ -100,9 +101,7 @@ class HciHal : public ::bluetooth::Module {
 
   // Get the MSFT opcode (as specified in Microsoft-defined Bluetooth HCI
   // extensions)
-  virtual uint16_t getMsftOpcode() {
-    return 0;
-  }
+  virtual uint16_t getMsftOpcode() { return 0; }
 };
 // LINT.ThenChange(fuzz/fuzz_hci_hal.h)
 

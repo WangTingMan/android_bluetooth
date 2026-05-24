@@ -358,10 +358,8 @@ public class TestActivity extends Activity {
                             new Thread() {
                                 @Override
                                 public void run() {
-                                    synchronized (mServer) {
-                                        mServer.a = true;
-                                        mServer.notify();
-                                    }
+                                    mServer.a = true;
+                                    mServer.notify();
                                 }
                             };
                     notifyThread.start();
@@ -371,8 +369,8 @@ public class TestActivity extends Activity {
 
 /** This class listens on OPUSH channel for incoming connection */
 class TestTcpListener {
-
-    private static final String TAG = "BtOppRfcommListener";
+    private static final String TAG =
+            Constants.BT_PREFIX_OPP + TestTcpListener.class.getSimpleName();
 
     private static final boolean D = Log.isLoggable(TAG, Log.DEBUG);
 
@@ -430,7 +428,7 @@ class TestTcpListener {
                                     Socket clientSocket = mServerSocket.accept();
                                     if (clientSocket == null) {
                                         if (V) {
-                                            Log.v(TAG, "incomming connection time out");
+                                            Log.v(TAG, "incoming connection time out");
                                         }
                                     } else {
                                         if (D) {
@@ -496,7 +494,7 @@ class TestTcpListener {
 }
 
 class TestTcpServer extends ServerRequestHandler implements Runnable {
-    private static final String TAG = "ServerRequestHandler";
+    private static final String TAG = ServerRequestHandler.class.getSimpleName();
 
     private static final boolean V = Log.isLoggable(TAG, Log.VERBOSE);
 
@@ -520,7 +518,7 @@ class TestTcpServer extends ServerRequestHandler implements Runnable {
     }
 
     TestTcpServer() {
-        updateStatus("enter construtor of TcpServer");
+        updateStatus("enter constructor of TcpServer");
     }
 
     @Override
@@ -539,7 +537,7 @@ class TestTcpServer extends ServerRequestHandler implements Runnable {
                 }
             }
         }
-        updateStatus("[server:] we accpet the seesion");
+        updateStatus("[server:] we accept the session");
         return ResponseCodes.OBEX_HTTP_OK;
     }
 
@@ -572,10 +570,10 @@ class TestTcpServer extends ServerRequestHandler implements Runnable {
                 try {
                     fos.close();
                 } catch (IOException e1) {
-                    e1.printStackTrace();
+                    Log.e(TAG, e.toString() + "\n" + Log.getStackTraceString(new Throwable()));
                 }
             }
-            e.printStackTrace();
+            Log.e(TAG, e.toString() + "\n" + Log.getStackTraceString(new Throwable()));
         }
         return ResponseCodes.OBEX_HTTP_OK;
     }
@@ -610,14 +608,13 @@ class TestTcpServer extends ServerRequestHandler implements Runnable {
     }
 }
 
+/* implements SessionNotifier */
 class TestTcpSessionNotifier {
-    /* implements SessionNotifier */
+    private static final String TAG = TestTcpSessionNotifier.class.getSimpleName();
 
     ServerSocket mServer = null;
 
     Socket mConn = null;
-
-    private static final String TAG = "TestTcpSessionNotifier";
 
     TestTcpSessionNotifier(int port) throws IOException {
         mServer = new ServerSocket(port);

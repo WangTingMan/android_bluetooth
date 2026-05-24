@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,11 @@
 
 package android.bluetooth.le;
 
+import static java.util.Objects.requireNonNull;
+
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.annotation.RequiresNoPermission;
 import android.annotation.SystemApi;
 import android.bluetooth.BluetoothAssignedNumbers.OrganizationId;
 import android.os.Parcel;
@@ -103,6 +106,7 @@ public final class TransportBlockFilter implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public int getOrgId() {
         return mOrgId;
     }
@@ -113,6 +117,7 @@ public final class TransportBlockFilter implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public int getTdsFlags() {
         return mTdsFlags;
     }
@@ -125,6 +130,7 @@ public final class TransportBlockFilter implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public int getTdsFlagsMask() {
         return mTdsFlagsMask;
     }
@@ -139,8 +145,8 @@ public final class TransportBlockFilter implements Parcelable {
      * @hide
      */
     @SystemApi
-    @Nullable
-    public byte[] getTransportData() {
+    @RequiresNoPermission
+    public @Nullable byte[] getTransportData() {
         return mTransportData;
     }
 
@@ -155,8 +161,8 @@ public final class TransportBlockFilter implements Parcelable {
      * @hide
      */
     @SystemApi
-    @Nullable
-    public byte[] getTransportDataMask() {
+    @RequiresNoPermission
+    public @Nullable byte[] getTransportDataMask() {
         return mTransportDataMask;
     }
 
@@ -172,8 +178,8 @@ public final class TransportBlockFilter implements Parcelable {
      * @hide
      */
     @SystemApi
-    @Nullable
-    public byte[] getWifiNanHash() {
+    @RequiresNoPermission
+    public @Nullable byte[] getWifiNanHash() {
         return mWifiNanHash;
     }
 
@@ -368,6 +374,7 @@ public final class TransportBlockFilter implements Parcelable {
          * @hide
          */
         @SystemApi
+        @RequiresNoPermission
         public Builder(int orgId) {
             if (orgId < 1) {
                 throw new IllegalArgumentException("invalid organization id " + orgId);
@@ -390,8 +397,8 @@ public final class TransportBlockFilter implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setTdsFlags(int tdsFlags, int tdsFlagsMask) {
+        @RequiresNoPermission
+        public @NonNull Builder setTdsFlags(int tdsFlags, int tdsFlagsMask) {
             if (tdsFlags < 0) {
                 throw new IllegalArgumentException("tdsFlag is invalid");
             }
@@ -425,16 +432,16 @@ public final class TransportBlockFilter implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setTransportData(
+        @RequiresNoPermission
+        public @NonNull Builder setTransportData(
                 @NonNull byte[] transportData, @NonNull byte[] transportDataMask) {
             if (mOrgId == OrganizationId.WIFI_ALLIANCE_NEIGHBOR_AWARENESS_NETWORKING) {
                 throw new IllegalArgumentException(
                         "setWifiNanHash() should be used instead of setTransportData() when orgId "
                                 + "is WIFI_ALLIANCE_NEIGHBOR_AWARENESS_NETWORKING");
             }
-            Objects.requireNonNull(transportData);
-            Objects.requireNonNull(transportDataMask);
+            requireNonNull(transportData);
+            requireNonNull(transportDataMask);
             if (transportData.length == 0) {
                 throw new IllegalArgumentException("transportData is empty");
             }
@@ -469,14 +476,14 @@ public final class TransportBlockFilter implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setWifiNanHash(@NonNull byte[] wifiNanHash) {
+        @RequiresNoPermission
+        public @NonNull Builder setWifiNanHash(@NonNull byte[] wifiNanHash) {
             if (mOrgId != OrganizationId.WIFI_ALLIANCE_NEIGHBOR_AWARENESS_NETWORKING) {
                 throw new IllegalArgumentException(
                         "setWifiNanHash() can only be used when orgId is"
                                 + " WIFI_ALLIANCE_NEIGHBOR_AWARENESS_NETWORKING");
             }
-            Objects.requireNonNull(wifiNanHash);
+            requireNonNull(wifiNanHash);
             if (wifiNanHash.length != WIFI_NAN_HASH_LENGTH_BYTES) {
                 throw new IllegalArgumentException("Wi-Fi NAN hash must be 8 octets long");
             }
@@ -492,8 +499,8 @@ public final class TransportBlockFilter implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public TransportBlockFilter build() {
+        @RequiresNoPermission
+        public @NonNull TransportBlockFilter build() {
             return new TransportBlockFilter(
                     mOrgId,
                     mTdsFlags,

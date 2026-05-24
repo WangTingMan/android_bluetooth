@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 The Android Open Source Project
+ * Copyright (C) 2021 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,59 +13,48 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.a2dpsink;
+
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTED;
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTING;
+import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTED;
+import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTING;
+
+import static com.android.bluetooth.TestUtils.getTestDevice;
 
 import static com.google.common.truth.Truth.assertThat;
 
-import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
-import android.content.Context;
 
-import androidx.test.InstrumentationRegistry;
-import androidx.test.runner.AndroidJUnit4;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
-import org.junit.After;
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+/** Test cases for {@link StackEvent}. */
 @RunWith(AndroidJUnit4.class)
 public class StackEventTest {
-    private BluetoothAdapter mAdapter = null;
-    private BluetoothDevice mDevice = null;
-    private static final String TEST_ADDRESS = "11:11:11:11:11:11";
-
-    @Before
-    public void setUp() throws Exception {
-        mAdapter = BluetoothAdapter.getDefaultAdapter();
-        assertThat(mAdapter).isNotNull();
-        mDevice = mAdapter.getRemoteDevice(TEST_ADDRESS);
-    }
-
-    @After
-    public void tearDown() throws Exception {
-        mAdapter = null;
-        mDevice = null;
-    }
+    private final BluetoothDevice mDevice = getTestDevice(21);
 
     @Test
     public void testCreateConnectionStateChangedDisconnectedEvent() {
-        testConnectionStateChangedBase(StackEvent.CONNECTION_STATE_DISCONNECTED);
+        testConnectionStateChangedBase(STATE_DISCONNECTED);
     }
 
     @Test
     public void testCreateConnectionStateChangedConnectingEvent() {
-        testConnectionStateChangedBase(StackEvent.CONNECTION_STATE_CONNECTING);
+        testConnectionStateChangedBase(STATE_CONNECTING);
     }
 
     @Test
     public void testCreateConnectionStateChangedConnectedEvent() {
-        testConnectionStateChangedBase(StackEvent.CONNECTION_STATE_CONNECTED);
+        testConnectionStateChangedBase(STATE_CONNECTED);
     }
 
     @Test
     public void testCreateConnectionStateChangedDisconnectingEvent() {
-        testConnectionStateChangedBase(StackEvent.CONNECTION_STATE_DISCONNECTING);
+        testConnectionStateChangedBase(STATE_DISCONNECTING);
     }
 
     private void testConnectionStateChangedBase(int state) {
@@ -83,7 +72,7 @@ public class StackEventTest {
     }
 
     @Test
-    public void testCreateAudioStateStartedvent() {
+    public void testCreateAudioStateStartedEvent() {
         testAudioStateChangedBase(StackEvent.AUDIO_STATE_STARTED);
     }
 

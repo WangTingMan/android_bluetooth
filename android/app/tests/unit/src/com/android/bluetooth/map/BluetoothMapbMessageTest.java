@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,19 +20,27 @@ import static com.google.common.truth.Truth.assertThat;
 
 import android.telephony.PhoneNumberUtils;
 
-import androidx.test.runner.AndroidJUnit4;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import com.android.bluetooth.map.BluetoothMapUtils.TYPE;
 import com.android.bluetooth.map.BluetoothMapbMessage.VCard;
+import com.android.tests.bluetooth.MockitoRule;
 
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.Mock;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 
+/** Test cases for {@link BluetoothMapbMessage}. */
 @RunWith(AndroidJUnit4.class)
 public class BluetoothMapbMessageTest {
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
+
+    @Mock private BluetoothMapService mMapService;
+
     private static final String TEST_VERSION_STRING = "1.0";
     private static final boolean TEST_STATUS = true;
     private static final TYPE TEST_TYPE = TYPE.IM;
@@ -69,7 +77,7 @@ public class BluetoothMapbMessageTest {
         assertThat(messageMime.getVersionString()).isEqualTo("VERSION:" + TEST_VERSION_STRING);
         assertThat(messageMime.getType()).isEqualTo(TEST_TYPE);
         assertThat(messageMime.getFolder()).isEqualTo("telecom/msg/" + TEST_FOLDER);
-        assertThat(messageMime.getRecipients().size()).isEqualTo(1);
+        assertThat(messageMime.getRecipients()).hasSize(1);
         assertThat(messageMime.getOriginators()).isNull();
     }
 
@@ -183,13 +191,14 @@ public class BluetoothMapbMessageTest {
         byte[] encodedMessageMime = messageMimeToEncode.encode();
         InputStream inputStream = new ByteArrayInputStream(encodedMessageMime);
 
-        BluetoothMapbMessage messageMimeParsed = BluetoothMapbMessage.parse(inputStream, 1);
+        BluetoothMapbMessage messageMimeParsed =
+                BluetoothMapbMessage.parse(mMapService, inputStream, 1);
         assertThat(messageMimeParsed.mAppParamCharset).isEqualTo(1);
         assertThat(messageMimeParsed.getVersionString())
                 .isEqualTo("VERSION:" + TEST_VERSION_STRING);
         assertThat(messageMimeParsed.getType()).isEqualTo(TEST_TYPE);
         assertThat(messageMimeParsed.getFolder()).isEqualTo(TEST_FOLDER);
-        assertThat(messageMimeParsed.getRecipients().size()).isEqualTo(1);
-        assertThat(messageMimeParsed.getOriginators().size()).isEqualTo(1);
+        assertThat(messageMimeParsed.getRecipients()).hasSize(1);
+        assertThat(messageMimeParsed.getOriginators()).hasSize(1);
     }
 }

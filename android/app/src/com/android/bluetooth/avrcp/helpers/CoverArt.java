@@ -25,6 +25,7 @@ import com.android.bluetooth.avrcpcontroller.BipImageDescriptor;
 import com.android.bluetooth.avrcpcontroller.BipImageFormat;
 import com.android.bluetooth.avrcpcontroller.BipImageProperties;
 import com.android.bluetooth.avrcpcontroller.BipPixel;
+import com.android.bluetooth.flags.Flags;
 
 import java.io.ByteArrayOutputStream;
 import java.security.MessageDigest;
@@ -40,7 +41,12 @@ import java.security.NoSuchAlgorithmException;
  */
 public class CoverArt {
     private static final String TAG = CoverArt.class.getSimpleName();
-    private static final BipPixel PIXEL_THUMBNAIL = BipPixel.createFixed(200, 200);
+
+    // The size in pixels of the thumbnail sides.
+    private static final int THUMBNAIL_SIZE = 200;
+
+    private static final BipPixel PIXEL_THUMBNAIL =
+            BipPixel.createFixed(THUMBNAIL_SIZE, THUMBNAIL_SIZE);
 
     private String mImageHandle = null;
     private Bitmap mImage = null;
@@ -50,7 +56,7 @@ public class CoverArt {
         // Create a scaled version of the image for now, as consumers don't need
         // anything larger than this at the moment. Also makes each image gathered
         // the same dimensions for hashing purposes.
-        mImage = Bitmap.createScaledBitmap(image.getImage(), 200, 200, false);
+        mImage = Bitmap.createScaledBitmap(image.getImage(), THUMBNAIL_SIZE, THUMBNAIL_SIZE, false);
     }
 
     /**
@@ -72,7 +78,7 @@ public class CoverArt {
     }
 
     /** Covert a Bitmap to a byte array with an image format without lossy compression */
-    private byte[] toByteArray(Bitmap bitmap) {
+    private static byte[] toByteArray(Bitmap bitmap) {
         if (bitmap == null) return null;
         ByteArrayOutputStream buffer =
                 new ByteArrayOutputStream(bitmap.getWidth() * bitmap.getHeight());
@@ -90,7 +96,7 @@ public class CoverArt {
             digest.update(/* Bitmap to input stream */ image);
             byte[] messageDigest = digest.digest();
 
-            StringBuffer hexString = new StringBuffer();
+            StringBuilder hexString = new StringBuilder();
             for (int i = 0; i < messageDigest.length; i++) {
                 hexString.append(Integer.toHexString(0xFF & messageDigest[i]));
             }
@@ -120,26 +126,115 @@ public class CoverArt {
             return null;
         }
 
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        mImage.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
-        return outputStream.toByteArray();
+        if (!Flags.implementGetImageFromDescriptorForCoverArt()) {
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            mImage.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
+            return outputStream.toByteArray();
+        }
+
+        BipPixel pixel = descriptor.getPixel();
+        int maxSize = descriptor.getMaxSize();
+        debug("pixel: " + pixel);
+        BipEncoding encoding = descriptor.getEncoding();
+        Bitmap.CompressFormat compressFormat;
+        if (encoding.getType() == BipEncoding.JPEG) {
+            compressFormat = Bitmap.CompressFormat.JPEG;
+        } else if (encoding.getType() == BipEncoding.PNG) {
+            compressFormat = Bitmap.CompressFormat.PNG;
+        } else {
+            error("Unsupported encoding format type: " + encoding.getType());
+            return null;
+        }
+
+        // Scale the bitmap to the requested size
+        Bitmap scaledBitmap = mImage;
+        if (pixel != null) {
+            debug("scaleBitmap: org w: " + mImage.getWidth() + ", h: " + mImage.getHeight());
+            scaledBitmap =
+                    Bitmap.createScaledBitmap(
+                            mImage, pixel.getMinWidth(), pixel.getMinHeight(), true);
+            debug(
+                    "scaleBitmap: scaled w: "
+                            + scaledBitmap.getWidth()
+                            + ", h: "
+                            + scaledBitmap.getHeight());
+        }
+
+        // Compress the bitmap using a heuristic guess followed by binary search.
+        byte[] imageBytes = null;
+        if (maxSize > 0) {
+            debug("Starting compression with maxSize constraint: " + maxSize + " bytes");
+
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            int low = 1;
+            int high = 100;
+            int bestQuality = -1;
+
+            long rawSize = scaledBitmap.getByteCount();
+            int initialGuess = Math.max(1, Math.min(100, (int) (100.0 * maxSize / rawSize)));
+            outputStream.reset();
+            scaledBitmap.compress(compressFormat, initialGuess, outputStream);
+            debug("Heuristic guess: quality=" + initialGuess + ", size=" + outputStream.size());
+
+            if (outputStream.size() <= maxSize) {
+                low = initialGuess;
+                bestQuality = initialGuess;
+                imageBytes = outputStream.toByteArray();
+            } else {
+                high = initialGuess - 1;
+            }
+
+            debug("Refined binary search range: [" + low + ", " + high + "]");
+            while (low <= high) {
+                outputStream.reset();
+                int mid = (low + high) / 2;
+                scaledBitmap.compress(compressFormat, mid, outputStream);
+
+                if (outputStream.size() <= maxSize) {
+                    bestQuality = mid;
+                    imageBytes = outputStream.toByteArray();
+                    low = mid + 1;
+                } else {
+                    high = mid - 1;
+                }
+            }
+
+            if (bestQuality != -1) {
+                debug("Found best quality: " + bestQuality + ", final size: " + imageBytes.length);
+            } else {
+                error(
+                        "Could not compress image to be under "
+                                + maxSize
+                                + " bytes with quality > 0.");
+                return null;
+            }
+        } else {
+            debug("No maxSize constraint, using quality 100");
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            scaledBitmap.compress(compressFormat, 100, outputStream);
+            imageBytes = outputStream.toByteArray();
+        }
+        return imageBytes;
     }
 
     /** Determine if a given image descriptor is valid */
-    private boolean isDescriptorValid(BipImageDescriptor descriptor) {
+    private static boolean isDescriptorValid(BipImageDescriptor descriptor) {
         debug("isDescriptorValid(descriptor=" + descriptor + ")");
         if (descriptor == null) return false;
 
         BipEncoding encoding = descriptor.getEncoding();
         BipPixel pixel = descriptor.getPixel();
 
-        if (encoding.getType() == BipEncoding.JPEG && PIXEL_THUMBNAIL.equals(pixel)) {
+        int encodingType = encoding.getType();
+        if ((encodingType == BipEncoding.JPEG || encodingType == BipEncoding.PNG)
+                && (Flags.implementGetImageFromDescriptorForCoverArt()
+                        || PIXEL_THUMBNAIL.equals(pixel))) {
             return true;
         }
         return false;
     }
 
-    /** Get the cover artwork image bytes as a 200 x 200 JPEG thumbnail */
+    /** Get the cover artwork image bytes as a THUMBNAIL_SIZE x THUMBNAIL_SIZE JPEG thumbnail */
     public byte[] getThumbnail() {
         debug("GetImageThumbnail()");
         if (mImage == null) return null;
@@ -160,12 +255,19 @@ public class CoverArt {
             return null;
         }
         BipImageProperties.Builder builder = new BipImageProperties.Builder();
-        BipEncoding encoding = new BipEncoding(BipEncoding.JPEG);
-        BipPixel pixel = BipPixel.createFixed(200, 200);
-        BipImageFormat format = BipImageFormat.createNative(encoding, pixel, -1);
+
+        BipEncoding jpgEncoding = new BipEncoding(BipEncoding.JPEG);
+        BipEncoding pngEncoding = new BipEncoding(BipEncoding.PNG);
+        BipPixel jpgPixel = BipPixel.createFixed(THUMBNAIL_SIZE, THUMBNAIL_SIZE);
+        BipPixel pngPixel = BipPixel.createFixed(THUMBNAIL_SIZE, THUMBNAIL_SIZE);
+
+        BipImageFormat jpgNativeFormat = BipImageFormat.createNative(jpgEncoding, jpgPixel, -1);
+        BipImageFormat pngVariantFormat =
+                BipImageFormat.createVariant(pngEncoding, pngPixel, THUMBNAIL_SIZE, null);
 
         builder.setImageHandle(mImageHandle);
-        builder.addNativeFormat(format);
+        builder.addNativeFormat(jpgNativeFormat);
+        builder.addVariantFormat(pngVariantFormat);
 
         BipImageProperties properties = builder.build();
         return properties;
@@ -182,12 +284,12 @@ public class CoverArt {
     }
 
     /** Print a message to DEBUG if debug output is enabled */
-    private void debug(String msg) {
+    private static void debug(String msg) {
         Log.d(TAG, msg);
     }
 
     /** Print a message to ERROR */
-    private void error(String msg) {
+    private static void error(String msg) {
         Log.e(TAG, msg);
     }
 }

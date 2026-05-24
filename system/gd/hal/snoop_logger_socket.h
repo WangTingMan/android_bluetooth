@@ -26,16 +26,20 @@
 #include "hal/snoop_logger_socket_interface.h"
 #include "hal/syscall_wrapper_interface.h"
 
+#ifdef _MSC_VER
+#include <WinSock2.h>
+#endif
+
 namespace bluetooth {
 namespace hal {
 
 class SnoopLoggerSocket {
- public:
-  static constexpr int DEFAULT_LOCALHOST_ = 0x7F000001;
-  static constexpr int DEFAULT_LISTEN_PORT_ = 8872;
+public:
+  static constexpr int kLocalHost = 0x7F000001;
+  static constexpr int kDefaultPort = 8872;
 
-  SnoopLoggerSocket(
-      SyscallWrapperInterface* syscall_if, int address = DEFAULT_LOCALHOST_, int port = DEFAULT_LISTEN_PORT_);
+  SnoopLoggerSocket(SyscallWrapperInterface* syscall_if, int address = kLocalHost,
+                    int port = kDefaultPort);
   SnoopLoggerSocket(const SnoopLoggerSocket&) = delete;
   SnoopLoggerSocket& operator=(const SnoopLoggerSocket&) = delete;
   virtual ~SnoopLoggerSocket();
@@ -57,7 +61,9 @@ class SnoopLoggerSocket {
 
   SyscallWrapperInterface* GetSyscallWrapperInterface() const;
 
- private:
+  int port() const { return socket_port_; }
+
+private:
   // Pointer to syscall interface
   SyscallWrapperInterface* syscall_if_;
 
@@ -66,21 +72,27 @@ class SnoopLoggerSocket {
   int socket_port_;
 
   // A pair of FD to send information to the listen thread.
-  int notification_listen_fd_;
-  int notification_write_fd_;
+  int notification_listen_fd_{-1};
+  int notification_write_fd_{-1};
 
   // Server socket
-  int listen_socket_;
-
-  // Socket FDs for listening for connections
-  // and for communitcation with listener thread.
-  fd_set save_sock_fds_;
-  int fd_max_;
+  int listen_socket_{-1};
 
   // Reference to connected client socket.
   std::mutex client_socket_mutex_;
-  int client_socket_;
   std::condition_variable client_socket_cv_;
+  int client_socket_{-1};
+
+  enum PollFd {
+    kNotificationFd,
+    kSocketFd,
+    kNumPollFd,
+  };
+
+  // Array of FDs for polling.
+  struct ::pollfd poll_fds_[kNumPollFd];
+
+  void ResetPollFds();
 };
 
 }  // namespace hal

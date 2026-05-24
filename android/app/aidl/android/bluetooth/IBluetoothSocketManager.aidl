@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,16 +23,20 @@ import android.os.ParcelFileDescriptor;
 /**
  * API for Bluetooth Sockets service.
  *
- * {@hide}
+ * @hide
  */
 interface IBluetoothSocketManager
 {
     @JavaPassthrough(annotation="@android.annotation.RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)")
-    @nullable ParcelFileDescriptor connectSocket(in BluetoothDevice device, int type, in @nullable ParcelUuid uuid, int port, int flag);
+    @nullable ParcelFileDescriptor connectSocket(in BluetoothDevice device, int type, in @nullable ParcelUuid uuid, int port, int flag,  in AttributionSource attributionSource);
+    @JavaPassthrough(annotation="@android.annotation.RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_CONNECT,android.Manifest.permission.BLUETOOTH_PRIVILEGED})")
+    @nullable ParcelFileDescriptor connectSocketWithOffload(in BluetoothDevice device, int type, in @nullable ParcelUuid uuid, int port, int flag, int dataPath, in String socketName, long hubId, long endpointId, int maximumPacketSize,  in AttributionSource attributionSource);
     @JavaPassthrough(annotation="@android.annotation.RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)")
-    @nullable ParcelFileDescriptor createSocketChannel(int type, in @nullable String serviceName, in @nullable ParcelUuid uuid, int port, int flag);
+    @nullable ParcelFileDescriptor createSocketChannel(int type, in @nullable String serviceName, in @nullable ParcelUuid uuid, int port, int flag,  in AttributionSource attributionSource);
+    @JavaPassthrough(annotation="@android.annotation.RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_CONNECT,android.Manifest.permission.BLUETOOTH_PRIVILEGED})")
+    @nullable ParcelFileDescriptor createSocketChannelWithOffload(int type, in @nullable String serviceName, in @nullable ParcelUuid uuid, int port, int flag, int dataPath, in String socketName, long hubId, long endpointId, int maximumPacketSize,  in AttributionSource attributionSource);
     @JavaPassthrough(annotation="@android.annotation.RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)")
-    void requestMaximumTxDataLength(in BluetoothDevice device);
+    void requestMaximumTxDataLength(in BluetoothDevice device,  in AttributionSource attributionSource);
     @JavaPassthrough(annotation="@android.annotation.RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_CONNECT,android.Manifest.permission.BLUETOOTH_PRIVILEGED})")
     int getL2capLocalChannelId(in ParcelUuid connectionUuid, in AttributionSource attributionSource);
     @JavaPassthrough(annotation="@android.annotation.RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_CONNECT,android.Manifest.permission.BLUETOOTH_PRIVILEGED})")

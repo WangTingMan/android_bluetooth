@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@
 
 #include <fuzzer/FuzzedDataProvider.h>
 
+#include <map>
 #include <vector>
 
 #include "fuzz/helpers.h"
@@ -26,7 +27,6 @@
 #include "hci/hci_layer.h"
 #include "os/fuzz/dev_null_queue.h"
 #include "os/fuzz/fuzz_inject_queue.h"
-#include "os/log.h"
 
 namespace bluetooth {
 namespace hci {
@@ -34,29 +34,34 @@ namespace fuzz {
 
 template <typename T>
 class FuzzCommandInterface : public CommandInterface<T> {
- public:
+public:
   void EnqueueCommand(
-      std::unique_ptr<T> /* command */,
-      common::ContextualOnceCallback<void(hci::CommandCompleteView)> /* on_complete */) override {}
+          std::unique_ptr<T> /* command */,
+          common::ContextualOnceCallback<void(hci::CommandCompleteView)> /* on_complete */)
+          override {}
 
   void EnqueueCommand(
-      std::unique_ptr<T> /* command */,
-      common::ContextualOnceCallback<void(hci::CommandStatusView)> /* on_status */) override {}
+          std::unique_ptr<T> /* command */,
+          common::ContextualOnceCallback<void(hci::CommandStatusView)> /* on_status */) override {}
+
+  void EnqueueCommand(
+          std::unique_ptr<T> /* command */,
+          common::ContextualOnceCallback<
+                  void(hci::CommandStatusOrCompleteView)> /* on_status_or_complete */) override {}
 };
 
 class FuzzHciLayer : public HciLayer {
- public:
-  void TurnOnAutoReply(FuzzedDataProvider* fdp) {
-    auto_reply_fdp = fdp;
-  }
+public:
+  FuzzHciLayer(os::Handler* handler);
+  ~FuzzHciLayer();
 
-  void TurnOffAutoReply() {
-    auto_reply_fdp = nullptr;
-  }
+  void TurnOnAutoReply(FuzzedDataProvider* fdp) { auto_reply_fdp = fdp; }
+
+  void TurnOffAutoReply() { auto_reply_fdp = nullptr; }
 
   void EnqueueCommand(
-      std::unique_ptr<hci::CommandBuilder> /* command */,
-      common::ContextualOnceCallback<void(hci::CommandCompleteView)> on_complete) override {
+          std::unique_ptr<hci::CommandBuilder> /* command */,
+          common::ContextualOnceCallback<void(hci::CommandCompleteView)> on_complete) override {
     on_command_complete_ = std::move(on_complete);
     if (auto_reply_fdp != nullptr) {
       injectCommandComplete(bluetooth::fuzz::GetArbitraryBytes(auto_reply_fdp));
@@ -64,8 +69,8 @@ class FuzzHciLayer : public HciLayer {
   }
 
   void EnqueueCommand(
-      std::unique_ptr<CommandBuilder> /* command */,
-      common::ContextualOnceCallback<void(hci::CommandStatusView)> on_status) override {
+          std::unique_ptr<CommandBuilder> /* command */,
+          common::ContextualOnceCallback<void(hci::CommandStatusView)> on_status) override {
     on_command_status_ = std::move(on_status);
     if (auto_reply_fdp != nullptr) {
       injectCommandStatus(bluetooth::fuzz::GetArbitraryBytes(auto_reply_fdp));
@@ -84,7 +89,8 @@ class FuzzHciLayer : public HciLayer {
     return sco_queue_.GetUpEnd();
   }
 
-  void RegisterEventHandler(hci::EventCode event, common::ContextualCallback<void(hci::EventView)> handler) override {
+  void RegisterEventHandler(hci::EventCode event,
+                            common::ContextualCallback<void(hci::EventView)> handler) override {
     event_handlers_[event] = handler;
   }
 
@@ -95,8 +101,9 @@ class FuzzHciLayer : public HciLayer {
     }
   }
 
-  void RegisterLeEventHandler(hci::SubeventCode event,
-                              common::ContextualCallback<void(hci::LeMetaEventView)> handler) override {
+  void RegisterLeEventHandler(
+          hci::SubeventCode event,
+          common::ContextualCallback<void(hci::LeMetaEventView)> handler) override {
     le_event_handlers_[event] = handler;
   }
 
@@ -107,52 +114,54 @@ class FuzzHciLayer : public HciLayer {
     }
   }
 
-  hci::SecurityInterface* GetSecurityInterface(common::ContextualCallback<void(hci::EventView)> event_handler) override;
+  hci::SecurityInterface* GetSecurityInterface(
+          common::ContextualCallback<void(hci::EventView)> event_handler) override;
 
   hci::LeSecurityInterface* GetLeSecurityInterface(
-      common::ContextualCallback<void(hci::LeMetaEventView)> event_handler) override;
+          common::ContextualCallback<void(hci::LeMetaEventView)> event_handler) override;
 
   hci::AclConnectionInterface* GetAclConnectionInterface(
-      common::ContextualCallback<void(hci::EventView)> event_handler,
-      common::ContextualCallback<void(uint16_t, hci::ErrorCode)> on_disconnect,
-      common::ContextualCallback<void(Address, ClassOfDevice)> on_connection_request,
-      common::ContextualCallback<void(
-          hci::ErrorCode hci_status, uint16_t, uint8_t, uint16_t, uint16_t)> on_read_remote_version)
-      override;
+          common::ContextualCallback<void(hci::EventView)> event_handler,
+          common::ContextualCallback<void(uint16_t, hci::ErrorCode)> on_disconnect,
+          common::ContextualCallback<void(Address, ClassOfDevice)> on_connection_request,
+          common::ContextualCallback<void(hci::ErrorCode hci_status, uint16_t, uint8_t, uint16_t,
+                                          uint16_t)>
+                  on_read_remote_version) override;
   void PutAclConnectionInterface() override {}
 
   hci::LeAclConnectionInterface* GetLeAclConnectionInterface(
-      common::ContextualCallback<void(hci::LeMetaEventView)> event_handler,
-      common::ContextualCallback<void(uint16_t, hci::ErrorCode)> on_disconnect,
-      common::ContextualCallback<void(hci::ErrorCode hci_status, uint16_t, uint8_t, uint16_t, uint16_t)>
-          on_read_remote_version) override;
+          common::ContextualCallback<void(hci::LeMetaEventView)> event_handler,
+          common::ContextualCallback<void(uint16_t, hci::ErrorCode)> on_disconnect,
+          common::ContextualCallback<void(hci::ErrorCode hci_status, uint16_t, uint8_t, uint16_t,
+                                          uint16_t)>
+                  on_read_remote_version) override;
   void PutLeAclConnectionInterface() override {}
 
   hci::LeAdvertisingInterface* GetLeAdvertisingInterface(
-      common::ContextualCallback<void(hci::LeMetaEventView)> event_handler) override;
+          common::ContextualCallback<void(hci::LeMetaEventView)> event_handler) override;
+
+  void ReleaseLeAdvertisingInterface() override {}
 
   hci::LeScanningInterface* GetLeScanningInterface(
-      common::ContextualCallback<void(hci::LeMetaEventView)> event_handler) override;
+          common::ContextualCallback<void(hci::LeMetaEventView)> event_handler) override;
 
-  hci::LeIsoInterface* GetLeIsoInterface(common::ContextualCallback<void(LeMetaEventView)> event_handler) override;
+  void ReleaseLeScanningInterface() override {}
+
+  hci::LeIsoInterface* GetLeIsoInterface(
+          common::ContextualCallback<void(LeMetaEventView)> event_handler) override;
 
   hci::DistanceMeasurementInterface* GetDistanceMeasurementInterface(
-      common::ContextualCallback<void(hci::LeMetaEventView)> event_handler) override;
+          common::ContextualCallback<void(hci::LeMetaEventView)> event_handler) override;
+
+  void ReleaseDistanceMeasurementInterface() override {}
 
   void injectArbitrary(FuzzedDataProvider& fdp);
 
-  std::string ToString() const override {
-    return "FuzzHciLayer";
-  }
+  void SetLeAclDataConsumer(LeAclDataConsumer*) override {}
+  void SetClassicAclDataConsumer(ClassicAclDataConsumer*) override {}
 
-  static const ModuleFactory Factory;
-
- protected:
-  void ListDependencies(ModuleList* /* list */) const override {}
-  void Start() override;
-  void Stop() override;
-
- private:
+protected:
+private:
   void injectAclData(std::vector<uint8_t> data);
 
   void injectCommandComplete(std::vector<uint8_t> data);
@@ -195,7 +204,8 @@ class FuzzHciLayer : public HciLayer {
   common::ContextualOnceCallback<void(hci::CommandStatusView)> on_command_status_;
 
   std::map<hci::EventCode, common::ContextualCallback<void(hci::EventView)>> event_handlers_;
-  std::map<hci::SubeventCode, common::ContextualCallback<void(hci::LeMetaEventView)>> le_event_handlers_;
+  std::map<hci::SubeventCode, common::ContextualCallback<void(hci::LeMetaEventView)>>
+          le_event_handlers_;
 
   common::ContextualCallback<void(hci::EventView)> security_event_handler_;
   common::ContextualCallback<void(hci::LeMetaEventView)> le_security_event_handler_;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 
 #include "fields/struct_field.h"
+
 #include "util.h"
 
 const std::string StructField::kFieldType = "StructField";
@@ -22,22 +23,16 @@ const std::string StructField::kFieldType = "StructField";
 StructField::StructField(std::string name, std::string type_name, Size size, ParseLocation loc)
     : PacketField(name, loc), type_name_(type_name), size_(size) {}
 
-const std::string& StructField::GetFieldType() const {
-  return StructField::kFieldType;
-}
+const std::string& StructField::GetFieldType() const { return StructField::kFieldType; }
 
-Size StructField::GetSize() const {
-  return size_;
-}
+Size StructField::GetSize() const { return size_; }
 
 Size StructField::GetBuilderSize() const {
   std::string ret = "(" + GetName() + "_.size() * 8)";
   return ret;
 }
 
-std::string StructField::GetDataType() const {
-  return type_name_;
-}
+std::string StructField::GetDataType() const { return type_name_; }
 
 void StructField::GenExtractor(std::ostream& s, int, bool) const {
   s << GetName() << "_it = ";
@@ -64,21 +59,15 @@ void StructField::GenGetter(std::ostream& s, Size start_offset, Size end_offset)
   s << "}\n";
 }
 
-std::string StructField::GetBuilderParameterType() const {
-  return GetDataType();
-}
+std::string StructField::GetBuilderParameterType() const { return GetDataType(); }
 
-bool StructField::HasParameterValidator() const {
-  return false;
-}
+bool StructField::HasParameterValidator() const { return false; }
 
 void StructField::GenParameterValidator(std::ostream&) const {
   // Validated at compile time.
 }
 
-void StructField::GenInserter(std::ostream& s) const {
-  s << GetName() << "_.Serialize(i);";
-}
+void StructField::GenInserter(std::ostream& s) const { s << GetName() << "_.Serialize(i);"; }
 
 void StructField::GenValidator(std::ostream&) const {
   // Do nothing

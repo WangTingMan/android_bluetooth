@@ -30,11 +30,9 @@
 #include <unordered_map>
 
 #include "common/message_loop_thread.h"
-#include "os/log.h"
 
 #include <cutils/native_handle.h>
 
-using bluetooth::common::MessageLoopThread;
 using namespace bluetooth;
 
 typedef enum {
@@ -64,9 +62,8 @@ const module_t* get_module(const char* name) {
 
 bool module_init(const module_t* module) {
   log::assert_that(module != NULL, "assert failed: module != NULL");
-  log::assert_that(
-      get_module_state(module) == MODULE_STATE_NONE,
-      "assert failed: get_module_state(module) == MODULE_STATE_NONE");
+  log::assert_that(get_module_state(module) == MODULE_STATE_NONE,
+                   "assert failed: get_module_state(module) == MODULE_STATE_NONE");
 
   if (!call_lifecycle_function(module->init)) {
     log::error("Failed to initialize module \"{}\"", module->name);
@@ -84,8 +81,7 @@ bool module_start_up(const module_t* module) {
   // This hack is here so modules which don't require init don't have to have
   // useless calls
   // as we're converting the startup sequence.
-  log::assert_that(get_module_state(module) == MODULE_STATE_INITIALIZED ||
-                       module->init == NULL,
+  log::assert_that(get_module_state(module) == MODULE_STATE_INITIALIZED || module->init == NULL,
                    "assert failed: get_module_state(module) == "
                    "MODULE_STATE_INITIALIZED || module->init == NULL");
 
@@ -103,16 +99,16 @@ bool module_start_up(const module_t* module) {
 void module_shut_down(const module_t* module) {
   log::assert_that(module != NULL, "assert failed: module != NULL");
   module_state_t state = get_module_state(module);
-  log::assert_that(state <= MODULE_STATE_STARTED,
-                   "assert failed: state <= MODULE_STATE_STARTED");
+  log::assert_that(state <= MODULE_STATE_STARTED, "assert failed: state <= MODULE_STATE_STARTED");
 
   // Only something to do if the module was actually started
-  if (state < MODULE_STATE_STARTED) return;
+  if (state < MODULE_STATE_STARTED) {
+    return;
+  }
 
   log::info("Shutting down module \"{}\"", module->name);
   if (!call_lifecycle_function(module->shut_down)) {
-    log::error("Failed to shutdown module \"{}\". Continuing anyway.",
-               module->name);
+    log::error("Failed to shutdown module \"{}\". Continuing anyway.", module->name);
   }
   log::info("Shutdown of module \"{}\" completed", module->name);
 
@@ -126,12 +122,13 @@ void module_clean_up(const module_t* module) {
                    "assert failed: state <= MODULE_STATE_INITIALIZED");
 
   // Only something to do if the module was actually initialized
-  if (state < MODULE_STATE_INITIALIZED) return;
+  if (state < MODULE_STATE_INITIALIZED) {
+    return;
+  }
 
   log::info("Cleaning up module \"{}\"", module->name);
   if (!call_lifecycle_function(module->clean_up)) {
-    log::error("Failed to cleanup module \"{}\". Continuing anyway.",
-               module->name);
+    log::error("Failed to cleanup module \"{}\". Continuing anyway.", module->name);
   }
   log::info("Cleanup of module \"{}\" completed", module->name);
 
@@ -140,12 +137,16 @@ void module_clean_up(const module_t* module) {
 
 static bool call_lifecycle_function(module_lifecycle_fn function) {
   // A NULL lifecycle function means it isn't needed, so assume success
-  if (!function) return true;
+  if (!function) {
+    return true;
+  }
 
   future_t* future = function();
 
   // A NULL future means synchronous success
-  if (!future) return true;
+  if (!future) {
+    return true;
+  }
 
   // Otherwise fall back to the future
   return future_await(future);
@@ -161,4 +162,10 @@ static module_state_t get_module_state(const module_t* module) {
 static void set_module_state(const module_t* module, module_state_t state) {
   std::lock_guard<std::mutex> lock(metadata_mutex);
   metadata[module] = state;
+}
+
+bool is_module_started(const module_t* module) {
+  std::lock_guard<std::mutex> lock(metadata_mutex);
+  auto map_ptr = metadata.find(module);
+  return map_ptr != metadata.end() && map_ptr->second == MODULE_STATE_STARTED;
 }

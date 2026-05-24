@@ -45,7 +45,7 @@ typedef enum {
 
 // Provide call-in APIs for the Bluetooth Audio HAL
 class HfpTransport {
- public:
+public:
   HfpTransport();
 
   BluetoothAudioCtrlAck StartRequest();
@@ -56,8 +56,7 @@ class HfpTransport {
 
   void SetLatencyMode(LatencyMode latency_mode);
 
-  bool GetPresentationPosition(uint64_t* remote_delay_report_ns,
-                               uint64_t* total_bytes_read,
+  bool GetPresentationPosition(uint64_t* remote_delay_report_ns, uint64_t* total_bytes_read,
                                timespec* data_position);
 
   void SourceMetadataChanged(const source_metadata_v7_t& source_metadata);
@@ -72,17 +71,22 @@ class HfpTransport {
 
   void LogBytesProcessed(size_t bytes_read);
 
-  static std::unordered_map<tBTA_AG_UUID_CODEC, ::hfp::sco_config>
-  GetHfpScoConfig(SessionType sessionType);
+  static std::unordered_map<tBTA_AG_UUID_CODEC, ::hfp::sco_config> GetHfpScoConfig(
+          SessionType sessionType);
 
- private:
+  bool IsStreamActive();
+
+  void SetStreamActive(bool active);
+
+private:
   tHFP_CTRL_CMD hfp_pending_cmd_;
+
+  bool is_stream_active;
 };
 
-// Sink transport implementation
-class HfpDecodingTransport
-    : public ::bluetooth::audio::aidl::IBluetoothSinkTransportInstance {
- public:
+// Source transport implementation
+class HfpDecodingTransport : public ::bluetooth::audio::aidl::IBluetoothSourceTransportInstance {
+public:
   HfpDecodingTransport(SessionType sessionType);
 
   ~HfpDecodingTransport();
@@ -95,51 +99,7 @@ class HfpDecodingTransport
 
   void SetLatencyMode(LatencyMode latency_mode);
 
-  bool GetPresentationPosition(uint64_t* remote_delay_report_ns,
-                               uint64_t* total_bytes_read,
-                               timespec* data_position);
-
-  void SourceMetadataChanged(const source_metadata_v7_t& source_metadata);
-
-  void SinkMetadataChanged(const sink_metadata_v7_t& sink_metadata);
-
-  void ResetPresentationPosition();
-
-  void LogBytesRead(size_t bytes_read) override;
-
-  uint8_t GetPendingCmd() const;
-
-  void ResetPendingCmd();
-
-  static inline HfpDecodingTransport* instance_ = nullptr;
-  static inline BluetoothAudioSinkClientInterface* software_hal_interface =
-      nullptr;
-  static inline BluetoothAudioSinkClientInterface* offloading_hal_interface =
-      nullptr;
-  static inline BluetoothAudioSinkClientInterface* active_hal_interface =
-      nullptr;
-
- private:
-  HfpTransport* transport_;
-};
-
-class HfpEncodingTransport
-    : public ::bluetooth::audio::aidl::IBluetoothSourceTransportInstance {
- public:
-  HfpEncodingTransport(SessionType sessionType);
-
-  ~HfpEncodingTransport();
-
-  BluetoothAudioCtrlAck StartRequest(bool is_low_latency);
-
-  BluetoothAudioCtrlAck SuspendRequest();
-
-  void StopRequest();
-
-  void SetLatencyMode(LatencyMode latency_mode);
-
-  bool GetPresentationPosition(uint64_t* remote_delay_report_ns,
-                               uint64_t* total_bytes_read,
+  bool GetPresentationPosition(uint64_t* remote_delay_report_ns, uint64_t* total_bytes_read,
                                timespec* data_position);
 
   void SourceMetadataChanged(const source_metadata_v7_t& source_metadata);
@@ -154,15 +114,54 @@ class HfpEncodingTransport
 
   void ResetPendingCmd();
 
-  static inline HfpEncodingTransport* instance_ = nullptr;
-  static inline BluetoothAudioSourceClientInterface* software_hal_interface =
-      nullptr;
-  static inline BluetoothAudioSourceClientInterface* offloading_hal_interface =
-      nullptr;
-  static inline BluetoothAudioSourceClientInterface* active_hal_interface =
-      nullptr;
+  bool IsStreamActive();
 
- private:
+  static inline HfpDecodingTransport* instance_ = nullptr;
+  static inline BluetoothAudioSourceClientInterface* software_hal_interface = nullptr;
+  static inline BluetoothAudioSourceClientInterface* offloading_hal_interface = nullptr;
+  static inline BluetoothAudioSourceClientInterface* active_hal_interface = nullptr;
+
+private:
+  HfpTransport* transport_;
+};
+
+class HfpEncodingTransport : public ::bluetooth::audio::aidl::IBluetoothSinkTransportInstance {
+public:
+  HfpEncodingTransport(SessionType sessionType);
+
+  ~HfpEncodingTransport();
+
+  BluetoothAudioCtrlAck StartRequest(bool is_low_latency);
+
+  BluetoothAudioCtrlAck SuspendRequest();
+
+  void StopRequest();
+
+  void SetLatencyMode(LatencyMode latency_mode);
+
+  bool GetPresentationPosition(uint64_t* remote_delay_report_ns, uint64_t* total_bytes_read,
+                               timespec* data_position);
+
+  void SourceMetadataChanged(const source_metadata_v7_t& source_metadata);
+
+  void SinkMetadataChanged(const sink_metadata_v7_t& sink_metadata);
+
+  void ResetPresentationPosition();
+
+  void LogBytesRead(size_t bytes_read) override;
+
+  uint8_t GetPendingCmd() const;
+
+  void ResetPendingCmd();
+
+  bool IsStreamActive();
+
+  static inline HfpEncodingTransport* instance_ = nullptr;
+  static inline BluetoothAudioSinkClientInterface* software_hal_interface = nullptr;
+  static inline BluetoothAudioSinkClientInterface* offloading_hal_interface = nullptr;
+  static inline BluetoothAudioSinkClientInterface* active_hal_interface = nullptr;
+
+private:
   HfpTransport* transport_;
 };
 
@@ -171,8 +170,8 @@ class HfpEncodingTransport
 }  // namespace audio
 }  // namespace bluetooth
 
-namespace fmt {
+namespace std {
 template <>
 struct formatter<bluetooth::audio::aidl::hfp::tHFP_CTRL_CMD>
     : enum_formatter<bluetooth::audio::aidl::hfp::tHFP_CTRL_CMD> {};
-}  // namespace fmt
+}  // namespace std

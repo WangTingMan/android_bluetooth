@@ -18,33 +18,36 @@
 
 #include <android_bluetooth_sysprop.h>
 #include <bluetooth/log.h>
-#include <com_android_bluetooth_flags.h>
+#include <bluetooth/types/address.h>
 #include <string.h>
-#if __has_include(<unistd.h>)
-#include <unistd.h>
-#endif
+
+#include <cctype>
+#include <cstdint>
+#include <cstdlib>
+#include <string>
 
 #include "bta/ag/bta_ag_int.h"
+#include "bta_ag_api.h"
 #include "common/strings.h"
-#include "stack/btm/btm_sco_hfp_hal.h"
+#include "hardware/bluetooth.h"
+#include "hardware/bt_hf.h"
+#include "osi/include/alarm.h"
 #include "stack/include/btm_api_types.h"
 
 using namespace bluetooth;
 
 bool is_hfp_aptx_voice_enabled() {
-  return com::android::bluetooth::flags::hfp_codec_aptx_voice() &&
-         android::sysprop::bluetooth::Hfp::codec_aptx_voice().value_or(false);
+  return android::sysprop::bluetooth::Hfp::codec_aptx_voice().value_or(false);
 }
 
 static bool aptx_swb_codec_status;
 
-static bool get_lc3_swb_codec_status(RawAddress* bd_addr) {
-  uint16_t p_scb_idx = bta_ag_idx_by_bdaddr(bd_addr);
+static bool get_lc3_swb_codec_status(RawAddress bd_addr) {
+  uint16_t p_scb_idx = bta_ag_idx_by_bdaddr(&bd_addr);
   tBTA_AG_SCB* p_scb = bta_ag_scb_by_idx(p_scb_idx);
   if (p_scb != NULL) {
-    return (hfp_hal_interface::get_swb_supported() &&
-            (p_scb->peer_codecs & BTM_SCO_CODEC_LC3) &&
-            !(p_scb->disabled_codecs & BTM_SCO_CODEC_LC3));
+    return bta_ag_get_swb_supported() && (p_scb->peer_codecs & BTM_SCO_CODEC_LC3) &&
+           !(p_scb->disabled_codecs & BTM_SCO_CODEC_LC3);
   }
   return false;
 }
@@ -56,8 +59,7 @@ static bool get_aptx_swb_codec_status() {
   return false;
 }
 
-bool get_swb_codec_status(bluetooth::headset::bthf_swb_codec_t swb_codec,
-                          RawAddress* bd_addr) {
+bool get_swb_codec_status(bluetooth::headset::bthf_swb_codec_t swb_codec, RawAddress bd_addr) {
   bool status = false;
   switch (swb_codec) {
     case bluetooth::headset::BTHF_SWB_CODEC_LC3:
@@ -75,9 +77,8 @@ bool get_swb_codec_status(bluetooth::headset::bthf_swb_codec_t swb_codec,
   return status;
 }
 
-bt_status_t enable_aptx_swb_codec(bool enable, RawAddress* bd_addr) {
-  if (is_hfp_aptx_voice_enabled() &&
-      (get_lc3_swb_codec_status(bd_addr) == false)) {
+bt_status_t enable_aptx_swb_codec(bool enable, RawAddress bd_addr) {
+  if (is_hfp_aptx_voice_enabled() && (!get_lc3_swb_codec_status(bd_addr))) {
     log::verbose("enable={}", enable);
     aptx_swb_codec_status = enable;
     return BT_STATUS_SUCCESS;
@@ -85,13 +86,12 @@ bt_status_t enable_aptx_swb_codec(bool enable, RawAddress* bd_addr) {
   return BT_STATUS_FAIL;
 }
 
-void bta_ag_swb_handle_vs_at_events(tBTA_AG_SCB* p_scb, uint16_t cmd,
-                                    int16_t int_arg, tBTA_AG_VAL* val) {
+void bta_ag_swb_handle_vs_at_events(tBTA_AG_SCB* p_scb, uint16_t cmd, int16_t int_arg,
+                                    tBTA_AG_VAL* val) {
   switch (cmd) {
     case BTA_AG_AT_QAC_EVT:
-      if (!get_swb_codec_status(bluetooth::headset::BTHF_SWB_CODEC_VENDOR_APTX,
-                                &p_scb->peer_addr)) {
-        bta_ag_send_qac(p_scb, NULL);
+      if (!get_swb_codec_status(bluetooth::headset::BTHF_SWB_CODEC_VENDOR_APTX, p_scb->peer_addr)) {
+        bta_ag_send_qac(p_scb);
         break;
       }
       log::verbose("BTA_AG_AT_QAC_EVT");
@@ -101,9 +101,8 @@ void bta_ag_swb_handle_vs_at_events(tBTA_AG_SCB* p_scb, uint16_t cmd,
       } else if (p_scb->peer_codecs & BTM_SCO_CODEC_MSBC) {
         p_scb->sco_codec = BTM_SCO_CODEC_MSBC;
       }
-      bta_ag_send_qac(p_scb, NULL);
-      log::verbose("Received AT+QAC, updating sco codec to SWB: {}",
-                   p_scb->sco_codec);
+      bta_ag_send_qac(p_scb);
+      log::verbose("Received AT+QAC, updating sco codec to SWB: {}", p_scb->sco_codec);
       val->num = p_scb->peer_codecs;
       break;
     case BTA_AG_AT_QCS_EVT: {
@@ -150,15 +149,14 @@ void bta_ag_swb_handle_vs_at_events(tBTA_AG_SCB* p_scb, uint16_t cmd,
 
 tBTA_AG_PEER_CODEC bta_ag_parse_qac(char* p_s) {
   tBTA_AG_PEER_CODEC retval = BTM_SCO_CODEC_NONE;
-  tBTA_AG_SCO_APTX_SWB_SETTINGS codec_mode =
-      BTA_AG_SCO_APTX_SWB_SETTINGS_UNKNOWN;
+  tBTA_AG_SCO_APTX_SWB_SETTINGS codec_mode = BTA_AG_SCO_APTX_SWB_SETTINGS_UNKNOWN;
 
-  auto codec_modes =
-      bluetooth::common::StringSplit(std::string(p_s), ",", SWB_CODECS_NUMBER);
+  auto codec_modes = bluetooth::common::StringSplit(std::string(p_s), ",", SWB_CODECS_NUMBER);
   for (auto& codec_mode_str : codec_modes) {
-    if (!std::isdigit(*codec_mode_str.c_str())) continue;
-    codec_mode = static_cast<tBTA_AG_SCO_APTX_SWB_SETTINGS>(
-        std::atoi(codec_mode_str.c_str()));
+    if (!std::isdigit(*codec_mode_str.c_str())) {
+      continue;
+    }
+    codec_mode = static_cast<tBTA_AG_SCO_APTX_SWB_SETTINGS>(std::atoi(codec_mode_str.c_str()));
     switch (codec_mode) {
       case BTA_AG_SCO_APTX_SWB_SETTINGS_Q0:
         retval |= BTA_AG_SCO_APTX_SWB_SETTINGS_Q0_MASK;
@@ -177,5 +175,5 @@ tBTA_AG_PEER_CODEC bta_ag_parse_qac(char* p_s) {
         break;
     }
   }
-  return (retval);
+  return retval;
 }

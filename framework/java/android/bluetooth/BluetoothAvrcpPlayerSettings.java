@@ -17,6 +17,7 @@
 package android.bluetooth;
 
 import android.annotation.NonNull;
+import android.annotation.RequiresNoPermission;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.util.Log;
@@ -30,7 +31,7 @@ import java.util.Map;
  * @hide
  */
 public final class BluetoothAvrcpPlayerSettings implements Parcelable {
-    public static final String TAG = "BluetoothAvrcpPlayerSettings";
+    private static final String TAG = BluetoothAvrcpPlayerSettings.class.getSimpleName();
 
     /** Equalizer setting. */
     public static final int SETTING_EQUALIZER = 0x01;
@@ -87,10 +88,10 @@ public final class BluetoothAvrcpPlayerSettings implements Parcelable {
     public static final int STATE_GROUP = 0x04;
 
     /** List of supported settings ORed. */
-    private int mSettings;
+    private final int mSettings;
 
     /** Hash map of current capability values. */
-    private Map<Integer, Integer> mSettingsValue = new HashMap<Integer, Integer>();
+    private final Map<Integer, Integer> mSettingsValue = new HashMap<Integer, Integer>();
 
     @Override
     public int describeContents() {
@@ -140,6 +141,7 @@ public final class BluetoothAvrcpPlayerSettings implements Parcelable {
      *
      * @return int ORed value of supported settings.
      */
+    @RequiresNoPermission
     public int getSettings() {
         return mSettings;
     }
@@ -153,6 +155,7 @@ public final class BluetoothAvrcpPlayerSettings implements Parcelable {
      * @param value value for the setting.
      * @throws IllegalStateException if the setting is not supported.
      */
+    @RequiresNoPermission
     public void addSettingValue(int setting, int value) {
         if ((setting & mSettings) == 0) {
             Log.e(TAG, "Setting not supported: " + setting + " " + mSettings);
@@ -170,6 +173,7 @@ public final class BluetoothAvrcpPlayerSettings implements Parcelable {
      * @return value value for the setting.
      * @throws IllegalStateException if the setting is not supported.
      */
+    @RequiresNoPermission
     public int getSettingValue(int setting) {
         if ((setting & mSettings) == 0) {
             Log.e(TAG, "Setting not supported: " + setting + " " + mSettings);

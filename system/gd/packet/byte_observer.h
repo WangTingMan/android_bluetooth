@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,14 +23,15 @@ namespace bluetooth {
 namespace packet {
 
 class ByteObserver {
- public:
-  ByteObserver(const std::function<void(uint8_t)>& on_byte_, const std::function<uint64_t()>& get_value_);
+public:
+  ByteObserver(const std::function<void(uint8_t)>& on_byte_,
+               const std::function<uint64_t()>& get_value_);
 
   void OnByte(uint8_t byte);
 
   uint64_t GetValue();
 
- private:
+private:
   std::function<void(uint8_t)> on_byte_;
   std::function<uint64_t()> get_value_;
 };

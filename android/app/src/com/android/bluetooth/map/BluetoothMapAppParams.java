@@ -12,6 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.map;
 
 import android.bluetooth.BluetoothProfile;
@@ -29,12 +30,12 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.Locale;
 
 /** This class encapsulates the appParams needed for MAP. */
 // Next tag value for ContentProfileErrorReportUtils.report(): 41
 public class BluetoothMapAppParams {
-
-    private static final String TAG = "BluetoothMapAppParams";
+    private static final String TAG = BluetoothMapAppParams.class.getSimpleName();
 
     private static final int MAX_LIST_COUNT = 0x01;
     private static final int START_OFFSET = 0x02;
@@ -61,7 +62,7 @@ public class BluetoothMapAppParams {
     private static final int STATUS_INDICATOR = 0x17;
     private static final int STATUS_VALUE = 0x18;
     private static final int MSE_TIME = 0x19;
-    private static final int DATABASE_INDETIFIER = 0x1A;
+    private static final int DATABASE_IDENTIFIER = 0x1A;
     private static final int CONVO_LIST_VER_COUNTER = 0x1B;
     private static final int PRESENCE_AVAILABLE = 0x1C;
     private static final int PRESENCE_TEXT = 0x1D;
@@ -98,7 +99,7 @@ public class BluetoothMapAppParams {
     private static final int FRACTION_DELIVER_LEN = 0x01; // , 0x0000, 0x0001),
     private static final int STATUS_INDICATOR_LEN = 0x01; // , 0x0000, 0x0001),
     private static final int STATUS_VALUE_LEN = 0x01; // , 0x0000, 0x0001),
-    private static final int DATABASE_INDETIFIER_LEN = 0x10;
+    private static final int DATABASE_IDENTIFIER_LEN = 0x10;
     private static final int CONVO_LIST_VER_COUNTER_LEN = 0x10;
     private static final int PRESENCE_AVAILABLE_LEN = 0X01;
     private static final int CHAT_STATE_LEN = 0x01;
@@ -189,14 +190,14 @@ public class BluetoothMapAppParams {
 
     /**
      * Creates an application parameter object based on a application parameter OBEX header. The
-     * content of the {@link appParam} byte array will be parsed, and its content will be stored in
+     * content of the {@code appParams} byte array will be parsed, and its content will be stored in
      * the member variables. {@link INVALID_VALUE_PARAMETER} can be used to determine if a value is
-     * set or not, where strings will be empty, if {@link appParam} did not contain the parameter.
+     * set or not, where strings will be empty, if {@code appParams} did not contain the parameter.
      *
      * @param appParams the byte array containing the application parameters OBEX header
      * @throws IllegalArgumentException when a parameter does not respect the valid ranges specified
      *     in the MAP spec.
-     * @throws ParseException if a parameter string if formated incorrectly.
+     * @throws ParseException if a parameter string if formatted incorrectly.
      */
     public BluetoothMapAppParams(final byte[] appParams)
             throws IllegalArgumentException, ParseException {
@@ -209,7 +210,7 @@ public class BluetoothMapAppParams {
      * @param appParams the byte array containing the application parameters OBEX header
      * @throws IllegalArgumentException when a parameter does not respect the valid ranges specified
      *     in the MAP spec.
-     * @throws ParseException if a parameter string if formated incorrectly.
+     * @throws ParseException if a parameter string if formatted incorrectly.
      */
     private void parseParams(final byte[] appParams)
             throws ParseException, IllegalArgumentException {
@@ -221,7 +222,7 @@ public class BluetoothMapAppParams {
             tagId = appParams[i++] & 0xff; // Convert to unsigned to support values above 127
             tagLength = appParams[i++] & 0xff; // Convert to unsigned to support values above 127
             switch (tagId) {
-                case MAX_LIST_COUNT:
+                case MAX_LIST_COUNT -> {
                     if (tagLength != MAX_LIST_COUNT_LEN) {
                         Log.w(
                                 TAG,
@@ -238,8 +239,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setMaxListCount(appParamBuf.getShort(i) & 0xffff); // Make it unsigned
                     }
-                    break;
-                case START_OFFSET:
+                }
+                case START_OFFSET -> {
                     if (tagLength != START_OFFSET_LEN) {
                         Log.w(
                                 TAG,
@@ -256,8 +257,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setStartOffset(appParamBuf.getShort(i) & 0xffff); // Make it unsigned
                     }
-                    break;
-                case FILTER_MESSAGE_TYPE:
+                }
+                case FILTER_MESSAGE_TYPE -> {
                     if (tagLength != FILTER_MESSAGE_TYPE_LEN) {
                         Log.w(
                                 TAG,
@@ -274,8 +275,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setFilterMessageType(appParams[i] & 0x1f);
                     }
-                    break;
-                case FILTER_PERIOD_BEGIN:
+                }
+                case FILTER_PERIOD_BEGIN -> {
                     if (tagLength != 0) {
                         setFilterPeriodBegin(new String(appParams, i, tagLength));
                     } else {
@@ -291,8 +292,8 @@ public class BluetoothMapAppParams {
                                         .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_WARN,
                                 3);
                     }
-                    break;
-                case FILTER_PERIOD_END:
+                }
+                case FILTER_PERIOD_END -> {
                     if (tagLength != 0) {
                         setFilterPeriodEnd(new String(appParams, i, tagLength));
                     } else {
@@ -308,8 +309,8 @@ public class BluetoothMapAppParams {
                                         .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_WARN,
                                 4);
                     }
-                    break;
-                case FILTER_READ_STATUS:
+                }
+                case FILTER_READ_STATUS -> {
                     if (tagLength != FILTER_READ_STATUS_LEN) {
                         Log.w(
                                 TAG,
@@ -326,8 +327,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setFilterReadStatus(appParams[i] & 0x03); // Lower two bits
                     }
-                    break;
-                case FILTER_RECIPIENT:
+                }
+                case FILTER_RECIPIENT -> {
                     if (tagLength != 0) {
                         setFilterRecipient(new String(appParams, i, tagLength));
                     } else {
@@ -343,8 +344,8 @@ public class BluetoothMapAppParams {
                                         .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_WARN,
                                 6);
                     }
-                    break;
-                case FILTER_ORIGINATOR:
+                }
+                case FILTER_ORIGINATOR -> {
                     if (tagLength != 0) {
                         setFilterOriginator(new String(appParams, i, tagLength));
                     } else {
@@ -360,8 +361,8 @@ public class BluetoothMapAppParams {
                                         .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_WARN,
                                 7);
                     }
-                    break;
-                case FILTER_PRIORITY:
+                }
+                case FILTER_PRIORITY -> {
                     if (tagLength != FILTER_PRIORITY_LEN) {
                         Log.w(
                                 TAG,
@@ -378,8 +379,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setFilterPriority(appParams[i] & 0x03); // Lower two bits
                     }
-                    break;
-                case ATTACHMENT:
+                }
+                case ATTACHMENT -> {
                     if (tagLength != ATTACHMENT_LEN) {
                         Log.w(
                                 TAG,
@@ -396,8 +397,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setAttachment(appParams[i] & 0x01); // Lower bit
                     }
-                    break;
-                case TRANSPARENT:
+                }
+                case TRANSPARENT -> {
                     if (tagLength != TRANSPARENT_LEN) {
                         Log.w(
                                 TAG,
@@ -414,8 +415,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setTransparent(appParams[i] & 0x01); // Lower bit
                     }
-                    break;
-                case RETRY:
+                }
+                case RETRY -> {
                     if (tagLength != RETRY_LEN) {
                         Log.w(
                                 TAG,
@@ -432,8 +433,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setRetry(appParams[i] & 0x01); // Lower bit
                     }
-                    break;
-                case NEW_MESSAGE:
+                }
+                case NEW_MESSAGE -> {
                     if (tagLength != NEW_MESSAGE_LEN) {
                         Log.w(
                                 TAG,
@@ -450,8 +451,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setNewMessage(appParams[i] & 0x01); // Lower bit
                     }
-                    break;
-                case NOTIFICATION_STATUS:
+                }
+                case NOTIFICATION_STATUS -> {
                     if (tagLength != NOTIFICATION_STATUS_LEN) {
                         Log.w(
                                 TAG,
@@ -468,8 +469,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setNotificationStatus(appParams[i] & 0x01); // Lower bit
                     }
-                    break;
-                case NOTIFICATION_FILTER:
+                }
+                case NOTIFICATION_FILTER -> {
                     if (tagLength != NOTIFICATION_FILTER_LEN) {
                         Log.w(
                                 TAG,
@@ -486,8 +487,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setNotificationFilter(appParamBuf.getInt(i) & 0xffffffffL); // 4 bytes
                     }
-                    break;
-                case MAS_INSTANCE_ID:
+                }
+                case MAS_INSTANCE_ID -> {
                     if (tagLength != MAS_INSTANCE_ID_LEN) {
                         Log.w(
                                 TAG,
@@ -504,8 +505,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setMasInstanceId(appParams[i] & 0xff);
                     }
-                    break;
-                case PARAMETER_MASK:
+                }
+                case PARAMETER_MASK -> {
                     if (tagLength != PARAMETER_MASK_LEN) {
                         Log.w(
                                 TAG,
@@ -522,8 +523,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setParameterMask(appParamBuf.getInt(i) & 0xffffffffL); // Make it unsigned
                     }
-                    break;
-                case FOLDER_LISTING_SIZE:
+                }
+                case FOLDER_LISTING_SIZE -> {
                     if (tagLength != FOLDER_LISTING_SIZE_LEN) {
                         Log.w(
                                 TAG,
@@ -540,8 +541,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setFolderListingSize(appParamBuf.getShort(i) & 0xffff); // Make it unsigned
                     }
-                    break;
-                case MESSAGE_LISTING_SIZE:
+                }
+                case MESSAGE_LISTING_SIZE -> {
                     if (tagLength != MESSAGE_LISTING_SIZE_LEN) {
                         Log.w(
                                 TAG,
@@ -558,8 +559,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setMessageListingSize(appParamBuf.getShort(i) & 0xffff); // Make it unsigned
                     }
-                    break;
-                case SUBJECT_LENGTH:
+                }
+                case SUBJECT_LENGTH -> {
                     if (tagLength != SUBJECT_LENGTH_LEN) {
                         Log.w(
                                 TAG,
@@ -576,8 +577,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setSubjectLength(appParams[i] & 0xff);
                     }
-                    break;
-                case CHARSET:
+                }
+                case CHARSET -> {
                     if (tagLength != CHARSET_LEN) {
                         Log.w(
                                 TAG,
@@ -594,8 +595,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setCharset(appParams[i] & 0x01); // Lower bit
                     }
-                    break;
-                case FRACTION_REQUEST:
+                }
+                case FRACTION_REQUEST -> {
                     if (tagLength != FRACTION_REQUEST_LEN) {
                         Log.w(
                                 TAG,
@@ -612,8 +613,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setFractionRequest(appParams[i] & 0x01); // Lower bit
                     }
-                    break;
-                case FRACTION_DELIVER:
+                }
+                case FRACTION_DELIVER -> {
                     if (tagLength != FRACTION_DELIVER_LEN) {
                         Log.w(
                                 TAG,
@@ -630,8 +631,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setFractionDeliver(appParams[i] & 0x01); // Lower bit
                     }
-                    break;
-                case STATUS_INDICATOR:
+                }
+                case STATUS_INDICATOR -> {
                     if (tagLength != STATUS_INDICATOR_LEN) {
                         Log.w(
                                 TAG,
@@ -648,8 +649,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setStatusIndicator(appParams[i] & 0x01); // Lower bit
                     }
-                    break;
-                case STATUS_VALUE:
+                }
+                case STATUS_VALUE -> {
                     if (tagLength != STATUS_VALUE_LEN) {
                         Log.w(
                                 TAG,
@@ -666,18 +667,16 @@ public class BluetoothMapAppParams {
                     } else {
                         setStatusValue(appParams[i] & 0x01); // Lower bit
                     }
-                    break;
-                case MSE_TIME:
-                    setMseTime(new String(appParams, i, tagLength));
-                    break;
-                case DATABASE_INDETIFIER:
-                    if ((tagLength != DATABASE_INDETIFIER_LEN)) {
+                }
+                case MSE_TIME -> setMseTime(new String(appParams, i, tagLength));
+                case DATABASE_IDENTIFIER -> {
+                    if ((tagLength != DATABASE_IDENTIFIER_LEN)) {
                         Log.w(
                                 TAG,
                                 "DATABASE_IDENTIFIER: Wrong length received: "
                                         + tagLength
                                         + " expected: "
-                                        + DATABASE_INDETIFIER_LEN);
+                                        + DATABASE_IDENTIFIER_LEN);
                         ContentProfileErrorReportUtils.report(
                                 BluetoothProfile.MAP,
                                 BluetoothProtoEnums.BLUETOOTH_MAP_APP_PARAMS,
@@ -688,8 +687,8 @@ public class BluetoothMapAppParams {
                         setDatabaseIdentifier(
                                 appParamBuf.getLong(i) /*MSB*/, appParamBuf.getLong(i + 8) /*LSB*/);
                     }
-                    break;
-                case CONVO_LIST_VER_COUNTER:
+                }
+                case CONVO_LIST_VER_COUNTER -> {
                     if ((tagLength != CONVO_LIST_VER_COUNTER_LEN)) {
                         Log.w(
                                 TAG,
@@ -707,8 +706,8 @@ public class BluetoothMapAppParams {
                         setConvoListingVerCounter(
                                 appParamBuf.getLong(i) /*MSB*/, appParamBuf.getLong(i + 8) /*LSB*/);
                     }
-                    break;
-                case PRESENCE_AVAILABLE:
+                }
+                case PRESENCE_AVAILABLE -> {
                     if ((tagLength != PRESENCE_AVAILABLE_LEN)) {
                         Log.w(
                                 TAG,
@@ -725,8 +724,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setPresenceAvailability(appParams[i]);
                     }
-                    break;
-                case PRESENCE_TEXT:
+                }
+                case PRESENCE_TEXT -> {
                     if (tagLength != 0) {
                         setPresenceStatus(new String(appParams, i, tagLength));
                     } else {
@@ -742,8 +741,8 @@ public class BluetoothMapAppParams {
                                         .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_WARN,
                                 28);
                     }
-                    break;
-                case LAST_ACTIVITY:
+                }
+                case LAST_ACTIVITY -> {
                     if (tagLength != 0) {
                         setLastActivity(new String(appParams, i, tagLength));
                     } else {
@@ -759,8 +758,8 @@ public class BluetoothMapAppParams {
                                         .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_WARN,
                                 29);
                     }
-                    break;
-                case CHAT_STATE:
+                }
+                case CHAT_STATE -> {
                     if ((tagLength != CHAT_STATE_LEN)) {
                         Log.w(
                                 TAG,
@@ -777,8 +776,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setChatState(appParams[i]);
                     }
-                    break;
-                case FILTER_CONVO_ID:
+                }
+                case FILTER_CONVO_ID -> {
                     if ((tagLength != 0) && (tagLength <= FILTER_CONVO_ID_LEN)) {
                         setFilterConvoId(new String(appParams, i, tagLength));
                     } else {
@@ -795,8 +794,8 @@ public class BluetoothMapAppParams {
                                         .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_WARN,
                                 31);
                     }
-                    break;
-                case CONVO_LISTING_SIZE:
+                }
+                case CONVO_LISTING_SIZE -> {
                     if (tagLength != CONVO_LISTING_SIZE_LEN) {
                         Log.w(
                                 TAG,
@@ -813,8 +812,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setConvoListingSize(appParamBuf.getShort(i) & 0xffff);
                     }
-                    break;
-                case FILTER_PRESENCE:
+                }
+                case FILTER_PRESENCE -> {
                     if ((tagLength != FILTER_PRESENCE_LEN)) {
                         Log.w(
                                 TAG,
@@ -831,8 +830,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setFilterPresence(appParams[i]);
                     }
-                    break;
-                case FILTER_UID_PRESENT:
+                }
+                case FILTER_UID_PRESENT -> {
                     if ((tagLength != FILTER_UID_PRESENT_LEN)) {
                         Log.w(
                                 TAG,
@@ -849,8 +848,8 @@ public class BluetoothMapAppParams {
                     } else {
                         setFilterUidPresent(appParams[i] & 0x1);
                     }
-                    break;
-                case CHAT_STATE_CONVO_ID:
+                }
+                case CHAT_STATE_CONVO_ID -> {
                     if ((tagLength != CHAT_STATE_CONVO_ID_LEN)) {
                         Log.w(
                                 TAG,
@@ -877,10 +876,9 @@ public class BluetoothMapAppParams {
                                         + BluetoothMapUtils.getLongAsString(
                                                 appParamBuf.getLong(i + 8)));
                     }
-                    break;
-                case FOLDER_VER_COUNTER:
-                    break;
-                case FILTER_MESSAGE_HANDLE:
+                }
+                case FOLDER_VER_COUNTER -> {}
+                case FILTER_MESSAGE_HANDLE -> {
                     if ((tagLength != 0 && tagLength <= FILTER_MESSAGE_HANDLE_LEN)) {
                         setFilterMsgHandle(new String(appParams, i, tagLength));
                     } else {
@@ -897,9 +895,8 @@ public class BluetoothMapAppParams {
                                         .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_WARN,
                                 36);
                     }
-
-                    break;
-                case CONVO_PARAMETER_MASK:
+                }
+                case CONVO_PARAMETER_MASK -> {
                     if (tagLength != CONVO_PARAMETER_MASK_LEN) {
                         Log.w(
                                 TAG,
@@ -917,8 +914,8 @@ public class BluetoothMapAppParams {
                         setConvoParameterMask(
                                 appParamBuf.getInt(i) & 0xffffffffL); // Make it unsigned
                     }
-                    break;
-                default:
+                }
+                default -> {
                     // Just skip unknown Tags, no need to report error
                     Log.w(
                             TAG,
@@ -931,7 +928,7 @@ public class BluetoothMapAppParams {
                             BluetoothStatsLog
                                     .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__LOG_WARN,
                             38);
-                    break;
+                }
             }
             i += tagLength; // Offset to next TagId
         }
@@ -1106,8 +1103,8 @@ public class BluetoothMapAppParams {
         }
         // Note: New for IM
         if (getDatabaseIdentifier() != null) {
-            appParamBuf.put((byte) DATABASE_INDETIFIER);
-            appParamBuf.put((byte) DATABASE_INDETIFIER_LEN);
+            appParamBuf.put((byte) DATABASE_IDENTIFIER);
+            appParamBuf.put((byte) DATABASE_IDENTIFIER_LEN);
             appParamBuf.put(getDatabaseIdentifier());
         }
         if (getConvoListingVerCounter() != null) {
@@ -1138,8 +1135,8 @@ public class BluetoothMapAppParams {
         if (getFilterConvoId() != null) {
             appParamBuf.put((byte) FILTER_CONVO_ID);
             appParamBuf.put((byte) FILTER_CONVO_ID_LEN);
-            appParamBuf.putLong(getFilterConvoId().getMostSignificantBits());
-            appParamBuf.putLong(getFilterConvoId().getLeastSignificantBits());
+            appParamBuf.putLong(getFilterConvoId().mostSignificantBits());
+            appParamBuf.putLong(getFilterConvoId().leastSignificantBits());
         }
         if (getConvoListingSize() != INVALID_VALUE_PARAMETER) {
             appParamBuf.put((byte) CONVO_LISTING_SIZE);
@@ -1159,8 +1156,8 @@ public class BluetoothMapAppParams {
         if (getChatStateConvoId() != null) {
             appParamBuf.put((byte) CHAT_STATE_CONVO_ID);
             appParamBuf.put((byte) CHAT_STATE_CONVO_ID_LEN);
-            appParamBuf.putLong(getChatStateConvoId().getMostSignificantBits());
-            appParamBuf.putLong(getChatStateConvoId().getLeastSignificantBits());
+            appParamBuf.putLong(getChatStateConvoId().mostSignificantBits());
+            appParamBuf.putLong(getChatStateConvoId().leastSignificantBits());
         }
         if (getFolderVerCounter() != null) {
             appParamBuf.put((byte) FOLDER_VER_COUNTER);
@@ -1224,8 +1221,9 @@ public class BluetoothMapAppParams {
         return mFilterPeriodBegin;
     }
 
+    @SuppressWarnings("JavaUtilDate") // TODO: b/365629730 -- prefer Instant or LocalDate
     public String getFilterPeriodBeginString() {
-        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss");
+        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss", Locale.ROOT);
         Date date = new Date(mFilterPeriodBegin);
         return format.format(date); // Format to YYYYMMDDTHHMMSS local time
     }
@@ -1234,8 +1232,9 @@ public class BluetoothMapAppParams {
         this.mFilterPeriodBegin = filterPeriodBegin;
     }
 
+    @SuppressWarnings("JavaUtilDate") // TODO: b/365629730 -- prefer Instant or LocalDate
     public void setFilterPeriodBegin(String filterPeriodBegin) throws ParseException {
-        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss");
+        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss", Locale.ROOT);
         Date date = format.parse(filterPeriodBegin);
         this.mFilterPeriodBegin = date.getTime();
     }
@@ -1244,8 +1243,9 @@ public class BluetoothMapAppParams {
         return mFilterPeriodBegin;
     }
 
+    @SuppressWarnings("JavaUtilDate") // TODO: b/365629730 -- prefer Instant or LocalDate
     public String getFilterLastActivityBeginString() {
-        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss");
+        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss", Locale.ROOT);
         Date date = new Date(mFilterPeriodBegin);
         return format.format(date); // Format to YYYYMMDDTHHMMSS local time
     }
@@ -1254,8 +1254,9 @@ public class BluetoothMapAppParams {
         this.mFilterPeriodBegin = filterPeriodBegin;
     }
 
+    @SuppressWarnings("JavaUtilDate") // TODO: b/365629730 -- prefer Instant or LocalDate
     public void setFilterLastActivityBegin(String filterPeriodBegin) throws ParseException {
-        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss");
+        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss", Locale.ROOT);
         Date date = format.parse(filterPeriodBegin);
         this.mFilterPeriodBegin = date.getTime();
     }
@@ -1268,8 +1269,9 @@ public class BluetoothMapAppParams {
         return mFilterPeriodEnd;
     }
 
+    @SuppressWarnings("JavaUtilDate") // TODO: b/365629730 -- prefer Instant or LocalDate
     public String getFilterLastActivityEndString() {
-        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss");
+        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss", Locale.ROOT);
         Date date = new Date(mFilterPeriodEnd);
         return format.format(date); // Format to YYYYMMDDTHHMMSS local time
     }
@@ -1278,14 +1280,16 @@ public class BluetoothMapAppParams {
         this.mFilterPeriodEnd = filterPeriodEnd; // er reuse the same
     }
 
+    @SuppressWarnings("JavaUtilDate") // TODO: b/365629730 -- prefer Instant or LocalDate
     public void setFilterPeriodEnd(String filterPeriodEnd) throws ParseException {
-        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss");
+        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss", Locale.ROOT);
         Date date = format.parse(filterPeriodEnd);
         this.mFilterPeriodEnd = date.getTime();
     }
 
+    @SuppressWarnings("JavaUtilDate") // TODO: b/365629730 -- prefer Instant or LocalDate
     public String getFilterPeriodEndString() {
-        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss");
+        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss", Locale.ROOT);
         Date date = new Date(mFilterPeriodEnd);
         return format.format(date); // Format to YYYYMMDDTHHMMSS local time
     }
@@ -1294,8 +1298,9 @@ public class BluetoothMapAppParams {
         this.mFilterPeriodEnd = filterPeriodEnd;
     }
 
+    @SuppressWarnings("JavaUtilDate") // TODO: b/365629730 -- prefer Instant or LocalDate
     public void setFilterLastActivityEnd(String filterPeriodEnd) throws ParseException {
-        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss");
+        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss", Locale.ROOT);
         Date date = format.parse(filterPeriodEnd);
         this.mFilterPeriodEnd = date.getTime();
     }
@@ -1396,8 +1401,8 @@ public class BluetoothMapAppParams {
     public byte[] getChatStateConvoIdByteArray() {
         if (mChatStateConvoId != null) {
             ByteBuffer ret = ByteBuffer.allocate(16);
-            ret.putLong(mChatStateConvoId.getMostSignificantBits());
-            ret.putLong(mChatStateConvoId.getLeastSignificantBits());
+            ret.putLong(mChatStateConvoId.mostSignificantBits());
+            ret.putLong(mChatStateConvoId.leastSignificantBits());
             return ret.array();
         } else {
             return null;
@@ -1465,7 +1470,7 @@ public class BluetoothMapAppParams {
     public String getFilterConvoIdString() {
         String str = null;
         if (mFilterConvoId != null) {
-            str = BluetoothMapUtils.getLongAsString(mFilterConvoId.getLeastSignificantBits());
+            str = BluetoothMapUtils.getLongAsString(mFilterConvoId.leastSignificantBits());
         }
         return str;
     }
@@ -1498,8 +1503,9 @@ public class BluetoothMapAppParams {
         return this.mLastActivity;
     }
 
+    @SuppressWarnings("JavaUtilDate") // TODO: b/365629730 -- prefer Instant or LocalDate
     public String getLastActivityString() {
-        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmssZ");
+        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmssZ", Locale.ROOT);
         Date date = new Date(mLastActivity);
         return format.format(date); // Format to YYYYMMDDTHHMMSS local time
     }
@@ -1508,8 +1514,9 @@ public class BluetoothMapAppParams {
         this.mLastActivity = last;
     }
 
+    @SuppressWarnings("JavaUtilDate") // TODO: b/365629730 -- prefer Instant or LocalDate
     public void setLastActivity(String lastActivity) throws ParseException {
-        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmssZ");
+        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmssZ", Locale.ROOT);
         Date date = format.parse(lastActivity);
         this.mLastActivity = date.getTime();
     }
@@ -1744,8 +1751,9 @@ public class BluetoothMapAppParams {
         return mMseTime;
     }
 
+    @SuppressWarnings("JavaUtilDate") // TODO: b/365629730 -- prefer Instant or LocalDate
     public String getMseTimeString() {
-        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmssZ");
+        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmssZ", Locale.ROOT);
         Date date = new Date(getMseTime());
         return format.format(date); // Format to YYYYMMDDTHHMMSS±hhmm UTC time ± offset
     }
@@ -1754,8 +1762,9 @@ public class BluetoothMapAppParams {
         this.mMseTime = mseTime;
     }
 
+    @SuppressWarnings("JavaUtilDate") // TODO: b/365629730 -- prefer Instant or LocalDate
     public void setMseTime(String mseTime) throws ParseException {
-        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmssZ");
+        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmssZ", Locale.ROOT);
         Date date = format.parse(mseTime);
         this.mMseTime = date.getTime();
     }

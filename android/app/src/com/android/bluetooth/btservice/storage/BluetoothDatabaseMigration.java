@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,10 @@
 
 package com.android.bluetooth.btservice.storage;
 
+import static android.bluetooth.BluetoothProfile.CONNECTION_POLICY_ALLOWED;
+import static android.bluetooth.BluetoothProfile.CONNECTION_POLICY_FORBIDDEN;
+import static android.bluetooth.BluetoothProfile.CONNECTION_POLICY_UNKNOWN;
+
 import android.bluetooth.BluetoothA2dp;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothProfile;
@@ -31,7 +35,9 @@ import java.util.List;
 
 /** Class for regrouping the migration that occur when going mainline */
 public final class BluetoothDatabaseMigration {
-    private static final String TAG = "BluetoothDatabaseMigration";
+    private static final String TAG = BluetoothDatabaseMigration.class.getSimpleName();
+
+    private BluetoothDatabaseMigration() {}
 
     public static boolean run(Context ctx, Cursor cursor) {
         boolean result = true;
@@ -46,7 +52,6 @@ public final class BluetoothDatabaseMigration {
 
                 Metadata metadata = new Metadata(primaryKey);
 
-                metadata.migrated = fetchInt(cursor, "migrated") > 0;
                 migrate_a2dpSupportsOptionalCodecs(cursor, logKey, metadata);
                 migrate_a2dpOptionalCodecsEnabled(cursor, logKey, metadata);
                 metadata.last_active_time = fetchInt(cursor, "last_active_time");
@@ -187,9 +192,9 @@ public final class BluetoothDatabaseMigration {
         final List<Integer> allowedValue =
                 new ArrayList<>(
                         Arrays.asList(
-                                BluetoothProfile.CONNECTION_POLICY_UNKNOWN,
-                                BluetoothProfile.CONNECTION_POLICY_FORBIDDEN,
-                                BluetoothProfile.CONNECTION_POLICY_ALLOWED));
+                                CONNECTION_POLICY_UNKNOWN,
+                                CONNECTION_POLICY_FORBIDDEN,
+                                CONNECTION_POLICY_ALLOWED));
         for (Pair<Integer, String> p : CONNECTION_POLICIES) {
             final int policy = cursor.getInt(cursor.getColumnIndexOrThrow(p.second));
             if (allowedValue.contains(policy)) {

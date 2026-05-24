@@ -5,7 +5,8 @@
 //! set. If the MTU is pending, ATT notifications/indications may not be sent.
 //! Refer to Core Spec 5.3 Vol 3F 3.4.2 MTU exchange for full details.
 
-use std::{cell::Cell, future::Future};
+use std::cell::Cell;
+use std::future::Future;
 
 use anyhow::{bail, Result};
 use log::info;
@@ -247,5 +248,18 @@ mod test {
             // assert: that the snapshot resolves to None since the bearer is gone
             assert!(pending_mtu.await.is_none());
         });
+    }
+
+    #[test]
+    fn test_double_outgoing_request_fails() {
+        let mtu = AttMtu::new();
+        mtu.handle_event(MtuEvent::OutgoingRequest).unwrap();
+        assert!(mtu.handle_event(MtuEvent::OutgoingRequest).is_err());
+    }
+
+    #[test]
+    fn test_unsolicited_incoming_response_fails() {
+        let mtu = AttMtu::new();
+        assert!(mtu.handle_event(MtuEvent::IncomingResponse(NEW_MTU)).is_err());
     }
 }

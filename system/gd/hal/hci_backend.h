@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 The Android Open Source Project
+ * Copyright (C) 2024 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@
 namespace bluetooth::hal {
 
 class HciBackendCallbacks {
- public:
+public:
   virtual ~HciBackendCallbacks() = default;
   virtual void initializationComplete(void) = 0;
   virtual void hciEventReceived(const std::vector<uint8_t>&) = 0;
@@ -39,8 +39,9 @@ class HciBackendCallbacks {
 };
 
 class HciBackend {
- public:
+public:
   static std::shared_ptr<HciBackend> CreateAidl();
+  static std::shared_ptr<HciBackend> CreateAidl(const std::string& hci_instance_name);
   static std::shared_ptr<HciBackend> CreateHidl(::bluetooth::os::Handler*);
 
   virtual ~HciBackend() = default;

@@ -20,6 +20,7 @@
 
 #include <base/functional/callback_forward.h>
 #include <bluetooth/log.h>
+#include <bluetooth/types/address.h>
 #include <hardware/bt_hearing_aid.h>
 
 #include <cstdint>
@@ -27,8 +28,10 @@
 #include <functional>
 #include <vector>
 
+#include "stack/include/btm_ble_api_types.h"
 #include "stack/include/gap_api.h"
-#include "types/raw_address.h"
+
+namespace bluetooth::asha {
 
 constexpr uint16_t HA_INTERVAL_10_MS = 10;
 constexpr uint16_t HA_INTERVAL_20_MS = 20;
@@ -44,7 +47,7 @@ const static uint8_t kPhyUpdateRetryLimit = 5;
 
 /** Implementations of HearingAid will also implement this interface */
 class HearingAidAudioReceiver {
- public:
+public:
   virtual ~HearingAidAudioReceiver() = default;
   virtual void OnAudioDataReady(const std::vector<uint8_t>& data) = 0;
 
@@ -53,16 +56,14 @@ class HearingAidAudioReceiver {
   //
   // @param stop_audio_ticks a callable function calls out to stop the media
   // timer for reading data.
-  virtual void OnAudioSuspend(
-      const std::function<void()>& stop_audio_ticks) = 0;
+  virtual void OnAudioSuspend(const std::function<void()>& stop_audio_ticks) = 0;
 
   // To notify hearing aid devices to be ready for streaming, and start the
   // media timer to feed the audio data.
   //
   // @param start_audio_ticks a callable function calls out to start a periodic
   // timer for feeding data from the audio HAL.
-  virtual void OnAudioResume(
-      const std::function<void()>& start_audio_ticks) = 0;
+  virtual void OnAudioResume(const std::function<void()>& start_audio_ticks) = 0;
 };
 
 // Number of rssi reads to attempt when requested
@@ -107,19 +108,18 @@ typedef enum {
 
 struct HearingDevice {
   RawAddress address;
-  /* This is true only during first connection to profile, until we store the
-   * device */
+  /*TODO: rename to stale_storage after continue_queued_command_after_discovery is released*/
   bool first_connection;
   bool service_changed_rcvd;
 
   /* we are making active attempt to connect to this device, 'direct connect'.
    */
-  bool connecting_actively;
+  bool connecting_actively = false;
 
   bool switch_to_background_connection_after_failure;
 
   /* For two hearing aids, you must update their parameters one after another,
-   * not simulteanously, to ensure start of connection events for both devices
+   * not simultaneously, to ensure start of connection events for both devices
    * are far from each other. This status tracks whether this device is waiting
    * for update of parameters, that should happen after "LE Connection Update
    * Complete" event
@@ -133,14 +133,14 @@ struct HearingDevice {
    */
   bool accepting_audio;
 
-  uint16_t conn_id;
+  tCONN_ID conn_id;
   uint16_t gap_handle;
-  uint16_t audio_control_point_handle;
-  uint16_t audio_status_handle;
-  uint16_t audio_status_ccc_handle;
-  uint16_t service_changed_ccc_handle;
-  uint16_t volume_handle;
-  uint16_t read_psm_handle;
+  uint16_t audio_control_point_handle = 0;
+  uint16_t audio_status_handle = 0;
+  uint16_t audio_status_ccc_handle = 0;
+  uint16_t service_changed_ccc_handle = 0;
+  uint16_t volume_handle = 0;
+  uint16_t read_psm_handle = 0;
 
   uint8_t capabilities;
   uint64_t hi_sync_id;
@@ -167,15 +167,18 @@ struct HearingDevice {
 
   int phy_update_retry_remain;
 
+  /*TODO: remove characteristic handles after continue_queued_command_after_discovery is released */
   HearingDevice(const RawAddress& address, uint8_t capabilities, uint16_t codecs,
                 uint16_t audio_control_point_handle, uint16_t audio_status_handle,
                 uint16_t audio_status_ccc_handle, uint16_t service_changed_ccc_handle,
                 uint16_t volume_handle, uint16_t read_psm_handle, uint64_t hiSyncId,
                 uint16_t render_delay, uint16_t preparation_delay)
       : address(address),
-        first_connection(false),
+        first_connection(
+                false),  // TODO: remove after continue_queued_command_after_discovery is released
         service_changed_rcvd(false),
-        connecting_actively(false),
+        connecting_actively(
+                false),  // TODO: remove after continue_queued_command_after_discovery is released
         switch_to_background_connection_after_failure(false),
         connection_update_status(NONE),
         accepting_audio(false),
@@ -198,6 +201,7 @@ struct HearingDevice {
         gap_opened(false),
         phy_update_retry_remain(kPhyUpdateRetryLimit) {}
 
+  // TODO: remove first_connection after continue_queued_command_after_discovery is released
   HearingDevice(const RawAddress& address, bool first_connection)
       : address(address),
         first_connection(first_connection),
@@ -208,6 +212,7 @@ struct HearingDevice {
         accepting_audio(false),
         conn_id(0),
         gap_handle(GAP_INVALID_HANDLE),
+        /* TODO: remove handles after continue_queued_command_after_discovery is released */
         audio_status_handle(0),
         audio_status_ccc_handle(0),
         service_changed_ccc_handle(0),
@@ -231,17 +236,15 @@ struct HearingDevice {
 };
 
 class HearingAid {
- public:
+public:
   virtual ~HearingAid() = default;
 
-  static void Initialize(bluetooth::hearing_aid::HearingAidCallbacks* callbacks,
-                         base::Closure initCb);
+  static void Initialize(bluetooth::asha::HearingAidCallbacks* callbacks, base::Closure initCb);
   static void CleanUp();
   static bool IsHearingAidRunning();
   static void DebugDump(int fd);
 
-  static void AddFromStorage(const HearingDevice& dev_info,
-                             bool is_acceptlisted);
+  static void AddFromStorage(const HearingDevice& dev_info, bool is_acceptlisted);
 
   static int GetDeviceCount();
 
@@ -267,7 +270,7 @@ struct CodecConfiguration {
    * should match how often we grab data from audio source, optionally we can
    * grab data every 2 or 3 intervals, but this would increase latency.
    *
-   * Value is provided in ms, must be divisable by 1.25 to make sure the
+   * Value is provided in ms, must be divisible by 1.25 to make sure the
    * connection interval is integer.
    */
   uint16_t data_interval_ms;
@@ -275,18 +278,19 @@ struct CodecConfiguration {
 
 /** Represents source of audio for hearing aids */
 class HearingAidAudioSource {
- public:
+public:
   static void Start(const CodecConfiguration& codecConfiguration,
-                    HearingAidAudioReceiver* audioReceiver,
-                    uint16_t remote_delay_ms);
+                    HearingAidAudioReceiver* audioReceiver, uint16_t remote_delay_ms);
   static void Stop();
   static void Initialize();
   static void CleanUp();
   static void DebugDump(int fd);
 };
 
-namespace fmt {
+}  // namespace bluetooth::asha
+
+namespace std {
 template <>
-struct formatter<connection_update_status_t>
-    : enum_formatter<connection_update_status_t> {};
-}  // namespace fmt
+struct formatter<bluetooth::asha::connection_update_status_t>
+    : enum_formatter<bluetooth::asha::connection_update_status_t> {};
+}  // namespace std

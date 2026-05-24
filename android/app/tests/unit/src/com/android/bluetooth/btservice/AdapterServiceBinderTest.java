@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,52 +19,50 @@ package com.android.bluetooth.btservice;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.IBluetoothActivityEnergyInfoListener;
 import android.bluetooth.IBluetoothOobDataCallback;
 import android.content.AttributionSource;
 import android.os.ParcelUuid;
+import android.os.RemoteException;
 
-import org.junit.After;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.filters.SmallTest;
+
+import com.android.tests.bluetooth.MockitoRule;
+
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.Mockito;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
 import java.io.FileDescriptor;
 
+/** Test cases for {@link AdapterServiceBinder}. */
+@SmallTest
+@RunWith(AndroidJUnit4.class)
 public class AdapterServiceBinderTest {
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
 
+    @Mock private AttributionSource mAttributionSource;
     @Mock private AdapterService mService;
     @Mock private AdapterProperties mAdapterProperties;
 
-    private AdapterService.AdapterServiceBinder mBinder;
-    private AttributionSource mAttributionSource;
+    private AdapterServiceBinder mBinder;
 
     @Before
     public void setUp() {
-        mService.mAdapterProperties = mAdapterProperties;
+        when(mService.getAdapterProperties()).thenReturn(mAdapterProperties);
         doReturn(true).when(mService).isAvailable();
         doNothing().when(mService).enforceCallingOrSelfPermission(any(), any());
-        mBinder = new AdapterService.AdapterServiceBinder(mService);
-        mAttributionSource = new AttributionSource.Builder(0).build();
-    }
-
-    @After
-    public void cleanUp() {
-        mBinder.cleanup();
-    }
-
-    @Test
-    public void getAddress() {
-        mBinder.getAddress(mAttributionSource);
-        verify(mService.mAdapterProperties).getAddress();
+        mBinder = new AdapterServiceBinder(mService);
     }
 
     @Test
@@ -73,10 +71,16 @@ public class AdapterServiceBinderTest {
         String[] args = new String[] {};
         mBinder.dump(fd, args);
         verify(mService).dump(any(), any(), any());
+    }
 
-        Mockito.clearInvocations(mService);
-        mBinder.cleanup();
+    @Test
+    public void dumpWhenNotAvailable() {
+        FileDescriptor fd = new FileDescriptor();
+        String[] args = new String[] {};
+        doReturn(false).when(mService).isAvailable();
+
         mBinder.dump(fd, args);
+
         verify(mService, never()).dump(any(), any(), any());
     }
 
@@ -86,11 +90,18 @@ public class AdapterServiceBinderTest {
         IBluetoothOobDataCallback cb = Mockito.mock(IBluetoothOobDataCallback.class);
 
         mBinder.generateLocalOobData(transport, cb, mAttributionSource);
-        verify(mService).generateLocalOobData(transport, cb);
 
-        Mockito.clearInvocations(mService);
-        mBinder.cleanup();
+        verify(mService).generateLocalOobData(transport, cb);
+    }
+
+    @Test
+    public void generateLocalOobDataWhenNotAvailable() {
+        int transport = 0;
+        IBluetoothOobDataCallback cb = Mockito.mock(IBluetoothOobDataCallback.class);
+        doReturn(false).when(mService).isAvailable();
+
         mBinder.generateLocalOobData(transport, cb, mAttributionSource);
+
         verify(mService, never()).generateLocalOobData(transport, cb);
     }
 
@@ -109,7 +120,7 @@ public class AdapterServiceBinderTest {
     @Test
     public void isActivityAndEnergyReportingSupported() {
         mBinder.isActivityAndEnergyReportingSupported();
-        verify(mService.mAdapterProperties).isActivityAndEnergyReportingSupported();
+        verify(mAdapterProperties).isActivityAndEnergyReportingSupported();
     }
 
     @Test
@@ -138,9 +149,11 @@ public class AdapterServiceBinderTest {
     }
 
     @Test
-    public void reportActivityInfo() {
-        mBinder.reportActivityInfo(mAttributionSource);
-        verify(mService).reportActivityInfo();
+    public void requestActivityInfo() throws RemoteException {
+        var listener = mock(IBluetoothActivityEnergyInfoListener.class);
+        mBinder.requestActivityInfo(listener, mAttributionSource);
+        verify(mService).requestActivityInfo();
+        verify(listener).onBluetoothActivityEnergyInfoAvailable(any());
     }
 
     @Test

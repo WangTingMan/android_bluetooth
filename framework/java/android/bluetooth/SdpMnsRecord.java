@@ -12,8 +12,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package android.bluetooth;
 
+import android.annotation.RequiresNoPermission;
 import android.os.Parcel;
 import android.os.Parcelable;
 
@@ -52,22 +54,27 @@ public class SdpMnsRecord implements Parcelable {
         return 0;
     }
 
+    @RequiresNoPermission
     public int getL2capPsm() {
         return mL2capPsm;
     }
 
+    @RequiresNoPermission
     public int getRfcommChannelNumber() {
         return mRfcommChannelNumber;
     }
 
+    @RequiresNoPermission
     public int getSupportedFeatures() {
         return mSupportedFeatures;
     }
 
+    @RequiresNoPermission
     public String getServiceName() {
         return mServiceName;
     }
 
+    @RequiresNoPermission
     public int getProfileVersion() {
         return mProfileVersion;
     }
@@ -76,7 +83,7 @@ public class SdpMnsRecord implements Parcelable {
     public void writeToParcel(Parcel dest, int flags) {
         dest.writeInt(mRfcommChannelNumber);
         dest.writeInt(mL2capPsm);
-        dest.writeString(mServiceName);
+        BluetoothUtils.writeStringToParcel(dest, mServiceName);
         dest.writeInt(mSupportedFeatures);
         dest.writeInt(mProfileVersion);
     }
@@ -86,19 +93,19 @@ public class SdpMnsRecord implements Parcelable {
         String ret = "Bluetooth MNS SDP Record:\n";
 
         if (mRfcommChannelNumber != -1) {
-            ret += "RFCOMM Chan Number: " + mRfcommChannelNumber + "\n";
+            ret = ret + "RFCOMM Chan Number: " + mRfcommChannelNumber + "\n";
         }
         if (mL2capPsm != -1) {
-            ret += "L2CAP PSM: " + mL2capPsm + "\n";
+            ret = ret + "L2CAP PSM: " + mL2capPsm + "\n";
         }
         if (mServiceName != null) {
-            ret += "Service Name: " + mServiceName + "\n";
+            ret = ret + "Service Name: " + mServiceName + "\n";
         }
         if (mSupportedFeatures != -1) {
-            ret += "Supported features: " + mSupportedFeatures + "\n";
+            ret = ret + "Supported features: " + mSupportedFeatures + "\n";
         }
         if (mProfileVersion != -1) {
-            ret += "Profile_version: " + mProfileVersion + "\n";
+            ret = ret + "Profile_version: " + mProfileVersion + "\n";
         }
         return ret;
     }

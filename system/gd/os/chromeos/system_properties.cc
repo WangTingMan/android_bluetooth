@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 #include "os/system_properties.h"
 
-#include <mutex>
+#include <mutex>  // NOLINT
 #include <string>
 #include <unordered_map>
 
@@ -28,8 +28,11 @@ std::mutex properties_mutex;
 
 // Properties set along with some default values for Floss.
 std::unordered_map<std::string, std::string> properties = {
-    {"bluetooth.profile.avrcp.target.enabled", "true"},
-};
+        {"bluetooth.profile.avrcp.target.enabled", "true"},
+        {"bluetooth.gd.start_timeout", "12000"},
+        {"bluetooth.gd.stop_timeout", "12000"},
+        /* HCI Reset timeout: 10s + Default cleanup timeout: 1s = 11s */
+        {"bluetooth.cleanup_timeout", "11000"}};
 }  // namespace
 
 std::optional<std::string> GetSystemProperty(const std::string& property) {
@@ -51,14 +54,6 @@ bool ClearSystemPropertiesForHost() {
   std::lock_guard<std::mutex> lock(properties_mutex);
   properties.clear();
   return true;
-}
-
-bool IsRootCanalEnabled() {
-  return false;
-}
-
-int GetAndroidVendorReleaseVersion() {
-  return 0;
 }
 
 }  // namespace os

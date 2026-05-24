@@ -1,30 +1,20 @@
 package: "com.android.bluetooth.flags"
-container: "com.android.btservices"
+container: "com.android.bt"
 
 flag {
-    name: "opp_start_activity_directly_from_notification"
+    name: "opp_device_picker_extra_intent_apis"
+    is_exported: true
     namespace: "bluetooth"
-    description: "Make OPP notification start activities directly from it, not via OppReceiver"
-    bug: "319050411"
+    description: "New API to get the original intent in Bluetooth Device Picker"
+    bug: "395796600"
 }
 
 flag {
-    name: "opp_fix_multiple_notifications_issues"
+    name: "send_opp_device_picker_extra_intent"
     namespace: "bluetooth"
-    description: "Fix UI issues related to multiple OPP notifications"
-    bug: "323096132"
+    description: "Send the original intent when opening Bluetooth device picker"
+    bug: "397852103"
     metadata {
         purpose: PURPOSE_BUGFIX
     }
 }
-
-flag {
-    name: "opp_ignore_content_observer_after_service_stop"
-    namespace: "bluetooth"
-    description: "When OppService.stop() is called, previously posted ContentObserver.onChange() should not run"
-    bug: "346467641"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-}
-

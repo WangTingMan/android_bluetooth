@@ -19,34 +19,27 @@
 
 #include "bta/dm/bta_dm_disc_int.h"
 #include "bta/test/bta_test_fixtures.h"
-
-void BTA_dm_on_hw_on();
-void BTA_dm_on_hw_off();
-
-namespace {
-const char kName[] = "Hello";
-}
-
-namespace bluetooth {
-namespace legacy {
-namespace testing {
-
-tBTA_DM_SERVICE_DISCOVERY_CB& bta_dm_discovery_cb();
-void bta_dm_sdp_result(tSDP_STATUS sdp_status, tBTA_DM_SDP_STATE* state);
-
-}  // namespace testing
-}  // namespace legacy
-}  // namespace bluetooth
+#include "hci/controller_mock.h"
+#include "test/mock/mock_main_shim_entry.h"
 
 class BtaSdpTest : public BtaWithHwOnTest {
- protected:
-  void SetUp() override { BtaWithHwOnTest::SetUp(); }
+protected:
+  void SetUp() override {
+    BtaWithHwOnTest::SetUp();
+    bluetooth::hci::testing::mock_controller_ =
+            std::make_unique<bluetooth::hci::testing::MockController>();
+    ON_CALL(*bluetooth::hci::testing::mock_controller_, LeRand)
+            .WillByDefault([](bluetooth::hci::LeRandCallback cb) { cb(0x1234); });
+  }
 
-  void TearDown() override { BtaWithHwOnTest::TearDown(); }
+  void TearDown() override {
+    bluetooth::hci::testing::mock_controller_.reset();
+    BtaWithHwOnTest::TearDown();
+  }
 };
 
 class BtaSdpRegisteredTest : public BtaSdpTest {
- protected:
+protected:
   void SetUp() override { BtaSdpTest::SetUp(); }
 
   void TearDown() override { BtaSdpTest::TearDown(); }
@@ -55,8 +48,7 @@ class BtaSdpRegisteredTest : public BtaSdpTest {
 TEST_F(BtaSdpTest, nop) {}
 
 TEST_F(BtaSdpRegisteredTest, bta_dm_sdp_result_SDP_SUCCESS) {
-  std::unique_ptr<tBTA_DM_SDP_STATE> state =
-      std::make_unique<tBTA_DM_SDP_STATE>(
+  std::unique_ptr<tBTA_DM_SDP_STATE> state = std::make_unique<tBTA_DM_SDP_STATE>(
           tBTA_DM_SDP_STATE{.service_index = BTA_MAX_SERVICE_ID});
-  bluetooth::legacy::testing::bta_dm_sdp_result(SDP_SUCCESS, state.get());
+  bta_dm_sdp_result(tSDP_STATUS::SDP_SUCCESS, state.get());
 }

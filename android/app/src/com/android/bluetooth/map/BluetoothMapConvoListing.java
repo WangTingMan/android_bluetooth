@@ -12,6 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.map;
 
 import android.bluetooth.BluetoothProfile;
@@ -35,11 +36,13 @@ import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 // Next tag value for ContentProfileErrorReportUtils.report(): 3
 public class BluetoothMapConvoListing {
+    private static final String TAG = BluetoothMapConvoListing.class.getSimpleName();
+
     private boolean mHasUnread = false;
-    private static final String TAG = "BluetoothMapConvoListing";
     private static final String XML_TAG = "MAP-convo-listing";
 
     private List<BluetoothMapConvoListingElement> mList;
@@ -214,23 +217,20 @@ public class BluetoothMapConvoListing {
         if (this == obj) {
             return true;
         }
-        if (obj == null) {
+        if (!(obj instanceof BluetoothMapConvoListing other)) {
             return false;
         }
-        if (getClass() != obj.getClass()) {
-            return false;
-        }
-        BluetoothMapConvoListing other = (BluetoothMapConvoListing) obj;
         if (mHasUnread != other.mHasUnread) {
             return false;
         }
-        if (mList == null) {
-            if (other.mList != null) {
-                return false;
-            }
-        } else if (!mList.equals(other.mList)) {
+        if (!Objects.equals(mList, other.mList)) {
             return false;
         }
         return true;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(mHasUnread, mList);
     }
 }

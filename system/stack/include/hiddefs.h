@@ -25,7 +25,6 @@
 #ifndef HIDDEFS_H
 #define HIDDEFS_H
 
-#include <base/strings/stringprintf.h>
 #include <bluetooth/log.h>
 
 #include "internal_include/bt_target.h"
@@ -33,7 +32,7 @@
 #include "stack/include/sdp_api.h"
 /*
  * tHID_STATUS: HID result codes, returned by HID and device and host functions.
-*/
+ */
 typedef enum : uint8_t {
   HID_SUCCESS = 0,
   HID_ERR_NOT_REGISTERED,
@@ -80,18 +79,16 @@ inline std::string hid_status_text(const tHID_STATUS& status) {
     CASE_RETURN_TEXT(HID_ERR_GATT);
     CASE_RETURN_TEXT(HID_ERR_INVALID);
     default:
-      return base::StringPrintf("UNKNOWN[%hhu]", status);
+      return std::format("UNKNOWN[{}]", static_cast<uint8_t>(status));
   }
 }
 
-#define HID_L2CAP_CONN_FAIL \
-  (0x0100)                          /* Connection Attempt was made but failed */
-#define HID_L2CAP_REQ_FAIL (0x0200) /* L2CAP_ConnectReq API failed */
-#define HID_L2CAP_CFG_FAIL \
-  (0x0400) /* L2CAP Configuration was rejected by peer */
+#define HID_L2CAP_CONN_FAIL (0x0100) /* Connection Attempt was made but failed */
+#define HID_L2CAP_REQ_FAIL (0x0200)  /* L2CAP_ConnectReq API failed */
+#define HID_L2CAP_CFG_FAIL (0x0400)  /* L2CAP Configuration was rejected by peer */
 
 /* Define the HID transaction types
-*/
+ */
 #define HID_TRANS_HANDSHAKE (0)
 #define HID_TRANS_CONTROL (1)
 #define HID_TRANS_GET_REPORT (4)
@@ -104,11 +101,11 @@ inline std::string hid_status_text(const tHID_STATUS& status) {
 #define HID_TRANS_DATAC (11)
 
 #define HID_GET_TRANS_FROM_HDR(x) (((x) >> 4) & 0x0f)
-#define HID_GET_PARAM_FROM_HDR(x) ((x)&0x0f)
-#define HID_BUILD_HDR(t, p) (uint8_t)(((t) << 4) | ((p)&0x0f))
+#define HID_GET_PARAM_FROM_HDR(x) ((x) & 0x0f)
+#define HID_BUILD_HDR(t, p) (uint8_t)(((t) << 4) | ((p) & 0x0f))
 
 /* Parameters for Handshake
-*/
+ */
 #define HID_PAR_HANDSHAKE_RSP_SUCCESS (0)
 #define HID_PAR_HANDSHAKE_RSP_NOT_READY (1)
 #define HID_PAR_HANDSHAKE_RSP_ERR_INVALID_REP_ID (2)
@@ -118,7 +115,7 @@ inline std::string hid_status_text(const tHID_STATUS& status) {
 #define HID_PAR_HANDSHAKE_RSP_ERR_FATAL (15)
 
 /* Parameters for Control
-*/
+ */
 #define HID_PAR_CONTROL_NOP (0)
 #define HID_PAR_CONTROL_HARD_RESET (1)
 #define HID_PAR_CONTROL_SOFT_RESET (2)
@@ -127,7 +124,7 @@ inline std::string hid_status_text(const tHID_STATUS& status) {
 #define HID_PAR_CONTROL_VIRTUAL_CABLE_UNPLUG (5)
 
 /* Different report types in get, set, data
-*/
+ */
 #define HID_PAR_REP_TYPE_MASK (0x03)
 #define HID_PAR_REP_TYPE_OTHER (0x00)
 #define HID_PAR_REP_TYPE_INPUT (0x01)
@@ -135,13 +132,13 @@ inline std::string hid_status_text(const tHID_STATUS& status) {
 #define HID_PAR_REP_TYPE_FEATURE (0x03)
 
 /* Parameters for Get Report
-*/
+ */
 
 /* Buffer size in two bytes after Report ID */
 #define HID_PAR_GET_REP_BUFSIZE_FOLLOWS (0x08)
 
 /* Parameters for Protocol Type
-*/
+ */
 #define HID_PAR_PROTOCOL_MASK (0x01)
 #define HID_PAR_PROTOCOL_REPORT (0x01)
 #define HID_PAR_PROTOCOL_BOOT_MODE (0x00)
@@ -149,7 +146,7 @@ inline std::string hid_status_text(const tHID_STATUS& status) {
 #define HID_PAR_REP_TYPE_MASK (0x03)
 
 /* Descriptor types in the SDP record
-*/
+ */
 #define HID_SDP_DESCRIPTOR_REPORT (0x22)
 #define HID_SDP_DESCRIPTOR_PHYSICAL (0x23)
 
@@ -170,12 +167,11 @@ typedef struct sdp_info {
   uint16_t hpars_ver;                    /*HID Parser Version.*/
   uint16_t ssr_max_latency;              /* HIDSSRHostMaxLatency value, if
                                             HID_SSR_PARAM_INVALID not used*/
-  uint16_t
-      ssr_min_tout;  /* HIDSSRHostMinTimeout value, if HID_SSR_PARAM_INVALID not
-                        used* */
-  uint8_t sub_class; /*Device Subclass.*/
-  uint8_t ctry_code; /*Country Code.*/
-  uint16_t sup_timeout; /* Supervisory Timeout */
+  uint16_t ssr_min_tout;                 /* HIDSSRHostMinTimeout value, if HID_SSR_PARAM_INVALID not
+                                            used* */
+  uint8_t sub_class;                     /*Device Subclass.*/
+  uint8_t ctry_code;                     /*Country Code.*/
+  uint16_t sup_timeout;                  /* Supervisory Timeout */
 
   tHID_DEV_DSCP_INFO dscp_info; /* Descriptor list and Report list to be set in
                                   the SDP record.
@@ -184,9 +180,9 @@ typedef struct sdp_info {
   tSDP_DISC_REC* p_sdp_layer_rec;
 } tHID_DEV_SDP_INFO;
 
-namespace fmt {
+namespace std {
 template <>
 struct formatter<tHID_STATUS> : enum_formatter<tHID_STATUS> {};
-}  // namespace fmt
+}  // namespace std
 
 #endif

@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -38,6 +38,7 @@ import android.util.Log;
 import com.android.bluetooth.BluetoothMethodProxy;
 import com.android.bluetooth.BluetoothStatsLog;
 import com.android.bluetooth.content_profiles.ContentProfileErrorReportUtils;
+import com.android.bluetooth.flags.Flags;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.vcard.VCardComposer;
 import com.android.vcard.VCardConfig;
@@ -53,7 +54,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 // Next tag value for ContentProfileErrorReportUtils.report(): 4
 class BluetoothPbapUtils {
-    private static final String TAG = "BluetoothPbapUtils";
+    private static final String TAG = BluetoothPbapUtils.class.getSimpleName();
 
     // Filter constants from Bluetooth PBAP specification
     private static final int FILTER_PHOTO = 3;
@@ -70,6 +71,9 @@ class BluetoothPbapUtils {
 
     private static final long QUERY_CONTACT_RETRY_INTERVAL = 4000;
 
+    private static final int PHOTO_DIMENSION_LIMIT_IN_PIXELS = 300;
+    private static final int PHOTO_FILE_SIZE_LIMIT_IN_BYTES = 50 * 1024; // 50KB
+
     static AtomicLong sDbIdentifier = new AtomicLong();
 
     static long sPrimaryVersionCounter = 0;
@@ -84,9 +88,9 @@ class BluetoothPbapUtils {
 
     private static class ContactData {
         private String mName;
-        private List<String> mEmail;
-        private List<String> mPhone;
-        private List<String> mAddress;
+        private final List<String> mEmail;
+        private final List<String> mPhone;
+        private final List<String> mAddress;
 
         ContactData() {
             mPhone = new ArrayList<>();
@@ -106,10 +110,14 @@ class BluetoothPbapUtils {
 
     @VisibleForTesting static HashSet<String> sContactSet = new HashSet<>();
 
-    @VisibleForTesting static final String TYPE_NAME = "name";
-    @VisibleForTesting static final String TYPE_PHONE = "phone";
-    @VisibleForTesting static final String TYPE_EMAIL = "email";
-    @VisibleForTesting static final String TYPE_ADDRESS = "address";
+    enum ContactFieldType {
+        NAME,
+        PHONE,
+        EMAIL,
+        ADDRESS
+    }
+
+    private BluetoothPbapUtils() {}
 
     private static boolean hasFilter(byte[] filter) {
         return filter != null && filter.length > 0;
@@ -170,7 +178,19 @@ class BluetoothPbapUtils {
                 vType |= VCardConfig.FLAG_REFRAIN_EVENTS_EXPORT;
             }
         }
-        return new VCardComposer(ctx, vType, true);
+
+        if (Flags.increaseContactImageResolution()) {
+            return new VCardComposer(
+                    ctx,
+                    ctx.getContentResolver(),
+                    vType,
+                    null,
+                    true,
+                    new VCardComposer.PhotoOptions(
+                            PHOTO_DIMENSION_LIMIT_IN_PIXELS, PHOTO_FILE_SIZE_LIMIT_IN_BYTES));
+        } else {
+            return new VCardComposer(ctx, vType, true);
+        }
     }
 
     public static synchronized String getProfileName(Context context) {
@@ -265,7 +285,7 @@ class BluetoothPbapUtils {
         BluetoothPbapUtils.sDbIdentifier.set(pref.getLong("DbIdentifier", timeStamp));
         BluetoothPbapUtils.sPrimaryVersionCounter = pref.getLong("primary", 0);
         BluetoothPbapUtils.sSecondaryVersionCounter = pref.getLong("secondary", 0);
-        BluetoothPbapUtils.sTotalFields = pref.getLong("totalContacts", 0);
+        BluetoothPbapUtils.sTotalContacts = pref.getLong("totalContacts", 0);
         BluetoothPbapUtils.sContactsLastUpdated = pref.getLong("lastUpdatedTimestamp", timeStamp);
         BluetoothPbapUtils.sTotalFields = pref.getLong("totalFields", 0);
         BluetoothPbapUtils.sTotalSvcFields = pref.getLong("totalSvcFields", 0);
@@ -408,24 +428,14 @@ class BluetoothPbapUtils {
                     // fetch all updated contacts and compare with cached copy of contacts
                     int indexData = dataCursor.getColumnIndex(Data.DATA1);
                     int indexMimeType = dataCursor.getColumnIndex(Data.MIMETYPE);
-                    String data;
-                    String mimeType;
                     while (dataCursor.moveToNext()) {
-                        data = dataCursor.getString(indexData);
-                        mimeType = dataCursor.getString(indexMimeType);
-                        switch (mimeType) {
-                            case Email.CONTENT_ITEM_TYPE:
-                                emailTmp.add(data);
-                                break;
-                            case Phone.CONTENT_ITEM_TYPE:
-                                phoneTmp.add(data);
-                                break;
-                            case StructuredPostal.CONTENT_ITEM_TYPE:
-                                addressTmp.add(data);
-                                break;
-                            case StructuredName.CONTENT_ITEM_TYPE:
-                                nameTmp = data;
-                                break;
+                        String data = dataCursor.getString(indexData);
+                        switch (dataCursor.getString(indexMimeType)) {
+                            case Email.CONTENT_ITEM_TYPE -> emailTmp.add(data);
+                            case Phone.CONTENT_ITEM_TYPE -> phoneTmp.add(data);
+                            case StructuredPostal.CONTENT_ITEM_TYPE -> addressTmp.add(data);
+                            case StructuredName.CONTENT_ITEM_TYPE -> nameTmp = data;
+                            default -> {} // Nothing to do
                         }
                     }
                 }
@@ -496,7 +506,7 @@ class BluetoothPbapUtils {
             return true;
 
             /* when new fields are added for a type(phone/email/address) in a contact
-             * for which there were no fields of this type earliar.*/
+             * for which there were no fields of this type earlier.*/
         } else if (oldFields == null && newFields != null && newFields.size() > 0) {
             sTotalSvcFields += newFields.size();
             sTotalFields += newFields.size();
@@ -507,7 +517,7 @@ class BluetoothPbapUtils {
 
     /* fetchAndSetContacts reads contacts and caches them
      * isLoad = true indicates its loading all contacts
-     * isLoad = false indiacates its caching recently added contact in database*/
+     * isLoad = false indicates its caching recently added contact in database*/
     @VisibleForTesting
     static synchronized int fetchAndSetContacts(
             Context context,
@@ -543,7 +553,6 @@ class BluetoothPbapUtils {
             int indexCId = c.getColumnIndex(Data.CONTACT_ID);
             int indexData = c.getColumnIndex(Data.DATA1);
             int indexMimeType = c.getColumnIndex(Data.MIMETYPE);
-            String contactId, data, mimeType;
 
             while (c.moveToNext()) {
                 if (c.isNull(indexCId)) {
@@ -556,27 +565,27 @@ class BluetoothPbapUtils {
                             3);
                     continue;
                 }
-                contactId = c.getString(indexCId);
-                data = c.getString(indexData);
-                mimeType = c.getString(indexMimeType);
+                String contactId = c.getString(indexCId);
+                String data = c.getString(indexData);
                 /* fetch phone/email/address/name information of the contact */
-                switch (mimeType) {
-                    case Phone.CONTENT_ITEM_TYPE:
-                        setContactFields(TYPE_PHONE, contactId, data);
+                switch (c.getString(indexMimeType)) {
+                    case Phone.CONTENT_ITEM_TYPE -> {
+                        setContactFields(ContactFieldType.PHONE, contactId, data);
                         currentSvcFieldCount++;
-                        break;
-                    case Email.CONTENT_ITEM_TYPE:
-                        setContactFields(TYPE_EMAIL, contactId, data);
+                    }
+                    case Email.CONTENT_ITEM_TYPE -> {
+                        setContactFields(ContactFieldType.EMAIL, contactId, data);
                         currentSvcFieldCount++;
-                        break;
-                    case StructuredPostal.CONTENT_ITEM_TYPE:
-                        setContactFields(TYPE_ADDRESS, contactId, data);
+                    }
+                    case StructuredPostal.CONTENT_ITEM_TYPE -> {
+                        setContactFields(ContactFieldType.ADDRESS, contactId, data);
                         currentSvcFieldCount++;
-                        break;
-                    case StructuredName.CONTENT_ITEM_TYPE:
-                        setContactFields(TYPE_NAME, contactId, data);
+                    }
+                    case StructuredName.CONTENT_ITEM_TYPE -> {
+                        setContactFields(ContactFieldType.NAME, contactId, data);
                         currentSvcFieldCount++;
-                        break;
+                    }
+                    default -> {} // Nothing to do
                 }
                 sContactSet.add(contactId);
                 currentTotalFields++;
@@ -584,7 +593,7 @@ class BluetoothPbapUtils {
         }
 
         /* This code checks if there is any update in contacts after last pbap
-         * disconnect has happenned (even if BT is turned OFF during this time)*/
+         * disconnect has happened (even if BT is turned OFF during this time)*/
         if (isLoad && currentTotalFields != sTotalFields) {
             sPrimaryVersionCounter += Math.abs(sTotalContacts - sContactSet.size());
 
@@ -621,27 +630,20 @@ class BluetoothPbapUtils {
      * contactsFieldData - List of field data for phone/email/address.
      * contactId - Contact ID, data1 - field value from data table for phone/email/address*/
     @VisibleForTesting
-    static void setContactFields(String fieldType, String contactId, String data) {
-        ContactData cData;
+    static void setContactFields(ContactFieldType fieldType, String contactId, String data) {
+        ContactData cData = null;
         if (sContactDataset.containsKey(contactId)) {
             cData = sContactDataset.get(contactId);
-        } else {
+        }
+        if (cData == null) {
             cData = new ContactData();
         }
 
         switch (fieldType) {
-            case TYPE_NAME:
-                cData.mName = data;
-                break;
-            case TYPE_PHONE:
-                cData.mPhone.add(data);
-                break;
-            case TYPE_EMAIL:
-                cData.mEmail.add(data);
-                break;
-            case TYPE_ADDRESS:
-                cData.mAddress.add(data);
-                break;
+            case ContactFieldType.NAME -> cData.mName = data;
+            case ContactFieldType.PHONE -> cData.mPhone.add(data);
+            case ContactFieldType.EMAIL -> cData.mEmail.add(data);
+            case ContactFieldType.ADDRESS -> cData.mAddress.add(data);
         }
         sContactDataset.put(contactId, cData);
     }

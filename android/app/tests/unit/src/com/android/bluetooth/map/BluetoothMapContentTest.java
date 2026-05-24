@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,19 @@
 
 package com.android.bluetooth.map;
 
+import static com.android.bluetooth.TestUtils.mockGetSystemService;
+
 import static com.google.common.truth.Truth.assertThat;
 
 import static org.junit.Assert.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 import android.content.ContentResolver;
-import android.content.Context;
 import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.net.Uri;
@@ -42,13 +42,14 @@ import android.telephony.TelephonyManager;
 import android.text.util.Rfc822Token;
 import android.text.util.Rfc822Tokenizer;
 
-import androidx.test.runner.AndroidJUnit4;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import com.android.bluetooth.BluetoothMethodProxy;
 import com.android.bluetooth.SignedLongLong;
+import com.android.bluetooth.btservice.AdapterService;
 import com.android.bluetooth.map.BluetoothMapContent.FilterInfo;
 import com.android.bluetooth.map.BluetoothMapUtils.TYPE;
-import com.android.bluetooth.mapapi.BluetoothMapContract;
+import com.android.tests.bluetooth.MockitoRule;
 
 import com.google.android.mms.pdu.PduHeaders;
 
@@ -59,8 +60,6 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.Spy;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
 import java.io.ByteArrayInputStream;
 import java.io.FileDescriptor;
@@ -68,8 +67,20 @@ import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.util.HashMap;
 
+/** Test cases for {@link BluetoothMapContent}. */
 @RunWith(AndroidJUnit4.class)
 public class BluetoothMapContentTest {
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
+
+    @Mock private AdapterService mAdapterService;
+    @Mock private BluetoothMapService mMapService;
+    @Mock private BluetoothMapAccountItem mAccountItem;
+    @Mock private BluetoothMapMasInstance mMasInstance;
+    @Mock private TelephonyManager mTelephonyManager;
+    @Mock private ContentResolver mContentResolver;
+    @Mock private BluetoothMapAppParams mParams;
+    @Spy private BluetoothMethodProxy mMapMethodProxy = BluetoothMethodProxy.getInstance();
+
     private static final String TEST_TEXT = "text";
     private static final String TEST_TO_ADDRESS = "toName (toAddress) <to@google.com>";
     private static final String TEST_CC_ADDRESS = "ccName (ccAddress) <cc@google.com>";
@@ -113,16 +124,6 @@ public class BluetoothMapContentTest {
     private static final String TEST_RECEPTION_STATUS = "complete";
     private static final String TEST_EMAIL = "test@google.com";
 
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
-
-    @Mock private BluetoothMapAccountItem mAccountItem;
-    @Mock private BluetoothMapMasInstance mMasInstance;
-    @Mock private Context mContext;
-    @Mock private TelephonyManager mTelephonyManager;
-    @Mock private ContentResolver mContentResolver;
-    @Mock private BluetoothMapAppParams mParams;
-    @Spy private BluetoothMethodProxy mMapMethodProxy = BluetoothMethodProxy.getInstance();
-
     private BluetoothMapContent mContent;
     private FilterInfo mInfo;
     private BluetoothMapMessageListingElement mMessageListingElement;
@@ -133,9 +134,10 @@ public class BluetoothMapContentTest {
     public void setUp() {
         BluetoothMethodProxy.setInstanceForTesting(mMapMethodProxy);
 
-        mContent = new BluetoothMapContent(mContext, mAccountItem, mMasInstance);
+        mContent =
+                new BluetoothMapContent(mAdapterService, mMapService, mAccountItem, mMasInstance);
         mInfo = new FilterInfo();
-        mMessageListingElement = new BluetoothMapMessageListingElement();
+        mMessageListingElement = new BluetoothMapMessageListingElement(mMapService);
         mConvoListingElement = new BluetoothMapConvoListingElement();
         mCurrentFolder = new BluetoothMapFolderElement("current", null);
     }
@@ -147,14 +149,16 @@ public class BluetoothMapContentTest {
 
     @Test
     public void constructor_withNonNullAccountItem() {
-        BluetoothMapContent content = new BluetoothMapContent(mContext, mAccountItem, mMasInstance);
+        BluetoothMapContent content =
+                new BluetoothMapContent(mAdapterService, mMapService, mAccountItem, mMasInstance);
 
         assertThat(content.mBaseUri).isNotNull();
     }
 
     @Test
     public void constructor_withNullAccountItem() {
-        BluetoothMapContent content = new BluetoothMapContent(mContext, null, mMasInstance);
+        BluetoothMapContent content =
+                new BluetoothMapContent(mAdapterService, mMapService, null, mMasInstance);
 
         assertThat(content.mBaseUri).isNull();
     }
@@ -314,7 +318,7 @@ public class BluetoothMapContentTest {
         expected.append(" AND ")
                 .append(Threads._ID)
                 .append(" = ")
-                .append(SignedLongLong.fromString(convoId).getLeastSignificantBits());
+                .append(SignedLongLong.fromString(convoId).leastSignificantBits());
         assertThat(selection.toString()).isEqualTo(expected.toString());
     }
 
@@ -377,9 +381,7 @@ public class BluetoothMapContentTest {
 
     @Test
     public void setFilterInfo() {
-        when(mContext.getSystemService(Context.TELEPHONY_SERVICE)).thenReturn(mTelephonyManager);
-        when(mContext.getSystemServiceName(TelephonyManager.class))
-                .thenReturn(Context.TELEPHONY_SERVICE);
+        mockGetSystemService(mAdapterService, TelephonyManager.class, mTelephonyManager);
         when(mTelephonyManager.getPhoneType()).thenReturn(TelephonyManager.PHONE_TYPE_GSM);
 
         mContent.setFilterInfo(mInfo);
@@ -676,7 +678,7 @@ public class BluetoothMapContentTest {
                         new String[] {
                             "MessageColFromAddress", BluetoothMapContract.ConvoContactColumns.UCI
                         });
-        cursor.addRow(new Object[] {(long) 1, TEST_ADDRESS});
+        cursor.addRow(new Object[] {1L, TEST_ADDRESS});
         cursor.moveToFirst();
         doReturn(cursor)
                 .when(mMapMethodProxy)
@@ -794,7 +796,7 @@ public class BluetoothMapContentTest {
                         new String[] {
                             "MessageColFromAddress", BluetoothMapContract.ConvoContactColumns.NAME
                         });
-        cursor.addRow(new Object[] {(long) 1, TEST_NAME});
+        cursor.addRow(new Object[] {1L, TEST_NAME});
         cursor.moveToFirst();
         doReturn(cursor)
                 .when(mMapMethodProxy)
@@ -807,8 +809,8 @@ public class BluetoothMapContentTest {
 
     @Test
     public void setters_withConvoList() {
-        BluetoothMapMasInstance instance = spy(BluetoothMapMasInstance.class);
-        BluetoothMapContent content = new BluetoothMapContent(mContext, mAccountItem, instance);
+        BluetoothMapContent content =
+                new BluetoothMapContent(mAdapterService, mMapService, mAccountItem, mMasInstance);
         HashMap<Long, BluetoothMapConvoListingElement> emailMap =
                 new HashMap<Long, BluetoothMapConvoListingElement>();
         HashMap<Long, BluetoothMapConvoListingElement> smsMap =
@@ -908,7 +910,8 @@ public class BluetoothMapContentTest {
         byte[] encodedMessageEmail = mContent.getEmailMessage(TEST_ID, mParams, mCurrentFolder);
         InputStream inputStream = new ByteArrayInputStream(encodedMessageEmail);
         BluetoothMapbMessage messageParsed =
-                BluetoothMapbMessage.parse(inputStream, BluetoothMapAppParams.CHARSET_UTF8);
+                BluetoothMapbMessage.parse(
+                        mMapService, inputStream, BluetoothMapAppParams.CHARSET_UTF8);
 
         assertThat(messageParsed.getType()).isEqualTo(TYPE.EMAIL);
         assertThat(messageParsed.getVersionString())
@@ -961,7 +964,8 @@ public class BluetoothMapContentTest {
         byte[] encodedMessageEmail = mContent.getEmailMessage(TEST_ID, mParams, mCurrentFolder);
         InputStream inputStream = new ByteArrayInputStream(encodedMessageEmail);
         BluetoothMapbMessage messageParsed =
-                BluetoothMapbMessage.parse(inputStream, BluetoothMapAppParams.CHARSET_UTF8);
+                BluetoothMapbMessage.parse(
+                        mMapService, inputStream, BluetoothMapAppParams.CHARSET_UTF8);
 
         assertThat(messageParsed.getType()).isEqualTo(TYPE.EMAIL);
         assertThat(messageParsed.getVersionString())
@@ -1014,7 +1018,8 @@ public class BluetoothMapContentTest {
         byte[] encodedMessageEmail = mContent.getEmailMessage(TEST_ID, mParams, mCurrentFolder);
         InputStream inputStream = new ByteArrayInputStream(encodedMessageEmail);
         BluetoothMapbMessage messageParsed =
-                BluetoothMapbMessage.parse(inputStream, BluetoothMapAppParams.CHARSET_UTF8);
+                BluetoothMapbMessage.parse(
+                        mMapService, inputStream, BluetoothMapAppParams.CHARSET_UTF8);
 
         assertThat(messageParsed.getType()).isEqualTo(TYPE.EMAIL);
         assertThat(messageParsed.getVersionString())
@@ -1099,15 +1104,16 @@ public class BluetoothMapContentTest {
 
         byte[] encodedMessageMime = mContent.getIMMessage(TEST_ID, mParams, mCurrentFolder);
         InputStream inputStream = new ByteArrayInputStream(encodedMessageMime);
-        BluetoothMapbMessage messageMimeParsed = BluetoothMapbMessage.parse(inputStream, 1);
+        BluetoothMapbMessage messageMimeParsed =
+                BluetoothMapbMessage.parse(mMapService, inputStream, 1);
 
         assertThat(messageMimeParsed.mAppParamCharset).isEqualTo(1);
         assertThat(messageMimeParsed.getType()).isEqualTo(TYPE.IM);
         assertThat(messageMimeParsed.getVersionString())
                 .isEqualTo("VERSION:" + mContent.mMessageVersion);
         assertThat(messageMimeParsed.getFolder()).isEqualTo(mCurrentFolder.getFullPath());
-        assertThat(messageMimeParsed.getRecipients().size()).isEqualTo(1);
-        assertThat(messageMimeParsed.getOriginators().size()).isEqualTo(1);
+        assertThat(messageMimeParsed.getRecipients()).hasSize(1);
+        assertThat(messageMimeParsed.getOriginators()).hasSize(1);
         assertThat(messageMimeParsed.getOriginators().get(0).getName()).isEmpty();
         assertThat(messageMimeParsed.getRecipients().get(0).getName())
                 .isEqualTo(TEST_FORMATTED_NAME);
@@ -1159,15 +1165,16 @@ public class BluetoothMapContentTest {
 
         byte[] encodedMessageMime = mContent.getIMMessage(TEST_ID, mParams, mCurrentFolder);
         InputStream inputStream = new ByteArrayInputStream(encodedMessageMime);
-        BluetoothMapbMessage messageMimeParsed = BluetoothMapbMessage.parse(inputStream, 1);
+        BluetoothMapbMessage messageMimeParsed =
+                BluetoothMapbMessage.parse(mMapService, inputStream, 1);
 
         assertThat(messageMimeParsed.mAppParamCharset).isEqualTo(1);
         assertThat(messageMimeParsed.getType()).isEqualTo(TYPE.IM);
         assertThat(messageMimeParsed.getVersionString())
                 .isEqualTo("VERSION:" + mContent.mMessageVersion);
         assertThat(messageMimeParsed.getFolder()).isEqualTo(mCurrentFolder.getFullPath());
-        assertThat(messageMimeParsed.getRecipients().size()).isEqualTo(1);
-        assertThat(messageMimeParsed.getOriginators().size()).isEqualTo(1);
+        assertThat(messageMimeParsed.getRecipients()).hasSize(1);
+        assertThat(messageMimeParsed.getOriginators()).hasSize(1);
         assertThat(messageMimeParsed.getOriginators().get(0).getName())
                 .isEqualTo(TEST_FORMATTED_NAME);
         assertThat(messageMimeParsed.getRecipients().get(0).getName()).isEmpty();
@@ -1564,7 +1571,7 @@ public class BluetoothMapContentTest {
                             BluetoothMapContract.MessageColumns.FLAG_HIGH_PRIORITY,
                             BluetoothMapContract.MessageColumns.FLAG_PROTECTED,
                             BluetoothMapContract.MessageColumns.RECEPTION_STATE,
-                            BluetoothMapContract.MessageColumns.DEVILERY_STATE,
+                            BluetoothMapContract.MessageColumns.DELIVERY_STATE,
                             BluetoothMapContract.MessageColumns.THREAD_ID,
                             BluetoothMapContract.MessageColumns.CC_LIST,
                             BluetoothMapContract.MessageColumns.BCC_LIST,
@@ -1657,7 +1664,7 @@ public class BluetoothMapContentTest {
                             BluetoothMapContract.MessageColumns.FLAG_HIGH_PRIORITY,
                             BluetoothMapContract.MessageColumns.FLAG_PROTECTED,
                             BluetoothMapContract.MessageColumns.RECEPTION_STATE,
-                            BluetoothMapContract.MessageColumns.DEVILERY_STATE,
+                            BluetoothMapContract.MessageColumns.DELIVERY_STATE,
                             BluetoothMapContract.MessageColumns.THREAD_ID,
                             BluetoothMapContract.MessageColumns.THREAD_NAME,
                             BluetoothMapContract.MessageColumns.ATTACHMENT_MINE_TYPES,

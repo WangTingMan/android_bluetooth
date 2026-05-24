@@ -16,26 +16,34 @@
 
 #include <base/functional/bind.h>
 #include <bluetooth/log.h>
+#include <bluetooth/types/uuid.h>
 #include <fuzzer/FuzzedDataProvider.h>
 
 #include <cstdint>
 #include <functional>
-#include <optional>
 #include <vector>
 
 #include "osi/include/allocator.h"
 #include "stack/include/avct_api.h"
 #include "stack/include/avrc_api.h"
+#include "stack/include/bt_psm_types.h"
 #include "test/fake/fake_osi.h"
 #include "test/mock/mock_btif_config.h"
 #include "test/mock/mock_stack_acl.h"
 #include "test/mock/mock_stack_btm_dev.h"
 #include "test/mock/mock_stack_l2cap_api.h"
-#include "test/mock/mock_stack_l2cap_ble.h"
-#include "types/bluetooth/uuid.h"
+#include "test/mock/mock_stack_l2cap_interface.h"
 
 using bluetooth::Uuid;
 using namespace bluetooth;
+using ::testing::NiceMock;
+using ::testing::Unused;
+
+bt_status_t do_in_main_thread(base::OnceCallback<void()>) {
+  // this is not properly mocked, so we use abort to catch if this is used in
+  // any test cases
+  abort();
+}
 
 // Verify the passed data is readable
 static void ConsumeData(const uint8_t* data, size_t size) {
@@ -49,59 +57,53 @@ namespace {
 
 constexpr uint16_t kDummyCid = 0x1234;
 constexpr uint8_t kDummyId = 0x77;
-constexpr uint8_t kDummyRemoteAddr[] = {0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC};
+constexpr RawAddress kDummyRemoteAddr({0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC});
 
 // Set up default callback structure
 static tL2CAP_APPL_INFO avct_appl, avct_br_appl;
 
 class FakeBtStack {
- public:
+  NiceMock<bluetooth::testing::stack::l2cap::Mock> mock_l2cap_interface;
+
+public:
   FakeBtStack() {
-    test::mock::stack_l2cap_api::L2CA_DataWrite.body = [](uint16_t cid,
-                                                          BT_HDR* hdr) {
+    ON_CALL(mock_l2cap_interface, L2CA_DataWrite).WillByDefault([](uint16_t cid, BT_HDR* hdr) {
       log::assert_that(cid == kDummyCid, "assert failed: cid == kDummyCid");
       ConsumeData((const uint8_t*)hdr, hdr->offset + hdr->len);
       osi_free(hdr);
       return tL2CAP_DW_RESULT::SUCCESS;
-    };
-    test::mock::stack_l2cap_api::L2CA_DisconnectReq.body = [](uint16_t cid) {
+    });
+    ON_CALL(mock_l2cap_interface, L2CA_DisconnectReq).WillByDefault([](uint16_t cid) {
       log::assert_that(cid == kDummyCid, "assert failed: cid == kDummyCid");
       return true;
-    };
-    test::mock::stack_l2cap_api::L2CA_ConnectReqWithSecurity.body =
-        [](uint16_t psm, const RawAddress& p_bd_addr, uint16_t sec_level) {
-          log::assert_that(p_bd_addr == kDummyRemoteAddr,
-                           "assert failed: p_bd_addr == kDummyRemoteAddr");
-          return kDummyCid;
-        };
-    test::mock::stack_l2cap_api::L2CA_RegisterWithSecurity.body =
-        [](uint16_t psm, const tL2CAP_APPL_INFO& p_cb_info, bool enable_snoop,
-           tL2CAP_ERTM_INFO* p_ertm_info, uint16_t my_mtu,
-           uint16_t required_remote_mtu, uint16_t sec_level) {
-          log::assert_that(
-              psm == AVCT_PSM || psm == AVCT_BR_PSM,
-              "assert failed: psm == AVCT_PSM || psm == AVCT_BR_PSM");
-          if (psm == AVCT_PSM) {
-            avct_appl = p_cb_info;
-          } else if (psm == AVCT_BR_PSM) {
-            avct_br_appl = p_cb_info;
-          }
-          return psm;
-        };
-    test::mock::stack_l2cap_api::L2CA_Deregister.body = [](uint16_t psm) {};
+    });
+    ON_CALL(mock_l2cap_interface, L2CA_ConnectReqWithSecurity)
+            .WillByDefault([](Unused, const RawAddress& p_bd_addr, Unused) {
+              log::assert_that(p_bd_addr == kDummyRemoteAddr,
+                               "assert failed: p_bd_addr == kDummyRemoteAddr");
+              return kDummyCid;
+            });
+    ON_CALL(mock_l2cap_interface, L2CA_RegisterWithSecurity)
+            .WillByDefault([](uint16_t psm, const tL2CAP_APPL_INFO& p_cb_info, Unused, Unused,
+                              Unused, Unused, Unused) {
+              log::assert_that(psm == BT_PSM_AVCTP || psm == BT_PSM_AVCTP_BROWSE,
+                               "assert failed: psm == BT_PSM_AVCTP || psm == BT_PSM_AVCTP_BROWSE");
+              if (psm == BT_PSM_AVCTP) {
+                avct_appl = p_cb_info;
+              } else if (psm == BT_PSM_AVCTP_BROWSE) {
+                avct_br_appl = p_cb_info;
+              }
+              return psm;
+            });
+    ON_CALL(mock_l2cap_interface, L2CA_Deregister).WillByDefault([](Unused) {});
+    bluetooth::testing::stack::l2cap::set_interface(&mock_l2cap_interface);
   }
 
-  ~FakeBtStack() {
-    test::mock::stack_l2cap_api::L2CA_DataWrite = {};
-    test::mock::stack_l2cap_api::L2CA_ConnectReqWithSecurity = {};
-    test::mock::stack_l2cap_api::L2CA_DisconnectReq = {};
-    test::mock::stack_l2cap_api::L2CA_RegisterWithSecurity = {};
-    test::mock::stack_l2cap_api::L2CA_Deregister = {};
-  }
+  ~FakeBtStack() { bluetooth::testing::stack::l2cap::reset_interface(); }
 };
 
 class Fakes {
- public:
+public:
   test::fake::FakeOsi fake_osi;
   FakeBtStack fake_stack;
 };
@@ -128,11 +130,9 @@ std::optional<bool> nap() { return false; }
 }  // namespace android
 #endif
 
-static void ctrl_cb(uint8_t handle, uint8_t event, uint16_t result,
-                    const RawAddress* peer_addr) {}
+static void ctrl_cb(uint8_t handle, uint8_t event, uint16_t result, const RawAddress* peer_addr) {}
 
-static void msg_cb(uint8_t handle, uint8_t label, uint8_t opcode,
-                   tAVRC_MSG* p_msg) {
+static void msg_cb(uint8_t handle, uint8_t label, uint8_t opcode, tAVRC_MSG* p_msg) {
   uint8_t scratch_buf[512];
   tAVRC_STS status;
 
@@ -184,10 +184,10 @@ static void Fuzz(const uint8_t* data, size_t size) {
   tL2CAP_APPL_INFO* appl_info = is_br ? &avct_br_appl : &avct_appl;
 
   tAVRC_CONN_CB ccb = {
-      .ctrl_cback = base::Bind(ctrl_cb),
-      .msg_cback = base::Bind(msg_cb),
-      .conn = (uint8_t)(is_initiator ? AVCT_INT : AVCT_ACP),
-      .control = (uint8_t)(is_controller ? AVCT_CONTROL : AVCT_TARGET),
+          .ctrl_cback = base::Bind(ctrl_cb),
+          .msg_cback = base::Bind(msg_cb),
+          .conn = (is_initiator ? AVCT_ROLE_INITIATOR : AVCT_ROLE_ACCEPTOR),
+          .control = (uint8_t)(is_controller ? AVCT_CONTROL : AVCT_TARGET),
   };
 
   appl_info->pL2CA_ConnectInd_Cb(kDummyRemoteAddr, kDummyCid, 0, kDummyId);

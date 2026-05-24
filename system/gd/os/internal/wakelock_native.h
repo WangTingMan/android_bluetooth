@@ -29,7 +29,7 @@ namespace internal {
 // DO NOT USE OUTSIDE os/
 // Native wakelock APIs implemented by each architecture, not public APIs
 class WakelockNative {
- public:
+public:
   static WakelockNative& Get() {
     static WakelockNative instance;
     return instance;
@@ -42,7 +42,7 @@ class WakelockNative {
 
   ~WakelockNative();
 
- private:
+private:
   WakelockNative();
   struct Impl;
   std::unique_ptr<Impl> pimpl_;
@@ -52,8 +52,8 @@ class WakelockNative {
 }  // namespace os
 }  // namespace bluetooth
 
-namespace fmt {
+namespace std {
 template <>
 struct formatter<bluetooth::os::internal::WakelockNative::StatusCode>
     : enum_formatter<bluetooth::os::internal::WakelockNative::StatusCode> {};
-}  // namespace fmt
+}  // namespace std

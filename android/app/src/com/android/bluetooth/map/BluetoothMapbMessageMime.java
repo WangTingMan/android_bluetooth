@@ -12,6 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.map;
 
 import android.bluetooth.BluetoothProfile;
@@ -23,8 +24,7 @@ import android.util.Log;
 
 import com.android.bluetooth.BluetoothStatsLog;
 import com.android.bluetooth.content_profiles.ContentProfileErrorReportUtils;
-
-import com.google.common.base.Ascii;
+import com.android.bluetooth.flags.Flags;
 
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
@@ -37,9 +37,15 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 // Next tag value for ContentProfileErrorReportUtils.report(): 8
 public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
+    private static final Pattern NEW_LINE = Pattern.compile("\r\n");
+    private static final Pattern TWO_NEW_LINE = Pattern.compile("\r\n\r\n");
+    private static final Pattern SEMI_COLON = Pattern.compile(";");
+    private static final Pattern BOUNDARY_PATTERN = Pattern.compile("boundary[\\s]*=");
+    private static final Pattern CHARSET_PATTERN = Pattern.compile("charset[\\s]*=");
 
     public static class MimePart {
         public long mId = INVALID_VALUE; /* The _id from the content provider, can be used to
@@ -62,7 +68,7 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
             if (charset == null) {
                 charset = "UTF-8";
             } else {
-                charset = Ascii.toUpperCase(charset);
+                charset = charset.toUpperCase(Locale.ROOT);
                 try {
                     if (!Charset.isSupported(charset)) {
                         charset = "UTF-8";
@@ -115,8 +121,8 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
                 the below use of UTF-8 is not allowed, Base64 should be used for text. */
 
                 if (mContentType != null
-                        && (Ascii.toUpperCase(mContentType).contains("TEXT")
-                                || Ascii.toUpperCase(mContentType).contains("SMIL"))) {
+                        && (mContentType.toUpperCase(Locale.ROOT).contains("TEXT")
+                                || mContentType.toUpperCase(Locale.ROOT).contains("SMIL"))) {
                     String text = new String(mData, StandardCharsets.UTF_8);
                     if (text.getBytes().length == text.getBytes(StandardCharsets.UTF_8).length) {
                         /* Add the header split empty line */
@@ -139,18 +145,21 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
         }
 
         public void encodePlainText(StringBuilder sb) {
-            if (mContentType != null && Ascii.toUpperCase(mContentType).contains("TEXT")) {
+            if (mContentType != null && mContentType.toUpperCase(Locale.ROOT).contains("TEXT")) {
                 String text = new String(mData, StandardCharsets.UTF_8);
                 if (text.getBytes().length != text.getBytes(StandardCharsets.UTF_8).length) {
                     text = BluetoothMapUtils.encodeQuotedPrintable(mData);
                 }
                 sb.append(text).append("\r\n");
-            } else if (mContentType != null && Ascii.toUpperCase(mContentType).contains("/SMIL")) {
+            } else if (mContentType != null
+                    && mContentType.toUpperCase(Locale.ROOT).contains("/SMIL")) {
                 /* Skip the smil.xml, as no-one knows what it is. */
             } else {
                 /* Not a text part, just print the filename or part name if they exist. */
                 if (mPartName != null) {
                     sb.append("<").append(mPartName).append(">\r\n");
+                } else if (mContentLocation != null) {
+                    sb.append("<").append(mContentLocation).append(">\r\n");
                 } else {
                     sb.append("<").append("attachment").append(">\r\n");
                 }
@@ -170,7 +179,7 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
     private ArrayList<MimePart> mParts = null;
     private String mContentType = null;
     private String mBoundary = null;
-    private boolean mTextonly = false;
+    private boolean mTextOnly = false;
     private boolean mIncludeAttachments;
     private String mMyEncoding = null;
 
@@ -196,7 +205,7 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
         }
         if (mParts != null) {
             for (MimePart part : mParts) {
-                if (Ascii.toUpperCase(part.mContentType).contains("TEXT")) {
+                if (part.mContentType.toUpperCase(Locale.ROOT).contains("TEXT")) {
                     sb.append(new String(part.mData));
                 }
             }
@@ -213,6 +222,7 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
         return newPart;
     }
 
+    @SuppressWarnings("JavaUtilDate") // TODO: b/365629730 -- prefer Instant or LocalDate
     public String getDateString() {
         SimpleDateFormat format = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z", Locale.US);
         Date dateObj = new Date(mDate);
@@ -342,11 +352,11 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
     }
 
     public void setTextOnly(boolean textOnly) {
-        this.mTextonly = textOnly;
+        this.mTextOnly = textOnly;
     }
 
     public boolean getTextOnly() {
-        return mTextonly;
+        return mTextOnly;
     }
 
     public void setIncludeAttachments(boolean includeAttachments) {
@@ -362,7 +372,7 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
             mCharset = null;
             for (MimePart part : mParts) {
                 if (part.mContentType != null
-                        && Ascii.toUpperCase(part.mContentType).contains("TEXT")) {
+                        && part.mContentType.toUpperCase(Locale.ROOT).contains("TEXT")) {
                     mCharset = "UTF-8";
                     Log.v(TAG, "Charset set to UTF-8");
                     break;
@@ -472,11 +482,17 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
                 sb.append("Message-Id: ").append(mMessageId).append("\r\n");
             }
             if (mContentType != null) {
-                sb.append("Content-Type: ")
-                        .append(mContentType)
-                        .append("; boundary=")
-                        .append(getBoundary())
-                        .append("\r\n");
+                if (Flags.mapMimeMultipart()) {
+                    sb.append("Content-Type: multipart/mixed; boundary=\"")
+                            .append(getBoundary())
+                            .append("\"\r\n");
+                } else {
+                    sb.append("Content-Type: ")
+                            .append(mContentType)
+                            .append("; boundary=")
+                            .append(getBoundary())
+                            .append("\r\n");
+                }
             }
         }
         // If no headers exists, we still need two CRLF, hence keep it out of the if above.
@@ -558,7 +574,7 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
      *     headers were found.
      */
     private String parseMimeHeaders(String hdrPart) {
-        String[] headers = hdrPart.split("\r\n");
+        String[] headers = NEW_LINE.split(hdrPart);
         Log.d(TAG, "Header count=" + headers.length);
         String header;
 
@@ -573,7 +589,7 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
             if (header.trim().isEmpty()) {
                 continue;
             }
-            String[] headerParts = header.split(":", 2);
+            String[] headerParts = COLON.split(header, 2);
             if (headerParts.length != 2) {
                 // We treat the remaining content as plain text.
                 StringBuilder remaining = new StringBuilder();
@@ -584,7 +600,7 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
                 return remaining.toString();
             }
 
-            String headerType = Ascii.toUpperCase(headerParts[0]);
+            String headerType = headerParts[0].toUpperCase(Locale.ROOT);
             String headerValue = headerParts[1].trim();
 
             // Address headers
@@ -621,12 +637,12 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
             } else if (headerType.contains("MIME-VERSION")) {
                 /* The mime version is not needed */
             } else if (headerType.contains("CONTENT-TYPE")) {
-                String[] contentTypeParts = headerValue.split(";");
+                String[] contentTypeParts = SEMI_COLON.split(headerValue);
                 mContentType = contentTypeParts[0];
                 // Extract the boundary if it exists
                 for (int j = 1, n = contentTypeParts.length; j < n; j++) {
                     if (contentTypeParts[j].contains("boundary")) {
-                        mBoundary = contentTypeParts[j].split("boundary[\\s]*=", 2)[1].trim();
+                        mBoundary = BOUNDARY_PATTERN.split(contentTypeParts[j], 2)[1].trim();
                         // removing quotes from boundary string
                         if ((mBoundary.charAt(0) == '\"')
                                 && (mBoundary.charAt(mBoundary.length() - 1) == '\"')) {
@@ -634,7 +650,7 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
                         }
                         Log.d(TAG, "Boundary tag=" + mBoundary);
                     } else if (contentTypeParts[j].contains("charset")) {
-                        mCharset = contentTypeParts[j].split("charset[\\s]*=", 2)[1].trim();
+                        mCharset = CHARSET_PATTERN.split(contentTypeParts[j], 2)[1].trim();
                     }
                 }
             } else if (headerType.contains("CONTENT-TRANSFER-ENCODING")) {
@@ -652,12 +668,12 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
     }
 
     private void parseMimePart(String partStr) {
-        String[] parts = partStr.split("\r\n\r\n", 2); // Split the header from the body
+        String[] parts = TWO_NEW_LINE.split(partStr, 2); // Split the header from the body
         MimePart newPart = addMimePart();
         String partEncoding = mMyEncoding; /* Use the overall encoding as default */
         String body;
 
-        String[] headers = parts[0].split("\r\n");
+        String[] headers = NEW_LINE.split(parts[0]);
         Log.d(TAG, "parseMimePart: headers count=" + headers.length);
 
         if (parts.length != 2) {
@@ -671,7 +687,7 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
                     continue;
                 }
 
-                String[] headerParts = header.split(":", 2);
+                String[] headerParts = COLON.split(header, 2);
                 if (headerParts.length != 2) {
                     Log.w(TAG, "part-Header not formatted correctly: ");
                     ContentProfileErrorReportUtils.report(
@@ -683,16 +699,16 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
                     continue;
                 }
                 Log.d(TAG, "parseMimePart: header=" + header);
-                String headerType = Ascii.toUpperCase(headerParts[0]);
+                String headerType = headerParts[0].toUpperCase(Locale.ROOT);
                 String headerValue = headerParts[1].trim();
                 if (headerType.contains("CONTENT-TYPE")) {
-                    String[] contentTypeParts = headerValue.split(";");
+                    String[] contentTypeParts = SEMI_COLON.split(headerValue);
                     newPart.mContentType = contentTypeParts[0];
                     // Extract the boundary if it exists
                     for (int j = 1, n = contentTypeParts.length; j < n; j++) {
-                        String value = Ascii.toLowerCase(contentTypeParts[j]);
+                        String value = contentTypeParts[j].toLowerCase(Locale.ROOT);
                         if (value.contains("charset")) {
-                            newPart.mCharsetName = value.split("charset[\\s]*=", 2)[1].trim();
+                            newPart.mCharsetName = CHARSET_PATTERN.split(value, 2)[1].trim();
                         }
                     }
                 } else if (headerType.contains("CONTENT-LOCATION")) {
@@ -735,10 +751,11 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
         newPart.mData = decodeBody(body, mMyEncoding, mCharset);
     }
 
-    private byte[] decodeBody(String body, String encoding, String charset) {
-        if (encoding != null && Ascii.toUpperCase(encoding).contains("BASE64")) {
+    private static byte[] decodeBody(String body, String encoding, String charset) {
+        if (encoding != null && encoding.toUpperCase(Locale.ROOT).contains("BASE64")) {
             return Base64.decode(body, Base64.DEFAULT);
-        } else if (encoding != null && Ascii.toUpperCase(encoding).contains("QUOTED-PRINTABLE")) {
+        } else if (encoding != null
+                && encoding.toUpperCase(Locale.ROOT).contains("QUOTED-PRINTABLE")) {
             return BluetoothMapUtils.quotedPrintableToUtf8(body, charset);
         } else {
             // TODO: handle other encoding types? - here we simply store the string data as bytes
@@ -771,7 +788,7 @@ public class BluetoothMapbMessageMime extends BluetoothMapbMessage {
         String messageBody = null;
 
         message = message.replaceAll("\\r\\n[ \\\t]+", ""); // Unfold
-        messageParts = message.split("\r\n\r\n", 2); // Split the header from the body
+        messageParts = TWO_NEW_LINE.split(message, 2); // Split the header from the body
         if (messageParts.length != 2) {
             // Handle entire message as plain text
             messageBody = message;

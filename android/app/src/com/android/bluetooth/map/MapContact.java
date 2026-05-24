@@ -12,48 +12,30 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.map;
 
 import com.android.bluetooth.SignedLongLong;
 
 /** Local representation of an Android contact */
-public class MapContact {
-    private final String mName;
-    private final long mId;
-
-    private MapContact(long id, String name) {
-        mId = id;
-        mName = name;
-    }
-
-    public static MapContact create(long id, String name) {
-        return new MapContact(id, name);
-    }
-
-    public String getName() {
-        return mName;
-    }
-
-    public long getId() {
-        return mId;
-    }
+record MapContact(long id, String name) {
 
     public String getXBtUidString() {
-        if (mId > 0) {
-            return BluetoothMapUtils.getLongLongAsString(mId, 0);
+        if (id > 0) {
+            return BluetoothMapUtils.getLongLongAsString(id, 0);
         }
         return null;
     }
 
     public SignedLongLong getXBtUid() {
-        if (mId > 0) {
-            return new SignedLongLong(mId, 0);
+        if (id > 0) {
+            return new SignedLongLong(id, 0);
         }
         return null;
     }
 
     @Override
     public String toString() {
-        return mName;
+        return name;
     }
 }

@@ -18,6 +18,7 @@
 
 #include <hardware/ble_scanner.h>
 
+#include "btif_gatt.h"
 #include "main/shim/le_scanning_manager.h"
 
 BleScannerInterface* get_ble_scanner_instance() {

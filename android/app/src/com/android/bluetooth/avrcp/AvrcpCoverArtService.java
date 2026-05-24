@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package com.android.bluetooth.avrcp;
 
+import static java.util.Objects.requireNonNull;
+
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
 import android.util.Log;
@@ -24,6 +26,7 @@ import com.android.bluetooth.BluetoothObexTransport;
 import com.android.bluetooth.IObexConnectionHandler;
 import com.android.bluetooth.ObexServerSockets;
 import com.android.bluetooth.audio_util.Image;
+import com.android.bluetooth.btservice.AdapterService;
 import com.android.obex.ServerSession;
 
 import java.io.IOException;
@@ -47,6 +50,7 @@ public class AvrcpCoverArtService {
      */
     private static final int MAX_TRANSMIT_PACKET_SIZE = 1024;
 
+    private final AdapterService mAdapterService;
     // Cover Art and Image Handle objects
     private final AvrcpCoverArtStorage mStorage;
 
@@ -54,16 +58,18 @@ public class AvrcpCoverArtService {
     private volatile boolean mShutdown = true;
     private final SocketAcceptor mAcceptThread;
     private ObexServerSockets mServerSockets = null;
-    private final HashMap<BluetoothDevice, ServerSession> mClients =
-            new HashMap<BluetoothDevice, ServerSession>();
+    private final HashMap<BluetoothDevice, ServerSession> mClients = new HashMap<>();
     private final Object mClientsLock = new Object();
     private final Object mServerLock = new Object();
 
     // Native interface
-    private AvrcpNativeInterface mNativeInterface;
+    private final AvrcpNativeInterface mNativeInterface;
 
-    public AvrcpCoverArtService() {
-        mNativeInterface = AvrcpNativeInterface.getInstance();
+    // The native interface must be a parameter here in order to be able to mock AvrcpTargetService
+    public AvrcpCoverArtService(
+            AdapterService adapterService, AvrcpNativeInterface nativeInterface) {
+        mAdapterService = requireNonNull(adapterService);
+        mNativeInterface = nativeInterface;
         mAcceptThread = new SocketAcceptor();
         mStorage = new AvrcpCoverArtStorage(COVER_ART_STORAGE_MAX_ITEMS);
     }
@@ -87,7 +93,7 @@ public class AvrcpCoverArtService {
     /**
      * Stop the AVRCP Cover Art Service.
      *
-     * <p>Tear down existing connections, remove ourselved from the SDP record.
+     * <p>Tear down existing connections, remove ourselves from the SDP record.
      */
     public boolean stop() {
         debug("Stopping service");
@@ -105,7 +111,7 @@ public class AvrcpCoverArtService {
     private boolean startBipServer() {
         debug("Starting BIP OBEX server");
         synchronized (mServerLock) {
-            mServerSockets = ObexServerSockets.create(mAcceptThread);
+            mServerSockets = ObexServerSockets.create(mAdapterService, mAcceptThread);
             if (mServerSockets == null) {
                 error("Failed to get a server socket. Can't setup cover art service");
                 return false;
@@ -202,6 +208,7 @@ public class AvrcpCoverArtService {
                             });
             BluetoothObexTransport transport =
                     new BluetoothObexTransport(
+                            mAdapterService,
                             socket,
                             MAX_TRANSMIT_PACKET_SIZE,
                             BluetoothObexTransport.PACKET_SIZE_UNSPECIFIED);
@@ -263,21 +270,21 @@ public class AvrcpCoverArtService {
     public void dump(StringBuilder sb) {
         int psm = getL2capPsm();
         sb.append("AvrcpCoverArtService:");
-        sb.append("\n\tpsm = " + (psm == 0 ? "null" : psm));
+        sb.append("\n\tpsm = ").append((psm == 0 ? "null" : psm));
         mStorage.dump(sb);
         synchronized (mClientsLock) {
-            sb.append("\n\tclients = " + Arrays.toString(mClients.keySet().toArray()));
+            sb.append("\n\tclients = ").append(Arrays.toString(mClients.keySet().toArray()));
         }
         sb.append("\n");
     }
 
     /** Print a message to DEBUG if debug output is enabled */
-    private void debug(String msg) {
+    private static void debug(String msg) {
         Log.d(TAG, msg);
     }
 
     /** Print a message to ERROR */
-    private void error(String msg) {
+    private static void error(String msg) {
         Log.e(TAG, msg);
     }
 }

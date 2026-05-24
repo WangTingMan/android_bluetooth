@@ -6,10 +6,11 @@ package android.bluetooth {
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public java.util.List<android.bluetooth.BluetoothDevice> getConnectedDevices();
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public int getConnectionState(android.bluetooth.BluetoothDevice);
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public java.util.List<android.bluetooth.BluetoothDevice> getDevicesMatchingConnectionStates(int[]);
-    method @FlaggedApi("com.android.bluetooth.flags.a2dp_offload_codec_extensibility") @NonNull @RequiresPermission(android.Manifest.permission.BLUETOOTH_PRIVILEGED) public java.util.Collection<android.bluetooth.BluetoothCodecType> getSupportedCodecTypes();
+    method @NonNull @RequiresPermission(android.Manifest.permission.BLUETOOTH_PRIVILEGED) public java.util.Collection<android.bluetooth.BluetoothCodecType> getSupportedCodecTypes();
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean isA2dpPlaying(android.bluetooth.BluetoothDevice);
     field @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public static final String ACTION_CONNECTION_STATE_CHANGED = "android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED";
     field @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public static final String ACTION_PLAYING_STATE_CHANGED = "android.bluetooth.a2dp.profile.action.PLAYING_STATE_CHANGED";
+    field @FlaggedApi("com.android.bluetooth.flags.a2dp_disconnect_reason_api") public static final String EXTRA_DISCONNECTED_REASON = "android.bluetooth.a2dp.extra.DISCONNECTED_REASON";
     field public static final int STATE_NOT_PLAYING = 11; // 0xb
     field public static final int STATE_PLAYING = 10; // 0xa
   }
@@ -20,7 +21,7 @@ package android.bluetooth {
     method public void closeProfileProxy(int, android.bluetooth.BluetoothProfile);
     method @Deprecated @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean disable();
     method @Deprecated @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean enable();
-    method public String getAddress();
+    method @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_CONNECT, android.Manifest.permission.LOCAL_MAC_ADDRESS}) public String getAddress();
     method public android.bluetooth.le.BluetoothLeAdvertiser getBluetoothLeAdvertiser();
     method public android.bluetooth.le.BluetoothLeScanner getBluetoothLeScanner();
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public java.util.Set<android.bluetooth.BluetoothDevice> getBondedDevices();
@@ -52,6 +53,7 @@ package android.bluetooth {
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public android.bluetooth.BluetoothServerSocket listenUsingInsecureRfcommWithServiceRecord(String, java.util.UUID) throws java.io.IOException;
     method @NonNull @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public android.bluetooth.BluetoothServerSocket listenUsingL2capChannel() throws java.io.IOException;
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public android.bluetooth.BluetoothServerSocket listenUsingRfcommWithServiceRecord(String, java.util.UUID) throws java.io.IOException;
+    method @NonNull @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_CONNECT, android.Manifest.permission.BLUETOOTH_PRIVILEGED}, conditional=true) public android.bluetooth.BluetoothServerSocket listenUsingSocketSettings(@NonNull android.bluetooth.BluetoothSocketSettings) throws java.io.IOException;
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean setName(String);
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_SCAN) public boolean startDiscovery();
     method @Deprecated @RequiresPermission(android.Manifest.permission.BLUETOOTH_SCAN) public boolean startLeScan(android.bluetooth.BluetoothAdapter.LeScanCallback);
@@ -431,7 +433,7 @@ package android.bluetooth {
     method public long getCodecSpecific3();
     method public long getCodecSpecific4();
     method @Deprecated public int getCodecType();
-    method @FlaggedApi("com.android.bluetooth.flags.a2dp_offload_codec_extensibility") @Nullable public android.bluetooth.BluetoothCodecType getExtendedCodecType();
+    method @Nullable public android.bluetooth.BluetoothCodecType getExtendedCodecType();
     method public int getSampleRate();
     method public boolean isMandatoryCodec();
     method public void writeToParcel(android.os.Parcel, int);
@@ -474,7 +476,7 @@ package android.bluetooth {
     method @NonNull public android.bluetooth.BluetoothCodecConfig.Builder setCodecSpecific3(long);
     method @NonNull public android.bluetooth.BluetoothCodecConfig.Builder setCodecSpecific4(long);
     method @Deprecated @NonNull public android.bluetooth.BluetoothCodecConfig.Builder setCodecType(int);
-    method @FlaggedApi("com.android.bluetooth.flags.a2dp_offload_codec_extensibility") @NonNull public android.bluetooth.BluetoothCodecConfig.Builder setExtendedCodecType(@Nullable android.bluetooth.BluetoothCodecType);
+    method @NonNull public android.bluetooth.BluetoothCodecConfig.Builder setExtendedCodecType(@Nullable android.bluetooth.BluetoothCodecType);
     method @NonNull public android.bluetooth.BluetoothCodecConfig.Builder setSampleRate(int);
   }
 
@@ -497,27 +499,28 @@ package android.bluetooth {
     method @NonNull public android.bluetooth.BluetoothCodecStatus.Builder setCodecsSelectableCapabilities(@NonNull java.util.List<android.bluetooth.BluetoothCodecConfig>);
   }
 
-  @FlaggedApi("com.android.bluetooth.flags.a2dp_offload_codec_extensibility") public final class BluetoothCodecType implements android.os.Parcelable {
-    method @FlaggedApi("com.android.bluetooth.flags.a2dp_offload_codec_extensibility") public int describeContents();
-    method @FlaggedApi("com.android.bluetooth.flags.a2dp_offload_codec_extensibility") public long getCodecId();
-    method @FlaggedApi("com.android.bluetooth.flags.a2dp_offload_codec_extensibility") @NonNull public String getCodecName();
-    method @FlaggedApi("com.android.bluetooth.flags.a2dp_offload_codec_extensibility") public boolean isMandatoryCodec();
-    method @FlaggedApi("com.android.bluetooth.flags.a2dp_offload_codec_extensibility") public void writeToParcel(@NonNull android.os.Parcel, int);
+  public final class BluetoothCodecType implements android.os.Parcelable {
+    method public int describeContents();
+    method public long getCodecId();
+    method @NonNull public String getCodecName();
+    method public boolean isMandatoryCodec();
+    method public void writeToParcel(@NonNull android.os.Parcel, int);
     field public static final long CODEC_ID_AAC = 2L; // 0x2L
     field public static final long CODEC_ID_APTX = 16797695L; // 0x1004fffL
     field public static final long CODEC_ID_APTX_HD = 604035071L; // 0x2400d7ffL
     field public static final long CODEC_ID_LDAC = -1442763265L; // 0xffffffffaa012dffL
+    field @FlaggedApi("com.android.bluetooth.flags.a2dp_lhdc_api") public static final long CODEC_ID_LHDCV5 = 327307049727L; // 0x4c35053affL
     field public static final long CODEC_ID_OPUS = 16834815L; // 0x100e0ffL
     field public static final long CODEC_ID_SBC = 0L; // 0x0L
-    field @FlaggedApi("com.android.bluetooth.flags.a2dp_offload_codec_extensibility") @NonNull public static final android.os.Parcelable.Creator<android.bluetooth.BluetoothCodecType> CREATOR;
+    field @NonNull public static final android.os.Parcelable.Creator<android.bluetooth.BluetoothCodecType> CREATOR;
   }
 
   public final class BluetoothCsipSetCoordinator implements java.lang.AutoCloseable android.bluetooth.BluetoothProfile {
     method public void close();
     method protected void finalize();
-    method @NonNull public java.util.List<android.bluetooth.BluetoothDevice> getConnectedDevices();
-    method public int getConnectionState(@Nullable android.bluetooth.BluetoothDevice);
-    method @NonNull public java.util.List<android.bluetooth.BluetoothDevice> getDevicesMatchingConnectionStates(@NonNull int[]);
+    method @NonNull @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_CONNECT, android.Manifest.permission.BLUETOOTH_PRIVILEGED}) public java.util.List<android.bluetooth.BluetoothDevice> getConnectedDevices();
+    method @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_CONNECT, android.Manifest.permission.BLUETOOTH_PRIVILEGED}) public int getConnectionState(@Nullable android.bluetooth.BluetoothDevice);
+    method @NonNull @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_CONNECT, android.Manifest.permission.BLUETOOTH_PRIVILEGED}) public java.util.List<android.bluetooth.BluetoothDevice> getDevicesMatchingConnectionStates(@NonNull int[]);
     field @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public static final String ACTION_CSIS_CONNECTION_STATE_CHANGED = "android.bluetooth.action.CSIS_CONNECTION_STATE_CHANGED";
   }
 
@@ -527,21 +530,26 @@ package android.bluetooth {
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public android.bluetooth.BluetoothGatt connectGatt(android.content.Context, boolean, android.bluetooth.BluetoothGattCallback, int, int);
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public android.bluetooth.BluetoothGatt connectGatt(android.content.Context, boolean, android.bluetooth.BluetoothGattCallback, int, int, android.os.Handler);
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean createBond();
-    method @NonNull @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public android.bluetooth.BluetoothSocket createInsecureL2capChannel(int) throws java.io.IOException;
-    method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public android.bluetooth.BluetoothSocket createInsecureRfcommSocketToServiceRecord(java.util.UUID) throws java.io.IOException;
-    method @NonNull @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public android.bluetooth.BluetoothSocket createL2capChannel(int) throws java.io.IOException;
-    method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public android.bluetooth.BluetoothSocket createRfcommSocketToServiceRecord(java.util.UUID) throws java.io.IOException;
+    method @NonNull public android.bluetooth.BluetoothSocket createInsecureL2capChannel(int) throws java.io.IOException;
+    method public android.bluetooth.BluetoothSocket createInsecureRfcommSocketToServiceRecord(java.util.UUID) throws java.io.IOException;
+    method @NonNull public android.bluetooth.BluetoothSocket createL2capChannel(int) throws java.io.IOException;
+    method public android.bluetooth.BluetoothSocket createRfcommSocketToServiceRecord(java.util.UUID) throws java.io.IOException;
+    method @NonNull public android.bluetooth.BluetoothSocket createUsingSocketSettings(@NonNull android.bluetooth.BluetoothSocketSettings) throws java.io.IOException;
     method public int describeContents();
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean fetchUuidsWithSdp();
     method public String getAddress();
-    method @FlaggedApi("com.android.bluetooth.flags.get_address_type_api") public int getAddressType();
+    method public int getAddressType();
     method @Nullable @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public String getAlias();
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public android.bluetooth.BluetoothClass getBluetoothClass();
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public int getBondState();
+    method @FlaggedApi("com.android.bluetooth.flags.link_status_api") @Nullable @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public android.bluetooth.EncryptionStatus getEncryptionStatus(int);
+    method @NonNull @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_CONNECT, android.Manifest.permission.BLUETOOTH_PRIVILEGED}) public android.bluetooth.BluetoothDevice.BluetoothAddress getIdentityAddressWithType();
+    method @FlaggedApi("com.android.bluetooth.flags.key_missing_count_api") @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public int getKeyMissingCount();
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public String getName();
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public int getType();
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public android.os.ParcelUuid[] getUuids();
-    method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public int setAlias(@Nullable String);
+    method @FlaggedApi("com.android.bluetooth.flags.link_status_api") @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean isConnected(int);
+    method @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_CONNECT, android.Manifest.permission.BLUETOOTH_PRIVILEGED}, conditional=true) public int setAlias(@Nullable String);
     method @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_CONNECT, android.Manifest.permission.BLUETOOTH_PRIVILEGED}) public boolean setPairingConfirmation(boolean);
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean setPin(byte[]);
     method public void writeToParcel(android.os.Parcel, int);
@@ -551,27 +559,44 @@ package android.bluetooth {
     field @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public static final String ACTION_ALIAS_CHANGED = "android.bluetooth.device.action.ALIAS_CHANGED";
     field @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public static final String ACTION_BOND_STATE_CHANGED = "android.bluetooth.device.action.BOND_STATE_CHANGED";
     field @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public static final String ACTION_CLASS_CHANGED = "android.bluetooth.device.action.CLASS_CHANGED";
+    field @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public static final String ACTION_ENCRYPTION_CHANGE = "android.bluetooth.device.action.ENCRYPTION_CHANGE";
     field @RequiresPermission(android.Manifest.permission.BLUETOOTH_SCAN) public static final String ACTION_FOUND = "android.bluetooth.device.action.FOUND";
+    field @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_CONNECT, android.Manifest.permission.BLUETOOTH_PRIVILEGED}, conditional=true) public static final String ACTION_KEY_MISSING = "android.bluetooth.device.action.KEY_MISSING";
     field @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public static final String ACTION_NAME_CHANGED = "android.bluetooth.device.action.NAME_CHANGED";
     field @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public static final String ACTION_PAIRING_REQUEST = "android.bluetooth.device.action.PAIRING_REQUEST";
     field @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public static final String ACTION_UUID = "android.bluetooth.device.action.UUID";
-    field @FlaggedApi("com.android.bluetooth.flags.get_address_type_api") public static final int ADDRESS_TYPE_ANONYMOUS = 255; // 0xff
+    field public static final int ADDRESS_TYPE_ANONYMOUS = 255; // 0xff
     field public static final int ADDRESS_TYPE_PUBLIC = 0; // 0x0
     field public static final int ADDRESS_TYPE_RANDOM = 1; // 0x1
     field public static final int ADDRESS_TYPE_UNKNOWN = 65535; // 0xffff
     field public static final int BOND_BONDED = 12; // 0xc
     field public static final int BOND_BONDING = 11; // 0xb
+    field @FlaggedApi("com.android.bluetooth.flags.add_bond_loss_reason") public static final int BOND_LOSS_REASON_BREDR_AUTH_FAILURE = 1; // 0x1
+    field @FlaggedApi("com.android.bluetooth.flags.add_bond_loss_reason") public static final int BOND_LOSS_REASON_BREDR_INCOMING_PAIRING = 2; // 0x2
+    field @FlaggedApi("com.android.bluetooth.flags.add_bond_loss_reason") public static final int BOND_LOSS_REASON_LE_ENCRYPT_FAILURE = 3; // 0x3
+    field @FlaggedApi("com.android.bluetooth.flags.add_bond_loss_reason") public static final int BOND_LOSS_REASON_LE_INCOMING_PAIRING = 4; // 0x4
+    field @FlaggedApi("com.android.bluetooth.flags.add_bond_loss_reason") public static final int BOND_LOSS_REASON_UNKNOWN = 0; // 0x0
     field public static final int BOND_NONE = 10; // 0xa
     field @NonNull public static final android.os.Parcelable.Creator<android.bluetooth.BluetoothDevice> CREATOR;
     field public static final int DEVICE_TYPE_CLASSIC = 1; // 0x1
     field public static final int DEVICE_TYPE_DUAL = 3; // 0x3
     field public static final int DEVICE_TYPE_LE = 2; // 0x2
     field public static final int DEVICE_TYPE_UNKNOWN = 0; // 0x0
+    field public static final int ENCRYPTION_ALGORITHM_AES = 2; // 0x2
+    field public static final int ENCRYPTION_ALGORITHM_E0 = 1; // 0x1
+    field public static final int ENCRYPTION_ALGORITHM_NONE = 0; // 0x0
+    field @FlaggedApi("com.android.bluetooth.flags.link_status_api") public static final int ENCRYPTION_ALGORITHM_UNKNOWN = 3; // 0x3
     field public static final int ERROR = -2147483648; // 0x80000000
+    field @FlaggedApi("com.android.bluetooth.flags.add_bond_loss_reason") public static final String EXTRA_BOND_LOSS_REASON = "android.bluetooth.device.extra.BOND_LOSS_REASON";
     field public static final String EXTRA_BOND_STATE = "android.bluetooth.device.extra.BOND_STATE";
     field public static final String EXTRA_CLASS = "android.bluetooth.device.extra.CLASS";
     field public static final String EXTRA_DEVICE = "android.bluetooth.device.extra.DEVICE";
+    field @FlaggedApi("com.android.bluetooth.flags.get_svc_uuids_from_ble_adv_data") public static final String EXTRA_DISCOVERY_RESULT_TYPE = "android.bluetooth.device.extra.DISCOVERY_RESULT_TYPE";
+    field public static final String EXTRA_ENCRYPTION_ALGORITHM = "android.bluetooth.device.extra.EXTRA_ENCRYPTION_ALGORITHM";
+    field public static final String EXTRA_ENCRYPTION_ENABLED = "android.bluetooth.device.extra.ENCRYPTION_ENABLED";
+    field public static final String EXTRA_ENCRYPTION_STATUS = "android.bluetooth.device.extra.ENCRYPTION_STATUS";
     field public static final String EXTRA_IS_COORDINATED_SET_MEMBER = "android.bluetooth.extra.IS_COORDINATED_SET_MEMBER";
+    field public static final String EXTRA_KEY_SIZE = "android.bluetooth.device.extra.KEY_SIZE";
     field public static final String EXTRA_NAME = "android.bluetooth.device.extra.NAME";
     field public static final String EXTRA_PAIRING_KEY = "android.bluetooth.device.extra.PAIRING_KEY";
     field public static final String EXTRA_PAIRING_VARIANT = "android.bluetooth.device.extra.PAIRING_VARIANT";
@@ -579,6 +604,7 @@ package android.bluetooth {
     field public static final String EXTRA_RSSI = "android.bluetooth.device.extra.RSSI";
     field public static final String EXTRA_TRANSPORT = "android.bluetooth.device.extra.TRANSPORT";
     field public static final String EXTRA_UUID = "android.bluetooth.device.extra.UUID";
+    field @FlaggedApi("com.android.bluetooth.flags.get_svc_uuids_from_ble_adv_data") public static final String EXTRA_UUID_LE = "android.bluetooth.device.extra.UUID_LE";
     field public static final int PAIRING_VARIANT_PASSKEY_CONFIRMATION = 2; // 0x2
     field public static final int PAIRING_VARIANT_PIN = 0; // 0x0
     field public static final int PHY_LE_1M = 1; // 0x1
@@ -593,6 +619,15 @@ package android.bluetooth {
     field public static final int TRANSPORT_AUTO = 0; // 0x0
     field public static final int TRANSPORT_BREDR = 1; // 0x1
     field public static final int TRANSPORT_LE = 2; // 0x2
+  }
+
+  public static final class BluetoothDevice.BluetoothAddress implements android.os.Parcelable {
+    ctor public BluetoothDevice.BluetoothAddress(@Nullable String, int);
+    method public int describeContents();
+    method @Nullable public String getAddress();
+    method public int getAddressType();
+    method public void writeToParcel(@NonNull android.os.Parcel, int);
+    field @NonNull public static final android.os.Parcelable.Creator<android.bluetooth.BluetoothDevice.BluetoothAddress> CREATOR;
   }
 
   public final class BluetoothGatt implements android.bluetooth.BluetoothProfile {
@@ -616,6 +651,7 @@ package android.bluetooth {
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean readRemoteRssi();
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean requestConnectionPriority(int);
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean requestMtu(int);
+    method @FlaggedApi("com.android.bluetooth.flags.le_subrate_api") @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_CONNECT, android.Manifest.permission.BLUETOOTH_PRIVILEGED}, conditional=true) public int requestSubrateMode(int);
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean setCharacteristicNotification(android.bluetooth.BluetoothGattCharacteristic, boolean);
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public void setPreferredPhy(int, int, int);
     method @Deprecated @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean writeCharacteristic(android.bluetooth.BluetoothGattCharacteristic);
@@ -627,7 +663,7 @@ package android.bluetooth {
     field public static final int CONNECTION_PRIORITY_HIGH = 1; // 0x1
     field public static final int CONNECTION_PRIORITY_LOW_POWER = 2; // 0x2
     field public static final int GATT_CONNECTION_CONGESTED = 143; // 0x8f
-    field @FlaggedApi("com.android.bluetooth.flags.enumerate_gatt_errors") public static final int GATT_CONNECTION_TIMEOUT = 147; // 0x93
+    field public static final int GATT_CONNECTION_TIMEOUT = 147; // 0x93
     field public static final int GATT_FAILURE = 257; // 0x101
     field public static final int GATT_INSUFFICIENT_AUTHENTICATION = 5; // 0x5
     field public static final int GATT_INSUFFICIENT_AUTHORIZATION = 8; // 0x8
@@ -638,6 +674,12 @@ package android.bluetooth {
     field public static final int GATT_REQUEST_NOT_SUPPORTED = 6; // 0x6
     field public static final int GATT_SUCCESS = 0; // 0x0
     field public static final int GATT_WRITE_NOT_PERMITTED = 3; // 0x3
+    field @FlaggedApi("com.android.bluetooth.flags.le_subrate_api") public static final int SUBRATE_MODE_BALANCED = 2; // 0x2
+    field @FlaggedApi("com.android.bluetooth.flags.le_subrate_api") public static final int SUBRATE_MODE_HIGH = 3; // 0x3
+    field @FlaggedApi("com.android.bluetooth.flags.le_subrate_api") public static final int SUBRATE_MODE_LOW = 1; // 0x1
+    field @FlaggedApi("com.android.bluetooth.flags.le_subrate_api") public static final int SUBRATE_MODE_NOT_UPDATED = 255; // 0xff
+    field @FlaggedApi("com.android.bluetooth.flags.le_subrate_api") public static final int SUBRATE_MODE_OFF = 0; // 0x0
+    field @FlaggedApi("com.android.bluetooth.flags.le_subrate_api") public static final int SUBRATE_MODE_SYSTEM_UPDATE = 99; // 0x63
   }
 
   public abstract class BluetoothGattCallback {
@@ -658,6 +700,7 @@ package android.bluetooth {
     method public void onReliableWriteCompleted(android.bluetooth.BluetoothGatt, int);
     method public void onServiceChanged(@NonNull android.bluetooth.BluetoothGatt);
     method public void onServicesDiscovered(android.bluetooth.BluetoothGatt, int);
+    method @FlaggedApi("com.android.bluetooth.flags.le_subrate_api") public void onSubrateChange(@NonNull android.bluetooth.BluetoothGatt, int, int);
   }
 
   public class BluetoothGattCharacteristic implements android.os.Parcelable {
@@ -768,6 +811,7 @@ package android.bluetooth {
     method public void onPhyRead(android.bluetooth.BluetoothDevice, int, int, int);
     method public void onPhyUpdate(android.bluetooth.BluetoothDevice, int, int, int);
     method public void onServiceAdded(int, android.bluetooth.BluetoothGattService);
+    method @FlaggedApi("com.android.bluetooth.flags.le_subrate_api") public void onSubrateChange(@NonNull android.bluetooth.BluetoothDevice, int, int);
   }
 
   public class BluetoothGattService implements android.os.Parcelable {
@@ -797,7 +841,7 @@ package android.bluetooth {
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean isNoiseReductionSupported(@NonNull android.bluetooth.BluetoothDevice);
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean isVoiceRecognitionSupported(@NonNull android.bluetooth.BluetoothDevice);
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean sendVendorSpecificResultCode(android.bluetooth.BluetoothDevice, String, String);
-    method @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_CONNECT, android.Manifest.permission.MODIFY_PHONE_STATE}) public boolean startVoiceRecognition(android.bluetooth.BluetoothDevice);
+    method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean startVoiceRecognition(android.bluetooth.BluetoothDevice);
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public boolean stopVoiceRecognition(android.bluetooth.BluetoothDevice);
     field @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public static final String ACTION_AUDIO_STATE_CHANGED = "android.bluetooth.headset.profile.action.AUDIO_STATE_CHANGED";
     field @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public static final String ACTION_CONNECTION_STATE_CHANGED = "android.bluetooth.headset.profile.action.CONNECTION_STATE_CHANGED";
@@ -807,6 +851,7 @@ package android.bluetooth {
     field public static final int AT_CMD_TYPE_READ = 0; // 0x0
     field public static final int AT_CMD_TYPE_SET = 2; // 0x2
     field public static final int AT_CMD_TYPE_TEST = 1; // 0x1
+    field @FlaggedApi("com.android.bluetooth.flags.a2dp_disconnect_reason_api") public static final String EXTRA_DISCONNECTED_REASON = "android.bluetooth.headset.extra.DISCONNECTED_REASON";
     field public static final String EXTRA_VENDOR_SPECIFIC_HEADSET_EVENT_ARGS = "android.bluetooth.headset.extra.VENDOR_SPECIFIC_HEADSET_EVENT_ARGS";
     field public static final String EXTRA_VENDOR_SPECIFIC_HEADSET_EVENT_CMD = "android.bluetooth.headset.extra.VENDOR_SPECIFIC_HEADSET_EVENT_CMD";
     field public static final String EXTRA_VENDOR_SPECIFIC_HEADSET_EVENT_CMD_TYPE = "android.bluetooth.headset.extra.VENDOR_SPECIFIC_HEADSET_EVENT_CMD_TYPE";
@@ -977,22 +1022,24 @@ package android.bluetooth {
     field public static final int FRAME_DURATION_10000 = 2; // 0x2
     field public static final int FRAME_DURATION_7500 = 1; // 0x1
     field public static final int FRAME_DURATION_NONE = 0; // 0x0
-    field @FlaggedApi("com.android.bluetooth.flags.leaudio_add_sampling_frequencies") public static final int SAMPLE_RATE_11025 = 2; // 0x2
+    field public static final int SAMPLE_RATE_11025 = 2; // 0x2
     field public static final int SAMPLE_RATE_16000 = 4; // 0x4
-    field @FlaggedApi("com.android.bluetooth.flags.leaudio_add_sampling_frequencies") public static final int SAMPLE_RATE_176400 = 1024; // 0x400
-    field @FlaggedApi("com.android.bluetooth.flags.leaudio_add_sampling_frequencies") public static final int SAMPLE_RATE_192000 = 2048; // 0x800
-    field @FlaggedApi("com.android.bluetooth.flags.leaudio_add_sampling_frequencies") public static final int SAMPLE_RATE_22050 = 8; // 0x8
+    field public static final int SAMPLE_RATE_176400 = 1024; // 0x400
+    field public static final int SAMPLE_RATE_192000 = 2048; // 0x800
+    field public static final int SAMPLE_RATE_22050 = 8; // 0x8
     field public static final int SAMPLE_RATE_24000 = 16; // 0x10
     field public static final int SAMPLE_RATE_32000 = 32; // 0x20
-    field @FlaggedApi("com.android.bluetooth.flags.leaudio_add_sampling_frequencies") public static final int SAMPLE_RATE_384000 = 4096; // 0x1000
+    field public static final int SAMPLE_RATE_384000 = 4096; // 0x1000
     field public static final int SAMPLE_RATE_44100 = 64; // 0x40
     field public static final int SAMPLE_RATE_48000 = 128; // 0x80
     field public static final int SAMPLE_RATE_8000 = 1; // 0x1
-    field @FlaggedApi("com.android.bluetooth.flags.leaudio_add_sampling_frequencies") public static final int SAMPLE_RATE_88200 = 256; // 0x100
-    field @FlaggedApi("com.android.bluetooth.flags.leaudio_add_sampling_frequencies") public static final int SAMPLE_RATE_96000 = 512; // 0x200
+    field public static final int SAMPLE_RATE_88200 = 256; // 0x100
+    field public static final int SAMPLE_RATE_96000 = 512; // 0x200
     field public static final int SAMPLE_RATE_NONE = 0; // 0x0
     field public static final int SOURCE_CODEC_TYPE_INVALID = 1000000; // 0xf4240
     field public static final int SOURCE_CODEC_TYPE_LC3 = 0; // 0x0
+    field public static final int SOURCE_CODEC_TYPE_OPUS = 1; // 0x1
+    field @FlaggedApi("com.android.bluetooth.flags.leaudio_add_opus_hi_res_codec_type_api") public static final int SOURCE_CODEC_TYPE_OPUS_HI_RES = 2; // 0x2
   }
 
   public static final class BluetoothLeAudioCodecConfig.Builder {
@@ -1041,6 +1088,7 @@ package android.bluetooth {
     field public static final int A2DP = 2; // 0x2
     field public static final int CSIP_SET_COORDINATOR = 25; // 0x19
     field public static final String EXTRA_PREVIOUS_STATE = "android.bluetooth.profile.extra.PREVIOUS_STATE";
+    field @FlaggedApi("com.android.bluetooth.flags.add_profile_as_intent_extra") public static final String EXTRA_PROFILE = "android.bluetooth.profile.extra.PROFILE";
     field public static final String EXTRA_STATE = "android.bluetooth.profile.extra.STATE";
     field public static final int GATT = 7; // 0x7
     field public static final int GATT_SERVER = 8; // 0x8
@@ -1071,7 +1119,7 @@ package android.bluetooth {
 
   public final class BluetoothSocket implements java.io.Closeable {
     method public void close() throws java.io.IOException;
-    method @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) public void connect() throws java.io.IOException;
+    method @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_CONNECT, android.Manifest.permission.BLUETOOTH_PRIVILEGED}, conditional=true) public void connect() throws java.io.IOException;
     method public int getConnectionType();
     method public java.io.InputStream getInputStream() throws java.io.IOException;
     method public int getMaxReceivePacketSize();
@@ -1080,6 +1128,7 @@ package android.bluetooth {
     method public android.bluetooth.BluetoothDevice getRemoteDevice();
     method public boolean isConnected();
     field public static final int TYPE_L2CAP = 3; // 0x3
+    field public static final int TYPE_LE = 4; // 0x4
     field public static final int TYPE_RFCOMM = 1; // 0x1
     field public static final int TYPE_SCO = 2; // 0x2
   }
@@ -1108,23 +1157,55 @@ package android.bluetooth {
     field public static final int SOCKET_CLOSED = 17; // 0x11
     field public static final int SOCKET_CONNECTION_FAILURE = 18; // 0x12
     field public static final int SOCKET_MANAGER_FAILURE = 16; // 0x10
-    field @FlaggedApi("com.android.bluetooth.flags.unix_file_socket_creation_failure") public static final int UNIX_FILE_SOCKET_CREATION_FAILURE = 21; // 0x15
+    field public static final int UNIX_FILE_SOCKET_CREATION_FAILURE = 21; // 0x15
     field public static final int UNSPECIFIED = 0; // 0x0
   }
 
+  public final class BluetoothSocketSettings {
+    method @IntRange(from=128, to=255) public int getL2capPsm();
+    method @Nullable public String getRfcommServiceName();
+    method @Nullable public java.util.UUID getRfcommUuid();
+    method public int getSocketType();
+    method public boolean isAuthenticationRequired();
+    method public boolean isEncryptionRequired();
+  }
+
+  public static final class BluetoothSocketSettings.Builder {
+    ctor public BluetoothSocketSettings.Builder();
+    method @NonNull public android.bluetooth.BluetoothSocketSettings build();
+    method @NonNull public android.bluetooth.BluetoothSocketSettings.Builder setAuthenticationRequired(boolean);
+    method @NonNull public android.bluetooth.BluetoothSocketSettings.Builder setEncryptionRequired(boolean);
+    method @NonNull public android.bluetooth.BluetoothSocketSettings.Builder setL2capPsm(@IntRange(from=128, to=255) int);
+    method @NonNull public android.bluetooth.BluetoothSocketSettings.Builder setRfcommServiceName(@NonNull String);
+    method @NonNull public android.bluetooth.BluetoothSocketSettings.Builder setRfcommUuid(@NonNull java.util.UUID);
+    method @NonNull public android.bluetooth.BluetoothSocketSettings.Builder setSocketType(int);
+  }
+
   public final class BluetoothStatusCodes {
+    field @FlaggedApi("com.android.bluetooth.flags.a2dp_disconnect_reason_api") public static final int ERROR_AVDTP_DISCOVERY_FAILED = 1403; // 0x57b
     field public static final int ERROR_BLUETOOTH_NOT_ALLOWED = 2; // 0x2
     field public static final int ERROR_BLUETOOTH_NOT_ENABLED = 1; // 0x1
     field public static final int ERROR_DEVICE_NOT_BONDED = 3; // 0x3
     field public static final int ERROR_GATT_WRITE_NOT_ALLOWED = 200; // 0xc8
     field public static final int ERROR_GATT_WRITE_REQUEST_BUSY = 201; // 0xc9
+    field @FlaggedApi("com.android.bluetooth.flags.a2dp_disconnect_reason_api") public static final int ERROR_INSUFFICIENT_RESOURCES = 1404; // 0x57c
     field public static final int ERROR_MISSING_BLUETOOTH_CONNECT_PERMISSION = 6; // 0x6
     field public static final int ERROR_PROFILE_SERVICE_NOT_BOUND = 9; // 0x9
+    field @FlaggedApi("com.android.bluetooth.flags.a2dp_disconnect_reason_api") public static final int ERROR_RFCOMM_CONNECTION_FAILED = 1405; // 0x57d
+    field @FlaggedApi("com.android.bluetooth.flags.a2dp_disconnect_reason_api") public static final int ERROR_ROLE_SWITCH_FAILED = 1402; // 0x57a
+    field @FlaggedApi("com.android.bluetooth.flags.a2dp_disconnect_reason_api") public static final int ERROR_SDP_DISCOVERY_FAILED = 1400; // 0x578
+    field @FlaggedApi("com.android.bluetooth.flags.a2dp_disconnect_reason_api") public static final int ERROR_STREAM_CONNECTION_FAILED = 1401; // 0x579
     field public static final int ERROR_UNKNOWN = 2147483647; // 0x7fffffff
     field public static final int FEATURE_NOT_CONFIGURED = 30; // 0x1e
     field public static final int FEATURE_NOT_SUPPORTED = 11; // 0xb
     field public static final int FEATURE_SUPPORTED = 10; // 0xa
     field public static final int SUCCESS = 0; // 0x0
+  }
+
+  @FlaggedApi("com.android.bluetooth.flags.link_status_api") public final class EncryptionStatus {
+    ctor public EncryptionStatus(@IntRange(from=1, to=16) int, int);
+    method public int getAlgorithm();
+    method @IntRange(from=1, to=16) public int getKeySize();
   }
 
 }
@@ -1198,7 +1279,7 @@ package android.bluetooth.le {
   public final class AdvertisingSet {
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_ADVERTISE) public void enableAdvertising(boolean, int, int);
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_ADVERTISE) public void setAdvertisingData(android.bluetooth.le.AdvertiseData);
-    method @RequiresPermission(android.Manifest.permission.BLUETOOTH_ADVERTISE) public void setAdvertisingParameters(android.bluetooth.le.AdvertisingSetParameters);
+    method @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_ADVERTISE, android.Manifest.permission.BLUETOOTH_PRIVILEGED}, conditional=true) public void setAdvertisingParameters(android.bluetooth.le.AdvertisingSetParameters);
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_ADVERTISE) public void setPeriodicAdvertisingData(android.bluetooth.le.AdvertiseData);
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_ADVERTISE) public void setPeriodicAdvertisingEnabled(boolean);
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_ADVERTISE) public void setPeriodicAdvertisingParameters(android.bluetooth.le.PeriodicAdvertisingParameters);
@@ -1267,12 +1348,12 @@ package android.bluetooth.le {
   }
 
   public final class BluetoothLeAdvertiser {
-    method @RequiresPermission(android.Manifest.permission.BLUETOOTH_ADVERTISE) public void startAdvertising(android.bluetooth.le.AdvertiseSettings, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertiseCallback);
-    method @RequiresPermission(android.Manifest.permission.BLUETOOTH_ADVERTISE) public void startAdvertising(android.bluetooth.le.AdvertiseSettings, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertiseCallback);
-    method @RequiresPermission(android.Manifest.permission.BLUETOOTH_ADVERTISE) public void startAdvertisingSet(android.bluetooth.le.AdvertisingSetParameters, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertiseData, android.bluetooth.le.PeriodicAdvertisingParameters, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertisingSetCallback);
-    method @RequiresPermission(android.Manifest.permission.BLUETOOTH_ADVERTISE) public void startAdvertisingSet(android.bluetooth.le.AdvertisingSetParameters, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertiseData, android.bluetooth.le.PeriodicAdvertisingParameters, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertisingSetCallback, android.os.Handler);
-    method @RequiresPermission(android.Manifest.permission.BLUETOOTH_ADVERTISE) public void startAdvertisingSet(android.bluetooth.le.AdvertisingSetParameters, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertiseData, android.bluetooth.le.PeriodicAdvertisingParameters, android.bluetooth.le.AdvertiseData, int, int, android.bluetooth.le.AdvertisingSetCallback);
-    method @RequiresPermission(android.Manifest.permission.BLUETOOTH_ADVERTISE) public void startAdvertisingSet(android.bluetooth.le.AdvertisingSetParameters, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertiseData, android.bluetooth.le.PeriodicAdvertisingParameters, android.bluetooth.le.AdvertiseData, int, int, android.bluetooth.le.AdvertisingSetCallback, android.os.Handler);
+    method @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_ADVERTISE, android.Manifest.permission.BLUETOOTH_PRIVILEGED}, conditional=true) public void startAdvertising(android.bluetooth.le.AdvertiseSettings, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertiseCallback);
+    method @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_ADVERTISE, android.Manifest.permission.BLUETOOTH_PRIVILEGED}, conditional=true) public void startAdvertising(android.bluetooth.le.AdvertiseSettings, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertiseCallback);
+    method @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_ADVERTISE, android.Manifest.permission.BLUETOOTH_PRIVILEGED}, conditional=true) public void startAdvertisingSet(android.bluetooth.le.AdvertisingSetParameters, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertiseData, android.bluetooth.le.PeriodicAdvertisingParameters, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertisingSetCallback);
+    method @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_ADVERTISE, android.Manifest.permission.BLUETOOTH_PRIVILEGED}, conditional=true) public void startAdvertisingSet(android.bluetooth.le.AdvertisingSetParameters, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertiseData, android.bluetooth.le.PeriodicAdvertisingParameters, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertisingSetCallback, android.os.Handler);
+    method @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_ADVERTISE, android.Manifest.permission.BLUETOOTH_PRIVILEGED}, conditional=true) public void startAdvertisingSet(android.bluetooth.le.AdvertisingSetParameters, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertiseData, android.bluetooth.le.PeriodicAdvertisingParameters, android.bluetooth.le.AdvertiseData, int, int, android.bluetooth.le.AdvertisingSetCallback);
+    method @RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_ADVERTISE, android.Manifest.permission.BLUETOOTH_PRIVILEGED}, conditional=true) public void startAdvertisingSet(android.bluetooth.le.AdvertisingSetParameters, android.bluetooth.le.AdvertiseData, android.bluetooth.le.AdvertiseData, android.bluetooth.le.PeriodicAdvertisingParameters, android.bluetooth.le.AdvertiseData, int, int, android.bluetooth.le.AdvertisingSetCallback, android.os.Handler);
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_ADVERTISE) public void stopAdvertising(android.bluetooth.le.AdvertiseCallback);
     method @RequiresPermission(android.Manifest.permission.BLUETOOTH_ADVERTISE) public void stopAdvertisingSet(android.bluetooth.le.AdvertisingSetCallback);
   }
@@ -1449,8 +1530,10 @@ package android.bluetooth.le {
     method public boolean getLegacy();
     method public int getPhy();
     method public long getReportDelayMillis();
+    method @FlaggedApi("com.android.bluetooth.flags.rssi_scan_filter") public int getRssiThreshold();
     method public int getScanMode();
     method public int getScanResultType();
+    method @FlaggedApi("com.android.bluetooth.flags.support_passive_scanning") public int getScanType();
     method public void writeToParcel(android.os.Parcel, int);
     field public static final long AUTO_BATCH_MIN_REPORT_DELAY_MILLIS = 600000L; // 0x927c0L
     field public static final int CALLBACK_TYPE_ALL_MATCHES = 1; // 0x1
@@ -1468,6 +1551,9 @@ package android.bluetooth.le {
     field public static final int SCAN_MODE_LOW_LATENCY = 2; // 0x2
     field public static final int SCAN_MODE_LOW_POWER = 0; // 0x0
     field public static final int SCAN_MODE_OPPORTUNISTIC = -1; // 0xffffffff
+    field @FlaggedApi("com.android.bluetooth.flags.support_passive_scanning") public static final int SCAN_TYPE_ACTIVE = 2; // 0x2
+    field @FlaggedApi("com.android.bluetooth.flags.support_passive_scanning") public static final int SCAN_TYPE_PASSIVE = 1; // 0x1
+    field @FlaggedApi("com.android.bluetooth.flags.support_passive_scanning") public static final int SCAN_TYPE_UNKNOWN = 0; // 0x0
   }
 
   public static final class ScanSettings.Builder {
@@ -1479,7 +1565,9 @@ package android.bluetooth.le {
     method public android.bluetooth.le.ScanSettings.Builder setNumOfMatches(int);
     method public android.bluetooth.le.ScanSettings.Builder setPhy(int);
     method public android.bluetooth.le.ScanSettings.Builder setReportDelay(long);
+    method @FlaggedApi("com.android.bluetooth.flags.rssi_scan_filter") @NonNull public android.bluetooth.le.ScanSettings.Builder setRssiThreshold(int);
     method public android.bluetooth.le.ScanSettings.Builder setScanMode(int);
+    method @FlaggedApi("com.android.bluetooth.flags.support_passive_scanning") @NonNull public android.bluetooth.le.ScanSettings.Builder setScanType(int);
   }
 
   public final class TransportBlock implements android.os.Parcelable {

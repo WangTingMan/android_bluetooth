@@ -22,14 +22,13 @@
 
 #include "common/bind.h"
 #include "os/linux_generic/linux.h"
-#include "os/log.h"
 #include "os/utils.h"
 
 namespace bluetooth {
 namespace os {
 using common::Closure;
 
-RepeatingAlarm::RepeatingAlarm(Handler* handler) : handler_(handler) {
+RepeatingAlarm::RepeatingAlarm( Thread* a_thread_ ) : thread_( a_thread_ ) {
     alarm__ = alarm_new_periodic( "repeating_alarm" );
     token_ = nullptr;
 }

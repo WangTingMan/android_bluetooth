@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,15 @@
  */
 
 #pragma once
-
+#include <array>
 #include <chrono>
+#include <mutex>
 #include <string>
 
 namespace bluetooth {
 namespace common {
+
+static const int LOG_BUFFER_LENGTH = 10;
 
 typedef struct {
   std::chrono::system_clock::time_point timestamp;
@@ -29,17 +32,35 @@ typedef struct {
   std::string message;
 } StopWatchLog;
 
+class StopWatchBuffer {
+public:
+  StopWatchBuffer(std::string buffer_name)
+      : buffer_name_(std::move(buffer_name)), current_buffer_index_(0) {}
+  void RecordLog(StopWatchLog log);
+  void Dump();
+
+private:
+  std::string buffer_name_;
+  std::array<StopWatchLog, LOG_BUFFER_LENGTH> stopwatch_logs_;
+  int current_buffer_index_;
+  std::recursive_mutex stopwatch_log_mutex_;
+};
+
 class StopWatch {
- public:
+public:
   static void DumpStopWatchLog(void);
-  StopWatch(std::string text);
+  StopWatch(StopWatchBuffer& buffer, std::string text);
   ~StopWatch();
 
- private:
+  // Buffer for HciHalTx and HciCallbackRx
+  static StopWatchBuffer hciHalTxBuffer_;
+  static StopWatchBuffer hciHalRxBuffer_;
+
+private:
+  StopWatchBuffer& current_buffer_;
   std::string text_;
   std::chrono::system_clock::time_point timestamp_;
   std::chrono::high_resolution_clock::time_point start_timestamp_;
-  void RecordLog(StopWatchLog log);
 };
 
 }  // namespace common

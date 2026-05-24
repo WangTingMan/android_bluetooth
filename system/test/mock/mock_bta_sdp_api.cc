@@ -34,7 +34,6 @@ namespace bta_sdp_api {
 
 // Function state capture and return values, if needed
 struct BTA_SdpCreateRecordByUser BTA_SdpCreateRecordByUser;
-struct BTA_SdpDumpsys BTA_SdpDumpsys;
 struct BTA_SdpEnable BTA_SdpEnable;
 struct BTA_SdpRemoveRecordByUser BTA_SdpRemoveRecordByUser;
 struct BTA_SdpSearch BTA_SdpSearch;
@@ -62,10 +61,6 @@ tBTA_SDP_STATUS BTA_SdpCreateRecordByUser(void* user_data) {
   inc_func_call_count(__func__);
   return test::mock::bta_sdp_api::BTA_SdpCreateRecordByUser(user_data);
 }
-void BTA_SdpDumpsys(int fd) {
-  inc_func_call_count(__func__);
-  test::mock::bta_sdp_api::BTA_SdpDumpsys(fd);
-}
 tBTA_SDP_STATUS BTA_SdpEnable(tBTA_SDP_DM_CBACK* p_cback) {
   inc_func_call_count(__func__);
   return test::mock::bta_sdp_api::BTA_SdpEnable(p_cback);
@@ -74,8 +69,7 @@ tBTA_SDP_STATUS BTA_SdpRemoveRecordByUser(void* user_data) {
   inc_func_call_count(__func__);
   return test::mock::bta_sdp_api::BTA_SdpRemoveRecordByUser(user_data);
 }
-tBTA_SDP_STATUS BTA_SdpSearch(const RawAddress& bd_addr,
-                              const bluetooth::Uuid& uuid) {
+tBTA_SDP_STATUS BTA_SdpSearch(const RawAddress& bd_addr, const bluetooth::Uuid& uuid) {
   inc_func_call_count(__func__);
   return test::mock::bta_sdp_api::BTA_SdpSearch(bd_addr, uuid);
 }

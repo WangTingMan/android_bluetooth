@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,16 @@
 
 package android.bluetooth.le;
 
-import android.annotation.FlaggedApi;
 import android.annotation.IntDef;
 import android.annotation.NonNull;
+import android.annotation.RequiresNoPermission;
 import android.annotation.SystemApi;
 import android.os.Parcel;
 import android.os.Parcelable;
 
-import com.android.bluetooth.flags.Flags;
-
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -73,9 +72,7 @@ public final class DistanceMeasurementMethod implements Parcelable {
      *
      * @hide
      */
-    @FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
-    @SystemApi
-    public static final int DISTANCE_MEASUREMENT_METHOD_CHANNEL_SOUNDING = 2;
+    @SystemApi public static final int DISTANCE_MEASUREMENT_METHOD_CHANNEL_SOUNDING = 2;
 
     private DistanceMeasurementMethod(
             int id, boolean isAzimuthAngleSupported, boolean isAltitudeAngleSupported) {
@@ -88,10 +85,25 @@ public final class DistanceMeasurementMethod implements Parcelable {
      * Id of the method used for {@link DistanceMeasurementParams.Builder#setMethod(int)}
      *
      * @return id of the method
+     * @deprecated use {@link #getMethodId} instead.
+     * @hide
+     */
+    @Deprecated
+    @SystemApi
+    @RequiresNoPermission
+    public double getId() {
+        return mId;
+    }
+
+    /**
+     * Id of the method used for {@link DistanceMeasurementParams.Builder#setMethodId(int)}
+     *
+     * @return ID of the measurement method
      * @hide
      */
     @SystemApi
-    public @DistanceMeasurementMethodId double getId() {
+    @RequiresNoPermission
+    public @DistanceMeasurementMethodId int getMethodId() {
         return mId;
     }
 
@@ -102,6 +114,7 @@ public final class DistanceMeasurementMethod implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public boolean isAzimuthAngleSupported() {
         return mIsAzimuthAngleSupported;
     }
@@ -113,6 +126,7 @@ public final class DistanceMeasurementMethod implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public boolean isAltitudeAngleSupported() {
         return mIsAltitudeAngleSupported;
     }
@@ -161,12 +175,7 @@ public final class DistanceMeasurementMethod implements Parcelable {
         if (!(o instanceof DistanceMeasurementMethod)) return false;
 
         final DistanceMeasurementMethod u = (DistanceMeasurementMethod) o;
-
-        if (mId != u.getId()) {
-            return false;
-        }
-
-        return true;
+        return mId == u.mId;
     }
 
     @Override
@@ -198,7 +207,7 @@ public final class DistanceMeasurementMethod implements Parcelable {
      */
     @SystemApi
     public static final class Builder {
-        private int mId;
+        private final int mId;
         private boolean mIsAzimuthAngleSupported = false;
         private boolean mIsAltitudeAngleSupported = false;
 
@@ -208,15 +217,14 @@ public final class DistanceMeasurementMethod implements Parcelable {
          * @param id id of the method
          */
         public Builder(@DistanceMeasurementMethodId int id) {
-            switch (id) {
-                case DISTANCE_MEASUREMENT_METHOD_AUTO:
-                case DISTANCE_MEASUREMENT_METHOD_RSSI:
-                case DISTANCE_MEASUREMENT_METHOD_CHANNEL_SOUNDING:
-                    mId = id;
-                    break;
-                default:
-                    throw new IllegalArgumentException("unknown method id " + id);
+            if (!List.of(
+                            DISTANCE_MEASUREMENT_METHOD_AUTO,
+                            DISTANCE_MEASUREMENT_METHOD_RSSI,
+                            DISTANCE_MEASUREMENT_METHOD_CHANNEL_SOUNDING)
+                    .contains(id)) {
+                throw new IllegalArgumentException("unknown method id " + id);
             }
+            mId = id;
         }
 
         /**
@@ -226,8 +234,8 @@ public final class DistanceMeasurementMethod implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setAzimuthAngleSupported(boolean supported) {
+        @RequiresNoPermission
+        public @NonNull Builder setAzimuthAngleSupported(boolean supported) {
             mIsAzimuthAngleSupported = supported;
             return this;
         }
@@ -239,8 +247,8 @@ public final class DistanceMeasurementMethod implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setAltitudeAngleSupported(boolean supported) {
+        @RequiresNoPermission
+        public @NonNull Builder setAltitudeAngleSupported(boolean supported) {
             mIsAltitudeAngleSupported = supported;
             return this;
         }
@@ -251,8 +259,8 @@ public final class DistanceMeasurementMethod implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public DistanceMeasurementMethod build() {
+        @RequiresNoPermission
+        public @NonNull DistanceMeasurementMethod build() {
             return new DistanceMeasurementMethod(
                     mId, mIsAzimuthAngleSupported, mIsAltitudeAngleSupported);
         }

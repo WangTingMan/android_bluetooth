@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package com.android.bluetooth.avrcp;
 
+import static java.util.Objects.requireNonNull;
+
 import android.bluetooth.BluetoothDevice;
 import android.util.Log;
 
@@ -26,12 +28,8 @@ import com.android.bluetooth.audio_util.PlayStatus;
 import com.android.bluetooth.audio_util.PlayerInfo;
 import com.android.bluetooth.audio_util.PlayerSettingsManager.PlayerSettingsValues;
 import com.android.bluetooth.btservice.AdapterService;
-import com.android.bluetooth.flags.Flags;
-import com.android.internal.annotations.GuardedBy;
-import com.android.internal.annotations.VisibleForTesting;
 
 import java.util.List;
-import java.util.Objects;
 
 /**
  * Native Interface to communicate with the JNI layer. This class should never be passed null data.
@@ -39,48 +37,21 @@ import java.util.Objects;
 public class AvrcpNativeInterface {
     private static final String TAG = AvrcpNativeInterface.class.getSimpleName();
 
-    @GuardedBy("INSTANCE_LOCK")
-    private static AvrcpNativeInterface sInstance;
+    private final AdapterService mAdapterService;
+    private final AvrcpTargetService mAvrcpService;
 
-    private static final Object INSTANCE_LOCK = new Object();
-
-    private AvrcpTargetService mAvrcpService;
-    private AdapterService mAdapterService;
-
-    private AvrcpNativeInterface() {
-        mAdapterService =
-                Objects.requireNonNull(
-                        AdapterService.getAdapterService(),
-                        "AdapterService cannot be null when AvrcpNativeInterface init");
+    AvrcpNativeInterface(AdapterService adapterService, AvrcpTargetService service) {
+        mAdapterService = requireNonNull(adapterService);
+        mAvrcpService = requireNonNull(service);
     }
 
-    static AvrcpNativeInterface getInstance() {
-        synchronized (INSTANCE_LOCK) {
-            if (sInstance == null) {
-                sInstance = new AvrcpNativeInterface();
-            }
-        }
-
-        return sInstance;
-    }
-
-    /** Set singleton instance. */
-    @VisibleForTesting
-    public static void setInstance(AvrcpNativeInterface instance) {
-        synchronized (INSTANCE_LOCK) {
-            sInstance = instance;
-        }
-    }
-
-    void init(AvrcpTargetService service) {
+    void init() {
         d("Init AvrcpNativeInterface");
-        mAvrcpService = service;
         initNative();
     }
 
     void cleanup() {
         d("Cleanup AvrcpNativeInterface");
-        mAvrcpService = null;
         cleanupNative();
     }
 
@@ -95,106 +66,73 @@ public class AvrcpNativeInterface {
     }
 
     void setBipClientStatus(BluetoothDevice device, boolean connected) {
-        String identityAddress =
-                Flags.identityAddressNullIfUnknown()
-                        ? Utils.getBrEdrAddress(device)
-                        : mAdapterService.getIdentityAddress(device.getAddress());
+        String identityAddress = Utils.getBrEdrAddress(device, mAdapterService);
         setBipClientStatusNative(identityAddress, connected);
     }
 
     Metadata getCurrentSongInfo() {
         d("getCurrentSongInfo");
-        if (mAvrcpService == null) {
-            Log.w(TAG, "getCurrentSongInfo(): AvrcpTargetService is null");
-            return null;
-        }
-
         return mAvrcpService.getCurrentSongInfo();
     }
 
     PlayStatus getPlayStatus() {
         d("getPlayStatus");
-        if (mAvrcpService == null) {
-            Log.w(TAG, "getPlayStatus(): AvrcpTargetService is null");
-            return null;
-        }
-
         return mAvrcpService.getPlayState();
     }
 
-    void sendMediaKeyEvent(int keyEvent, boolean pushed) {
+    void sendMediaKeyEvent(String bdaddr, int keyEvent, boolean pushed) {
         d("sendMediaKeyEvent: keyEvent=" + keyEvent + " pushed=" + pushed);
-        if (mAvrcpService == null) {
-            Log.w(TAG, "sendMediaKeyEvent(): AvrcpTargetService is null");
-            return;
-        }
-
-        mAvrcpService.sendMediaKeyEvent(keyEvent, pushed);
+        BluetoothDevice device =
+                mAdapterService.getDeviceFromByte(Utils.getBytesFromAddress(bdaddr));
+        mAvrcpService.sendMediaKeyEvent(device, keyEvent, pushed);
     }
 
     String getCurrentMediaId() {
         d("getCurrentMediaId");
-        if (mAvrcpService == null) {
-            Log.w(TAG, "getMediaPlayerList(): AvrcpTargetService is null");
-            return "";
-        }
-
         return mAvrcpService.getCurrentMediaId();
     }
 
     List<Metadata> getNowPlayingList() {
         d("getNowPlayingList");
-        if (mAvrcpService == null) {
-            Log.w(TAG, "getMediaPlayerList(): AvrcpTargetService is null");
-            return null;
-        }
-
         return mAvrcpService.getNowPlayingList();
     }
 
     int getCurrentPlayerId() {
         d("getCurrentPlayerId");
-        if (mAvrcpService == null) {
-            Log.w(TAG, "getMediaPlayerList(): AvrcpTargetService is null");
-            return -1;
-        }
-
         return mAvrcpService.getCurrentPlayerId();
     }
 
     List<PlayerInfo> getMediaPlayerList() {
         d("getMediaPlayerList");
-        if (mAvrcpService == null) {
-            Log.w(TAG, "getMediaPlayerList(): AvrcpTargetService is null");
-            return null;
-        }
-
         return mAvrcpService.getMediaPlayerList();
     }
 
-    // TODO(apanicke): This shouldn't be named setBrowsedPlayer as it doesn't actually connect
-    // anything internally. It just returns the number of items in the root folder.
-    void setBrowsedPlayer(int playerId) {
-        d("setBrowsedPlayer: playerId=" + playerId);
-        mAvrcpService.getPlayerRoot(playerId, (a, b, c, d) -> setBrowsedPlayerResponse(a, b, c, d));
+    void setBrowsedPlayer(int playerId, String currentPath) {
+        d("setBrowsedPlayer: playerId=" + playerId + ", currentPath= " + currentPath);
+        mAvrcpService.setBrowsedPlayer(playerId, currentPath, this::setBrowsedPlayerResponse);
     }
 
-    void setBrowsedPlayerResponse(int playerId, boolean success, String rootId, int numItems) {
+    void setBrowsedPlayerResponse(int playerId, boolean success, String currentPath, int numItems) {
         d(
                 "setBrowsedPlayerResponse: playerId="
                         + playerId
                         + " success="
                         + success
-                        + " rootId="
-                        + rootId
+                        + " currentPath="
+                        + currentPath
                         + " numItems="
                         + numItems);
-        setBrowsedPlayerResponseNative(playerId, success, rootId, numItems);
+        setBrowsedPlayerResponseNative(playerId, success, currentPath, numItems);
+    }
+
+    int setAddressedPlayer(int playerId) {
+        d("setAddressedPlayer: playerId=" + playerId);
+        return mAvrcpService.setAddressedPlayer(playerId);
     }
 
     void getFolderItemsRequest(int playerId, String mediaId) {
         d("getFolderItemsRequest: playerId=" + playerId + " mediaId=" + mediaId);
-        mAvrcpService.getFolderItems(playerId, mediaId, (a, b) -> getFolderItemsResponse(a, b));
+        mAvrcpService.getFolderItems(playerId, mediaId, this::getFolderItemsResponse);
     }
 
     void getFolderItemsResponse(String parentId, List<ListItem> items) {
@@ -226,19 +164,11 @@ public class AvrcpNativeInterface {
 
     void playItem(int playerId, boolean nowPlaying, String mediaId) {
         d("playItem: playerId=" + playerId + " nowPlaying=" + nowPlaying + " mediaId=" + mediaId);
-        if (mAvrcpService == null) {
-            Log.d(TAG, "playItem: AvrcpTargetService is null");
-            return;
-        }
-
         mAvrcpService.playItem(playerId, nowPlaying, mediaId);
     }
 
     boolean disconnectDevice(BluetoothDevice device) {
-        String identityAddress =
-                Flags.identityAddressNullIfUnknown()
-                        ? Utils.getBrEdrAddress(device)
-                        : mAdapterService.getIdentityAddress(device.getAddress());
+        String identityAddress = Utils.getBrEdrAddress(device, mAdapterService);
         d("disconnectDevice: identityAddress=" + identityAddress);
         return disconnectDeviceNative(identityAddress);
     }
@@ -254,11 +184,6 @@ public class AvrcpNativeInterface {
         BluetoothDevice device =
                 mAdapterService.getDeviceFromByte(Utils.getBytesFromAddress(bdaddr));
         d("deviceConnected: device=" + device + " absoluteVolume=" + absoluteVolume);
-        if (mAvrcpService == null) {
-            Log.w(TAG, "deviceConnected: AvrcpTargetService is null");
-            return;
-        }
-
         mAvrcpService.deviceConnected(device, absoluteVolume);
     }
 
@@ -266,30 +191,17 @@ public class AvrcpNativeInterface {
         BluetoothDevice device =
                 mAdapterService.getDeviceFromByte(Utils.getBytesFromAddress(bdaddr));
         d("deviceDisconnected: device=" + device);
-        if (mAvrcpService == null) {
-            Log.w(TAG, "deviceDisconnected: AvrcpTargetService is null");
-            return;
-        }
-
         mAvrcpService.deviceDisconnected(device);
     }
 
     void sendVolumeChanged(BluetoothDevice device, int volume) {
         d("sendVolumeChanged: volume=" + volume);
-        String identityAddress =
-                Flags.identityAddressNullIfUnknown()
-                        ? Utils.getBrEdrAddress(device)
-                        : mAdapterService.getIdentityAddress(device.getAddress());
+        String identityAddress = Utils.getBrEdrAddress(device, mAdapterService);
         sendVolumeChangedNative(identityAddress, volume);
     }
 
     void setVolume(int volume) {
         d("setVolume: volume=" + volume);
-        if (mAvrcpService == null) {
-            Log.w(TAG, "setVolume: AvrcpTargetService is null");
-            return;
-        }
-
         mAvrcpService.setVolume(volume);
     }
 
@@ -305,23 +217,24 @@ public class AvrcpNativeInterface {
     void listPlayerSettingValuesRequest(byte settingRequest) {
         byte[] valuesArray;
         switch (settingRequest) {
-            case (byte) PlayerSettingsValues.SETTING_REPEAT:
+            case (byte) PlayerSettingsValues.SETTING_REPEAT -> {
                 valuesArray = new byte[4];
                 valuesArray[0] = PlayerSettingsValues.STATE_REPEAT_OFF;
                 valuesArray[1] = PlayerSettingsValues.STATE_REPEAT_SINGLE_TRACK;
                 valuesArray[2] = PlayerSettingsValues.STATE_REPEAT_ALL_TRACK;
                 valuesArray[3] = PlayerSettingsValues.STATE_REPEAT_GROUP;
-                break;
-            case (byte) PlayerSettingsValues.SETTING_SHUFFLE:
+            }
+            case (byte) PlayerSettingsValues.SETTING_SHUFFLE -> {
                 valuesArray = new byte[3];
                 valuesArray[0] = PlayerSettingsValues.STATE_SHUFFLE_OFF;
                 valuesArray[1] = PlayerSettingsValues.STATE_SHUFFLE_ALL_TRACK;
                 valuesArray[2] = PlayerSettingsValues.STATE_SHUFFLE_GROUP;
-                break;
-            default:
+            }
+            default -> {
                 // For settings we don't support yet, return only state off.
                 valuesArray = new byte[1];
                 valuesArray[0] = PlayerSettingsValues.STATE_DEFAULT_OFF;
+            }
         }
         listPlayerSettingValuesResponseNative(settingRequest, valuesArray);
     }
@@ -330,17 +243,14 @@ public class AvrcpNativeInterface {
     void getCurrentPlayerSettingValuesRequest(byte[] settingsRequest) {
         byte[] valuesArray = new byte[settingsRequest.length];
         for (int i = 0; i < settingsRequest.length; i++) {
-            switch (settingsRequest[i]) {
-                case (byte) PlayerSettingsValues.SETTING_REPEAT:
-                    valuesArray[i] = (byte) mAvrcpService.getRepeatMode();
-                    break;
-                case (byte) PlayerSettingsValues.SETTING_SHUFFLE:
-                    valuesArray[i] = (byte) mAvrcpService.getShuffleMode();
-                    break;
-                default:
-                    valuesArray[i] = (byte) PlayerSettingsValues.STATE_DEFAULT_OFF;
-                    break;
-            }
+            valuesArray[i] =
+                    switch (settingsRequest[i]) {
+                        case (byte) PlayerSettingsValues.SETTING_REPEAT ->
+                                (byte) mAvrcpService.getRepeatMode();
+                        case (byte) PlayerSettingsValues.SETTING_SHUFFLE ->
+                                (byte) mAvrcpService.getShuffleMode();
+                        default -> (byte) PlayerSettingsValues.STATE_DEFAULT_OFF;
+                    };
         }
         getPlayerSettingsResponseNative(settingsRequest, valuesArray);
     }

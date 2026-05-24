@@ -21,8 +21,6 @@ import static com.google.common.truth.Truth.assertThat;
 import android.os.ParcelUuid;
 import android.platform.test.flag.junit.SetFlagsRule;
 
-import com.android.bluetooth.flags.Flags;
-import com.android.internal.util.HexDump;
 import com.android.modules.utils.BytesMatcher;
 
 import org.junit.Rule;
@@ -36,7 +34,7 @@ import java.util.List;
 import java.util.function.Predicate;
 
 /**
- * Unit test cases for {@link ScanRecord}.
+ * Test cases for {@link ScanRecord}.
  *
  * <p>To run this test, use adb shell am instrument -e class 'android.bluetooth.ScanRecordTest' -w
  * 'com.android.bluetooth.tests/android.bluetooth.BluetoothTestRunner'
@@ -70,11 +68,10 @@ public class ScanRecordTest {
         final List<String> found = new ArrayList<>();
         final Predicate<byte[]> matcher =
                 (v) -> {
-                    found.add(HexDump.toHexString(v));
+                    found.add(toHexString(v));
                     return false;
                 };
-        ScanRecord.parseFromBytes(HexDump.hexStringToByteArray(RECORD_URL))
-                .matchesAnyField(matcher);
+        ScanRecord.parseFromBytes(hexStringToByteArray(RECORD_URL)).matchesAnyField(matcher);
 
         assertThat(found)
                 .isEqualTo(
@@ -112,11 +109,10 @@ public class ScanRecordTest {
         final List<String> found = new ArrayList<>();
         final Predicate<byte[]> matcher =
                 (v) -> {
-                    found.add(HexDump.toHexString(v));
+                    found.add(toHexString(v));
                     return false;
                 };
-        ScanRecord.parseFromBytes(HexDump.hexStringToByteArray(RECORD_IBEACON))
-                .matchesAnyField(matcher);
+        ScanRecord.parseFromBytes(hexStringToByteArray(RECORD_IBEACON)).matchesAnyField(matcher);
 
         assertThat(found)
                 .isEqualTo(
@@ -198,8 +194,6 @@ public class ScanRecordTest {
 
     @Test
     public void testParserMultipleManufacturerSpecificData() {
-        mSetFlagsRule.enableFlags(Flags.FLAG_SCAN_RECORD_MANUFACTURER_DATA_MERGE);
-
         byte[] scanRecord =
                 new byte[] {
                     0x02,
@@ -265,16 +259,49 @@ public class ScanRecordTest {
     }
 
     private static void assertMatchesAnyField(String record, BytesMatcher matcher) {
-        assertThat(
-                        ScanRecord.parseFromBytes(HexDump.hexStringToByteArray(record))
-                                .matchesAnyField(matcher))
+        assertThat(ScanRecord.parseFromBytes(hexStringToByteArray(record)).matchesAnyField(matcher))
                 .isTrue();
     }
 
     private static void assertNotMatchesAnyField(String record, BytesMatcher matcher) {
-        assertThat(
-                        ScanRecord.parseFromBytes(HexDump.hexStringToByteArray(record))
-                                .matchesAnyField(matcher))
+        assertThat(ScanRecord.parseFromBytes(hexStringToByteArray(record)).matchesAnyField(matcher))
                 .isFalse();
+    }
+
+    private static final char[] HEX_DIGITS = {
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'
+    };
+
+    private static String toHexString(byte[] array) {
+        char[] buf = new char[array.length * 2];
+
+        int bufIndex = 0;
+        for (int i = 0; i < array.length; i++) {
+            byte b = array[i];
+            buf[bufIndex++] = HEX_DIGITS[(b >>> 4) & 0x0F];
+            buf[bufIndex++] = HEX_DIGITS[b & 0x0F];
+        }
+
+        return new String(buf);
+    }
+
+    private static int toByte(char c) {
+        if (c >= '0' && c <= '9') return (c - '0');
+        if (c >= 'A' && c <= 'F') return (c - 'A' + 10);
+        if (c >= 'a' && c <= 'f') return (c - 'a' + 10);
+
+        throw new RuntimeException("Invalid hex char '" + c + "'");
+    }
+
+    private static byte[] hexStringToByteArray(String hexString) {
+        int length = hexString.length();
+        byte[] buffer = new byte[length / 2];
+
+        for (int i = 0; i < length; i += 2) {
+            buffer[i / 2] =
+                    (byte) ((toByte(hexString.charAt(i)) << 4) | toByte(hexString.charAt(i + 1)));
+        }
+
+        return buffer;
     }
 }

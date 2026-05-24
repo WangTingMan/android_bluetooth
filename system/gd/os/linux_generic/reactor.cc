@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,8 +27,6 @@
 #include <cinttypes>
 #include <cstring>
 
-#include "os/log.h"
-
 namespace {
 
 // Use at most sizeof(epoll_event) * kEpollMaxEvents kernel memory
@@ -48,25 +46,22 @@ struct Reactor::Event::impl {
     log::assert_that(fd_ != -1, "Unable to create nonblocking event file descriptor semaphore");
   }
   ~impl() {
-    log::assert_that(fd_ != -1, "Unable to close a never-opened event file descriptor");
-    close(fd_);
-    fd_ = -1;
+    if (fd_ != -1) {
+      close(fd_);
+      fd_ = -1;
+    }
   }
   int fd_ = -1;
 };
 
 Reactor::Event::Event() : pimpl_(new impl()) {}
-Reactor::Event::~Event() {
-  delete pimpl_;
-}
+Reactor::Event::~Event() { delete pimpl_; }
 
 bool Reactor::Event::Read() {
   uint64_t val = 0;
   return eventfd_read(pimpl_->fd_, &val) == 0;
 }
-int Reactor::Event::Id() const {
-  return pimpl_->fd_;
-}
+int Reactor::Event::Id() const { return pimpl_->fd_; }
 void Reactor::Event::Clear() {
   uint64_t val;
   while (eventfd_read(pimpl_->fd_, &val) == 0) {
@@ -76,15 +71,15 @@ void Reactor::Event::Close() {
   int close_status;
   RUN_NO_INTR(close_status = close(pimpl_->fd_));
   log::assert_that(close_status != -1, "assert failed: close_status != -1");
+  pimpl_->fd_ = -1;
 }
-void Reactor::Event::Notify() {
-  uint64_t val = 1;
-  auto write_result = eventfd_write(pimpl_->fd_, val);
+void Reactor::Event::Notify(uint64_t num_events_generated) {
+  auto write_result = eventfd_write(pimpl_->fd_, num_events_generated);
   log::assert_that(write_result != -1, "assert failed: write_result != -1");
 }
 
 class Reactor::Reactable {
- public:
+public:
   Reactable(int fd, Closure on_read_ready, Closure on_write_ready)
       : fd_(fd),
         on_read_ready_(std::move(on_read_ready)),
@@ -110,13 +105,13 @@ Reactor::Reactor() : epoll_fd_(0), control_fd_(0), is_running_(false) {
   epoll_event control_epoll_event = {EPOLLIN, {.ptr = nullptr}};
   int result;
   RUN_NO_INTR(result = epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, control_fd_, &control_epoll_event));
-  log::assert_that(result != -1, "assert failed: result != -1");
+  log::assert_that(result != -1, "epoll_ctl fail: result={} errno={}", result, strerror(errno));
 }
 
 Reactor::~Reactor() {
   int result;
   RUN_NO_INTR(result = epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, control_fd_, nullptr));
-  log::assert_that(result != -1, "assert failed: result != -1");
+  log::assert_that(result != -1, "epoll_ctl fail: result={} errno={}", result, strerror(errno));
 
   RUN_NO_INTR(result = close(control_fd_));
   log::assert_that(result != -1, "assert failed: result != -1");
@@ -172,7 +167,8 @@ void Reactor::Run() {
       std::unique_lock<std::mutex> lock(mutex_);
       executing_reactable_finished_ = nullptr;
       // See if this reactable has been removed in the meantime.
-      if (std::find(invalidation_list_.begin(), invalidation_list_.end(), reactable) != invalidation_list_.end()) {
+      if (std::find(invalidation_list_.begin(), invalidation_list_.end(), reactable) !=
+          invalidation_list_.end()) {
         continue;
       }
 
@@ -181,7 +177,8 @@ void Reactor::Run() {
         lock.unlock();
         reactable->is_executing_ = true;
       }
-      if (event.events & (EPOLLIN | EPOLLHUP | EPOLLRDHUP | EPOLLERR) && !reactable->on_read_ready_.is_null()) {
+      if (event.events & (EPOLLIN | EPOLLHUP | EPOLLRDHUP | EPOLLERR) &&
+          !reactable->on_read_ready_.is_null()) {
         reactable->on_read_ready_.Run();
       }
       if (event.events & EPOLLOUT && !reactable->on_write_ready_.is_null()) {
@@ -222,12 +219,13 @@ Reactor::Reactable* Reactor::Register(int fd, Closure on_read_ready, Closure on_
   }
   auto* reactable = new Reactable(fd, on_read_ready, on_write_ready);
   epoll_event event = {
-      .events = poll_event_type,
-      .data = {.ptr = reactable},
+          .events = poll_event_type,
+          .data = {.ptr = reactable},
   };
   int register_fd;
   RUN_NO_INTR(register_fd = epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &event));
-  log::assert_that(register_fd != -1, "assert failed: register_fd != -1");
+  log::assert_that(register_fd != -1, "epoll_ctl fail: register_fd={} errno={}", register_fd,
+                   strerror(errno));
   return reactable;
 }
 
@@ -248,12 +246,14 @@ void Reactor::Unregister(Reactor::Reactable* reactable) {
       log::assert_that(result != -1, "could not unregister epoll fd: {}", strerror(errno));
     }
 
-    // If we are unregistering during the callback event from this reactable, we delete it after the callback is
-    // executed. reactable->is_executing_ is protected by reactable->mutex_, so it's thread safe.
+    // If we are unregistering during the callback event from this reactable, we delete it after the
+    // callback is executed. reactable->is_executing_ is protected by reactable->mutex_, so it's
+    // thread safe.
     if (reactable->is_executing_) {
       reactable->removed_ = true;
       reactable->finished_promise_ = std::make_unique<std::promise<void>>();
-      executing_reactable_finished_ = std::make_shared<std::future<void>>(reactable->finished_promise_->get_future());
+      executing_reactable_finished_ =
+              std::make_shared<std::future<void>>(reactable->finished_promise_->get_future());
       delaying_delete_until_callback_finished = true;
     }
   }
@@ -301,12 +301,13 @@ void Reactor::ModifyRegistration(Reactor::Reactable* reactable, ReactOn react_on
     poll_event_type |= EPOLLOUT;
   }
   epoll_event event = {
-      .events = poll_event_type,
-      .data = {.ptr = reactable},
+          .events = poll_event_type,
+          .data = {.ptr = reactable},
   };
   int modify_fd;
   RUN_NO_INTR(modify_fd = epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, reactable->fd_, &event));
-  log::assert_that(modify_fd != -1, "assert failed: modify_fd != -1");
+  log::assert_that(modify_fd != -1, "epoll_ctl fail: modify_fd={} errno={}", modify_fd,
+                   strerror(errno));
 }
 
 }  // namespace os

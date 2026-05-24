@@ -16,9 +16,14 @@
 
 package com.android.bluetooth.avrcpcontroller;
 
+import static java.util.Objects.requireNonNull;
+
+import android.annotation.SuppressLint;
+
+import com.android.bluetooth.Utils;
+
 import java.util.Calendar;
 import java.util.Date;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.TimeZone;
 import java.util.regex.Matcher;
@@ -36,7 +41,8 @@ import java.util.regex.Pattern;
  * <p>Example date-time values: 20000101T000000Z 20000101T235959Z 20000101T000000
  */
 public class BipDateTime {
-    private static final String TAG = "avrcpcontroller.BipDateTime";
+    private static final String TAG =
+            AvrcpControllerUtils.TAG_PREFIX_AVRCP_CONTROLLER + BipDateTime.class.getSimpleName();
 
     private Date mDate = null;
     private boolean mIsUtc = false;
@@ -98,7 +104,7 @@ public class BipDateTime {
     }
 
     public BipDateTime(Date date) {
-        mDate = Objects.requireNonNull(date, "Date cannot be null");
+        mDate = requireNonNull(date);
         mIsUtc = true; // All Java Date objects store timestamps as UTC
     }
 
@@ -111,15 +117,25 @@ public class BipDateTime {
     }
 
     @Override
+    @SuppressWarnings("UndefinedEquals") // Related to java Date API that should be clean repo wide
     public boolean equals(Object o) {
-        if (o == this) return true;
-        if (!(o instanceof BipDateTime)) return false;
+        if (o == this) {
+            return true;
+        }
+        if (!(o instanceof BipDateTime d)) {
+            return false;
+        }
 
-        BipDateTime d = (BipDateTime) o;
-        return d.isUtc() == isUtc() && d.getTime() == getTime();
+        return d.isUtc() == isUtc() && Objects.equals(d.getTime(), getTime());
     }
 
     @Override
+    public int hashCode() {
+        return Objects.hash(isUtc(), getTime());
+    }
+
+    @Override
+    @SuppressLint("ToStringReturnsNull")
     public String toString() {
         Date d = getTime();
         if (d == null) {
@@ -134,8 +150,7 @@ public class BipDateTime {
             TimeZone utc = TimeZone.getTimeZone("UTC");
             utc.setRawOffset(0);
             cal.setTimeZone(utc);
-            return String.format(
-                    Locale.US,
+            return Utils.formatSimple(
                     "%04d%02d%02dT%02d%02d%02dZ",
                     cal.get(Calendar.YEAR),
                     cal.get(Calendar.MONTH) + 1,
@@ -145,8 +160,7 @@ public class BipDateTime {
                     cal.get(Calendar.SECOND));
         } else {
             cal.setTimeZone(TimeZone.getDefault());
-            return String.format(
-                    Locale.US,
+            return Utils.formatSimple(
                     "%04d%02d%02dT%02d%02d%02d",
                     cal.get(Calendar.YEAR),
                     cal.get(Calendar.MONTH) + 1,

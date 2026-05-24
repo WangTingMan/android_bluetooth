@@ -16,52 +16,42 @@
 
 package com.android.bluetooth.hfpclient;
 
+import static com.android.bluetooth.TestUtils.getTestDevice;
+
 import static com.google.common.truth.Truth.assertThat;
 
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.when;
 
 import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothManager;
-import android.content.Context;
 import android.os.Bundle;
 
-import androidx.test.InstrumentationRegistry;
-import androidx.test.runner.AndroidJUnit4;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
-import org.junit.After;
+import com.android.bluetooth.btservice.AdapterService;
+import com.android.dx.mockito.inline.extended.ExtendedMockito;
+import com.android.tests.bluetooth.StaticMockitoRule;
+
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
+/** Test cases for {@link HeadsetClientServiceInterface}. */
 @RunWith(AndroidJUnit4.class)
 public class HeadsetClientServiceInterfaceTest {
-    private static final String TEST_DEVICE_ADDRESS = "00:11:22:33:44:55";
-    private static final BluetoothDevice TEST_DEVICE =
-            ((BluetoothManager)
-                            InstrumentationRegistry.getTargetContext()
-                                    .getSystemService(Context.BLUETOOTH_SERVICE))
-                    .getAdapter()
-                    .getRemoteDevice(TEST_DEVICE_ADDRESS);
+    @Rule public final StaticMockitoRule mMockitoRule = new StaticMockitoRule(AdapterService.class);
+
+    @Mock private AdapterService mAdapterService;
+    @Mock private HeadsetClientService mHeadsetClientService;
+
     private static final String TEST_NUMBER = "000-111-2222";
     private static final byte TEST_CODE = 0;
     private static final int TEST_CALL_INDEX = 0;
-    private static final HfpClientCall TEST_CALL =
-            new HfpClientCall(
-                    TEST_DEVICE,
-                    /* id= */ 0,
-                    HfpClientCall.CALL_STATE_ACTIVE,
-                    /* number= */ TEST_NUMBER,
-                    /* multiParty= */ false,
-                    /* outgoing= */ false,
-                    /* inBandRing= */ true);
     private static final int TEST_FLAGS = 0;
     private static final Bundle TEST_BUNDLE = new Bundle();
 
@@ -69,184 +59,179 @@ public class HeadsetClientServiceInterfaceTest {
         TEST_BUNDLE.putInt("test_int", 0);
     }
 
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
+    private final BluetoothDevice mDevice = getTestDevice(54);
+    private final HfpClientCall mTestCall =
+            new HfpClientCall(
+                    mDevice,
+                    /* id= */ 0,
+                    HfpClientCall.CALL_STATE_ACTIVE,
+                    /* number= */ TEST_NUMBER,
+                    /* multiParty= */ false,
+                    /* outgoing= */ false,
+                    /* inBandRing= */ true);
 
-    @Mock private HeadsetClientService mMockHeadsetClientService;
     private HeadsetClientServiceInterface mServiceInterface;
 
     @Before
     public void setUp() {
-        HeadsetClientService.setHeadsetClientService(mMockHeadsetClientService);
         mServiceInterface = new HeadsetClientServiceInterface();
     }
 
-    @After
-    public void tearDown() {
-        HeadsetClientService.setHeadsetClientService(null);
-        assertThat(HeadsetClientService.getHeadsetClientService()).isNull();
-    }
-
     private void makeHeadsetClientServiceAvailable() {
-        when(mMockHeadsetClientService.isAvailable()).thenReturn(true);
-        assertThat(HeadsetClientService.getHeadsetClientService())
-                .isEqualTo(mMockHeadsetClientService);
+        ExtendedMockito.doReturn(mAdapterService)
+                .when(() -> AdapterService.deprecatedGetAdapterService());
+        doReturn(Optional.of(mHeadsetClientService))
+                .when(mAdapterService)
+                .getHeadsetClientService();
     }
 
     @Test
     public void testDial() {
-        assertThat(mServiceInterface.dial(TEST_DEVICE, TEST_NUMBER)).isNull();
+        assertThat(mServiceInterface.dial(mDevice, TEST_NUMBER)).isNull();
         makeHeadsetClientServiceAvailable();
 
-        doReturn(TEST_CALL).when(mMockHeadsetClientService).dial(TEST_DEVICE, TEST_NUMBER);
-        assertThat(mServiceInterface.dial(TEST_DEVICE, TEST_NUMBER)).isEqualTo(TEST_CALL);
+        doReturn(mTestCall).when(mHeadsetClientService).dial(mDevice, TEST_NUMBER);
+        assertThat(mServiceInterface.dial(mDevice, TEST_NUMBER)).isEqualTo(mTestCall);
     }
 
     @Test
     public void testEnterPrivateMode() {
-        assertThat(mServiceInterface.enterPrivateMode(TEST_DEVICE, TEST_CALL_INDEX)).isFalse();
+        assertThat(mServiceInterface.enterPrivateMode(mDevice, TEST_CALL_INDEX)).isFalse();
         makeHeadsetClientServiceAvailable();
 
-        doReturn(false)
-                .when(mMockHeadsetClientService)
-                .enterPrivateMode(TEST_DEVICE, TEST_CALL_INDEX);
-        assertThat(mServiceInterface.enterPrivateMode(TEST_DEVICE, TEST_CALL_INDEX)).isFalse();
-        doReturn(true)
-                .when(mMockHeadsetClientService)
-                .enterPrivateMode(TEST_DEVICE, TEST_CALL_INDEX);
-        assertThat(mServiceInterface.enterPrivateMode(TEST_DEVICE, TEST_CALL_INDEX)).isTrue();
+        doReturn(false).when(mHeadsetClientService).enterPrivateMode(mDevice, TEST_CALL_INDEX);
+        assertThat(mServiceInterface.enterPrivateMode(mDevice, TEST_CALL_INDEX)).isFalse();
+        doReturn(true).when(mHeadsetClientService).enterPrivateMode(mDevice, TEST_CALL_INDEX);
+        assertThat(mServiceInterface.enterPrivateMode(mDevice, TEST_CALL_INDEX)).isTrue();
     }
 
     @Test
     public void testSendDTMF() {
-        assertThat(mServiceInterface.sendDTMF(TEST_DEVICE, TEST_CODE)).isFalse();
+        assertThat(mServiceInterface.sendDTMF(mDevice, TEST_CODE)).isFalse();
         makeHeadsetClientServiceAvailable();
 
-        doReturn(false).when(mMockHeadsetClientService).sendDTMF(TEST_DEVICE, TEST_CODE);
-        assertThat(mServiceInterface.sendDTMF(TEST_DEVICE, TEST_CODE)).isFalse();
-        doReturn(true).when(mMockHeadsetClientService).sendDTMF(TEST_DEVICE, TEST_CODE);
-        assertThat(mServiceInterface.sendDTMF(TEST_DEVICE, TEST_CODE)).isTrue();
+        doReturn(false).when(mHeadsetClientService).sendDTMF(mDevice, TEST_CODE);
+        assertThat(mServiceInterface.sendDTMF(mDevice, TEST_CODE)).isFalse();
+        doReturn(true).when(mHeadsetClientService).sendDTMF(mDevice, TEST_CODE);
+        assertThat(mServiceInterface.sendDTMF(mDevice, TEST_CODE)).isTrue();
     }
 
     @Test
     public void testTerminateCall() {
-        assertThat(mServiceInterface.terminateCall(TEST_DEVICE, TEST_CALL)).isFalse();
+        assertThat(mServiceInterface.terminateCall(mDevice, mTestCall)).isFalse();
         makeHeadsetClientServiceAvailable();
 
-        doReturn(true)
-                .when(mMockHeadsetClientService)
-                .terminateCall(TEST_DEVICE, TEST_CALL.getUUID());
-        assertThat(mServiceInterface.terminateCall(TEST_DEVICE, TEST_CALL)).isTrue();
-        doReturn(false)
-                .when(mMockHeadsetClientService)
-                .terminateCall(TEST_DEVICE, TEST_CALL.getUUID());
-        assertThat(mServiceInterface.terminateCall(TEST_DEVICE, TEST_CALL)).isFalse();
+        doReturn(true).when(mHeadsetClientService).terminateCall(mDevice, mTestCall.getUUID());
+        assertThat(mServiceInterface.terminateCall(mDevice, mTestCall)).isTrue();
+        doReturn(false).when(mHeadsetClientService).terminateCall(mDevice, mTestCall.getUUID());
+        assertThat(mServiceInterface.terminateCall(mDevice, mTestCall)).isFalse();
     }
 
     @Test
     public void testHoldCall() {
-        assertThat(mServiceInterface.holdCall(TEST_DEVICE)).isFalse();
+        assertThat(mServiceInterface.holdCall(mDevice)).isFalse();
         makeHeadsetClientServiceAvailable();
 
-        doReturn(false).when(mMockHeadsetClientService).holdCall(TEST_DEVICE);
-        assertThat(mServiceInterface.holdCall(TEST_DEVICE)).isFalse();
-        doReturn(true).when(mMockHeadsetClientService).holdCall(TEST_DEVICE);
-        assertThat(mServiceInterface.holdCall(TEST_DEVICE)).isTrue();
+        doReturn(false).when(mHeadsetClientService).holdCall(mDevice);
+        assertThat(mServiceInterface.holdCall(mDevice)).isFalse();
+        doReturn(true).when(mHeadsetClientService).holdCall(mDevice);
+        assertThat(mServiceInterface.holdCall(mDevice)).isTrue();
     }
 
     @Test
     public void testAcceptCall() {
-        assertThat(mServiceInterface.acceptCall(TEST_DEVICE, TEST_FLAGS)).isFalse();
+        assertThat(mServiceInterface.acceptCall(mDevice, TEST_FLAGS)).isFalse();
         makeHeadsetClientServiceAvailable();
 
-        doReturn(false).when(mMockHeadsetClientService).acceptCall(TEST_DEVICE, TEST_FLAGS);
-        assertThat(mServiceInterface.acceptCall(TEST_DEVICE, TEST_CODE)).isFalse();
-        doReturn(true).when(mMockHeadsetClientService).acceptCall(TEST_DEVICE, TEST_FLAGS);
-        assertThat(mServiceInterface.acceptCall(TEST_DEVICE, TEST_CODE)).isTrue();
+        doReturn(false).when(mHeadsetClientService).acceptCall(mDevice, TEST_FLAGS);
+        assertThat(mServiceInterface.acceptCall(mDevice, TEST_CODE)).isFalse();
+        doReturn(true).when(mHeadsetClientService).acceptCall(mDevice, TEST_FLAGS);
+        assertThat(mServiceInterface.acceptCall(mDevice, TEST_CODE)).isTrue();
     }
 
     @Test
     public void testRejectCall() {
-        assertThat(mServiceInterface.rejectCall(TEST_DEVICE)).isFalse();
+        assertThat(mServiceInterface.rejectCall(mDevice)).isFalse();
         makeHeadsetClientServiceAvailable();
 
-        doReturn(false).when(mMockHeadsetClientService).rejectCall(TEST_DEVICE);
-        assertThat(mServiceInterface.rejectCall(TEST_DEVICE)).isFalse();
-        doReturn(true).when(mMockHeadsetClientService).rejectCall(TEST_DEVICE);
-        assertThat(mServiceInterface.rejectCall(TEST_DEVICE)).isTrue();
+        doReturn(false).when(mHeadsetClientService).rejectCall(mDevice);
+        assertThat(mServiceInterface.rejectCall(mDevice)).isFalse();
+        doReturn(true).when(mHeadsetClientService).rejectCall(mDevice);
+        assertThat(mServiceInterface.rejectCall(mDevice)).isTrue();
     }
 
     @Test
     public void testConnectAudio() {
-        assertThat(mServiceInterface.connectAudio(TEST_DEVICE)).isFalse();
+        assertThat(mServiceInterface.connectAudio(mDevice)).isFalse();
         makeHeadsetClientServiceAvailable();
 
-        doReturn(false).when(mMockHeadsetClientService).connectAudio(TEST_DEVICE);
-        assertThat(mServiceInterface.connectAudio(TEST_DEVICE)).isFalse();
-        doReturn(true).when(mMockHeadsetClientService).connectAudio(TEST_DEVICE);
-        assertThat(mServiceInterface.connectAudio(TEST_DEVICE)).isTrue();
+        doReturn(false).when(mHeadsetClientService).connectAudio(mDevice);
+        assertThat(mServiceInterface.connectAudio(mDevice)).isFalse();
+        doReturn(true).when(mHeadsetClientService).connectAudio(mDevice);
+        assertThat(mServiceInterface.connectAudio(mDevice)).isTrue();
     }
 
     @Test
     public void testDisconnectAudio() {
-        assertThat(mServiceInterface.disconnectAudio(TEST_DEVICE)).isFalse();
+        assertThat(mServiceInterface.disconnectAudio(mDevice)).isFalse();
         makeHeadsetClientServiceAvailable();
 
-        doReturn(false).when(mMockHeadsetClientService).disconnectAudio(TEST_DEVICE);
-        assertThat(mServiceInterface.disconnectAudio(TEST_DEVICE)).isFalse();
-        doReturn(true).when(mMockHeadsetClientService).disconnectAudio(TEST_DEVICE);
-        assertThat(mServiceInterface.disconnectAudio(TEST_DEVICE)).isTrue();
+        doReturn(false).when(mHeadsetClientService).disconnectAudio(mDevice);
+        assertThat(mServiceInterface.disconnectAudio(mDevice)).isFalse();
+        doReturn(true).when(mHeadsetClientService).disconnectAudio(mDevice);
+        assertThat(mServiceInterface.disconnectAudio(mDevice)).isTrue();
     }
 
     @Test
     public void testGetCurrentAgFeatures() {
         Set<Integer> features = Set.of(HeadsetClientHalConstants.PEER_FEAT_3WAY);
-        assertThat(mServiceInterface.getCurrentAgFeatures(TEST_DEVICE)).isNull();
+        assertThat(mServiceInterface.getCurrentAgFeatures(mDevice)).isNull();
         makeHeadsetClientServiceAvailable();
 
-        doReturn(features).when(mMockHeadsetClientService).getCurrentAgFeatures(TEST_DEVICE);
-        assertThat(mServiceInterface.getCurrentAgFeatures(TEST_DEVICE)).isEqualTo(features);
+        doReturn(features).when(mHeadsetClientService).getCurrentAgFeatures(mDevice);
+        assertThat(mServiceInterface.getCurrentAgFeatures(mDevice)).isEqualTo(features);
     }
 
     @Test
     public void testGetCurrentAgEvents() {
-        assertThat(mServiceInterface.getCurrentAgEvents(TEST_DEVICE)).isNull();
+        assertThat(mServiceInterface.getCurrentAgEvents(mDevice)).isNull();
         makeHeadsetClientServiceAvailable();
 
-        doReturn(TEST_BUNDLE).when(mMockHeadsetClientService).getCurrentAgEvents(TEST_DEVICE);
-        assertThat(mServiceInterface.getCurrentAgEvents(TEST_DEVICE)).isEqualTo(TEST_BUNDLE);
+        doReturn(TEST_BUNDLE).when(mHeadsetClientService).getCurrentAgEvents(mDevice);
+        assertThat(mServiceInterface.getCurrentAgEvents(mDevice)).isEqualTo(TEST_BUNDLE);
     }
 
     @Test
     public void testGetConnectedDevices() {
-        List<BluetoothDevice> devices = List.of(TEST_DEVICE);
+        List<BluetoothDevice> devices = List.of(mDevice);
         assertThat(mServiceInterface.getConnectedDevices()).isNull();
         makeHeadsetClientServiceAvailable();
 
-        doReturn(devices).when(mMockHeadsetClientService).getConnectedDevices();
+        doReturn(devices).when(mHeadsetClientService).getConnectedDevices();
         assertThat(mServiceInterface.getConnectedDevices()).isEqualTo(devices);
     }
 
     @Test
     public void testGetCurrentCalls() {
-        assertThat(mServiceInterface.getCurrentCalls(TEST_DEVICE)).isNull();
+        assertThat(mServiceInterface.getCurrentCalls(mDevice)).isNull();
         makeHeadsetClientServiceAvailable();
 
-        List<HfpClientCall> calls = List.of(TEST_CALL);
-        doReturn(calls).when(mMockHeadsetClientService).getCurrentCalls(TEST_DEVICE);
-        assertThat(mServiceInterface.getCurrentCalls(TEST_DEVICE)).isEqualTo(calls);
+        List<HfpClientCall> calls = List.of(mTestCall);
+        doReturn(calls).when(mHeadsetClientService).getCurrentCalls(mDevice);
+        assertThat(mServiceInterface.getCurrentCalls(mDevice)).isEqualTo(calls);
     }
 
     @Test
     public void testHasHfpClientEcc() {
         Set<Integer> features = Set.of(HeadsetClientHalConstants.PEER_FEAT_3WAY);
-        assertThat(mServiceInterface.hasHfpClientEcc(TEST_DEVICE)).isFalse();
+        assertThat(mServiceInterface.hasHfpClientEcc(mDevice)).isFalse();
         makeHeadsetClientServiceAvailable();
 
-        doReturn(features).when(mMockHeadsetClientService).getCurrentAgFeatures(TEST_DEVICE);
-        assertThat(mServiceInterface.hasHfpClientEcc(TEST_DEVICE)).isFalse();
+        doReturn(features).when(mHeadsetClientService).getCurrentAgFeatures(mDevice);
+        assertThat(mServiceInterface.hasHfpClientEcc(mDevice)).isFalse();
 
         Set<Integer> featuresWithEcc = Set.of(HeadsetClientHalConstants.PEER_FEAT_ECC);
-        doReturn(featuresWithEcc).when(mMockHeadsetClientService).getCurrentAgFeatures(TEST_DEVICE);
-        assertThat(mServiceInterface.hasHfpClientEcc(TEST_DEVICE)).isTrue();
+        doReturn(featuresWithEcc).when(mHeadsetClientService).getCurrentAgFeatures(mDevice);
+        assertThat(mServiceInterface.hasHfpClientEcc(mDevice)).isTrue();
     }
 }

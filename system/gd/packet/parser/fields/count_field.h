@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@
 #include "parse_location.h"
 
 class CountField : public ScalarField {
- public:
+public:
   CountField(std::string name, int size, ParseLocation loc);
 
   static const std::string kFieldType;
@@ -44,7 +44,7 @@ class CountField : public ScalarField {
 
   virtual std::string GetSizedFieldName() const;
 
- private:
+private:
   int size_;
   std::string sized_field_name_;
 };

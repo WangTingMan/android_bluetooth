@@ -11,6 +11,7 @@ cc_defaults {
     name: "fluoride_defaults",
     defaults: [
         "bluetooth_cflags",
+        "bluetooth_tidy",
     ],
     cflags: [
         "-DEXPORT_SYMBOL=__attribute__((visibility(\"default\")))",
@@ -19,7 +20,7 @@ cc_defaults {
     ],
     target: {
         android: {
-            test_config_template: ":BluetoothTestConfigTemplate",
+            test_config_template: ":BluetoothGTestConfigTemplate",
             sanitize: {
                 misc_undefined: ["bounds"],
             },

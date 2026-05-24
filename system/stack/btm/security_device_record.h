@@ -18,30 +18,26 @@
 
 #pragma once
 
-#include <base/strings/stringprintf.h>
 #include <bluetooth/log.h>
+#include <bluetooth/types/ble_address_with_type.h>
+#include <bluetooth/types/remote_version.h>
 
 #include <cstdint>
 #include <string>
 
 #include "internal_include/bt_target.h"
 #include "macros.h"
-#include "os/log.h"
 #include "stack/include/bt_device_type.h"
 #include "stack/include/bt_name.h"
 #include "stack/include/bt_octets.h"
 #include "stack/include/btm_sec_api_types.h"
 #include "stack/include/hci_error_code.h"
-#include "types/ble_address_with_type.h"
-#include "types/raw_address.h"
-#include "types/remote_version_type.h"
 
 typedef struct {
   uint16_t min_conn_int;
   uint16_t max_conn_int;
   uint16_t peripheral_latency;
   uint16_t supervision_tout;
-
 } tBTM_LE_CONN_PRAMS;
 
 /* The MSB of the clock offset field indicates whether the offset is valid. */
@@ -54,17 +50,15 @@ typedef struct {
 #define BTM_SEC_OUT_FLAGS (BTM_SEC_OUT_AUTHENTICATE | BTM_SEC_OUT_ENCRYPT)
 #define BTM_SEC_IN_FLAGS (BTM_SEC_IN_AUTHENTICATE | BTM_SEC_IN_ENCRYPT)
 
-#define BTM_SEC_OUT_LEVEL4_FLAGS                                       \
-  (BTM_SEC_OUT_AUTHENTICATE | BTM_SEC_OUT_ENCRYPT | BTM_SEC_OUT_MITM | \
-   BTM_SEC_MODE4_LEVEL4)
+#define BTM_SEC_OUT_LEVEL4_FLAGS \
+  (BTM_SEC_OUT_AUTHENTICATE | BTM_SEC_OUT_ENCRYPT | BTM_SEC_OUT_MITM | BTM_SEC_MODE4_LEVEL4)
 
-#define BTM_SEC_IN_LEVEL4_FLAGS                                     \
-  (BTM_SEC_IN_AUTHENTICATE | BTM_SEC_IN_ENCRYPT | BTM_SEC_IN_MITM | \
-   BTM_SEC_MODE4_LEVEL4)
+#define BTM_SEC_IN_LEVEL4_FLAGS \
+  (BTM_SEC_IN_AUTHENTICATE | BTM_SEC_IN_ENCRYPT | BTM_SEC_IN_MITM | BTM_SEC_MODE4_LEVEL4)
 typedef struct {
   uint32_t mx_proto_id;     /* Service runs over this multiplexer protocol */
-  uint32_t orig_mx_chan_id; /* Channel on the multiplexer protocol    */
-  uint32_t term_mx_chan_id; /* Channel on the multiplexer protocol    */
+  uint32_t orig_mx_chan_id; /* Channel on the multiplexer protocol */
+  uint32_t term_mx_chan_id; /* Channel on the multiplexer protocol */
   uint16_t psm;             /* L2CAP PSM value */
   uint16_t security_flags;  /* Bitmap of required security features */
   uint8_t service_id;       /* Passed in authorization callback */
@@ -76,18 +70,18 @@ typedef struct {
 typedef struct {
   Octet16 irk;   /* peer diverified identity root */
   Octet16 pltk;  /* peer long term key */
-  Octet16 pcsrk; /* peer SRK peer device used to secured sign local data  */
+  Octet16 pcsrk; /* peer SRK peer device used to secured sign local data */
 
   Octet16 lltk;  /* local long term key */
-  Octet16 lcsrk; /* local SRK peer device used to secured sign local data  */
+  Octet16 lcsrk; /* local SRK peer device used to secured sign local data */
 
-  BT_OCTET8 rand;        /* random vector for LTK generation */
-  uint16_t ediv;         /* LTK diversifier of this peripheral device */
-  uint16_t div;          /* local DIV  to generate local LTK=d1(ER,DIV,0) and
-                            CSRK=d1(ER,DIV,1)  */
-  uint8_t sec_level;     /* local pairing security level */
-  uint8_t key_size;      /* key size of the LTK delivered to peer device */
-  uint8_t srk_sec_level; /* security property of peer SRK for this device */
+  BT_OCTET8 rand;               /* random vector for LTK generation */
+  uint16_t ediv;                /* LTK diversifier of this peripheral device */
+  uint16_t div;                 /* local DIV to generate local LTK=d1(ER, DIV, 0) and
+                                   CSRK=d1(ER, DIV, 1) */
+  uint8_t sec_level;            /* local pairing security level */
+  uint8_t key_size;             /* key size of the LTK delivered to peer device */
+  uint8_t srk_sec_level;        /* security property of peer SRK for this device */
   uint8_t local_csrk_sec_level; /* security property of local CSRK for this
                                    device */
 
@@ -105,10 +99,9 @@ enum tBLE_RAND_ADDR_TYPE : uint8_t {
 };
 
 class tBTM_BLE_ADDR_INFO {
- public:
-  RawAddress pseudo_addr; /* LE pseudo address of the device if different from
-                          device address  */
- public:
+public:
+  RawAddress pseudo_addr; /* LE pseudo address of the device if different from device address */
+public:
   tBLE_ADDR_TYPE AddressType() const { return ble_addr_type_; }
   void SetAddressType(tBLE_ADDR_TYPE ble_addr_type) {
     if (is_ble_addr_type_known(ble_addr_type)) {
@@ -127,7 +120,7 @@ class tBTM_BLE_ADDR_INFO {
 
   tBLE_RAND_ADDR_TYPE active_addr_type;
 
- private:
+private:
   tBLE_ADDR_TYPE ble_addr_type_; /* LE device type: public or random address */
 };
 
@@ -166,9 +159,6 @@ enum class tSECURITY_STATE : uint8_t {
   /* delay to check for encryption to work around */
   /* controller problems */
   DELAY_FOR_ENC = 7,
-  DISCONNECTING_BLE = 8,
-  DISCONNECTING_BOTH = 9,
-  LE_ENCRYPTING = 10,
 };
 
 static inline std::string security_state_text(const tSECURITY_STATE& state) {
@@ -181,9 +171,6 @@ static inline std::string security_state_text(const tSECURITY_STATE& state) {
     CASE_RETURN_STRING(tSECURITY_STATE::SWITCHING_ROLE);
     CASE_RETURN_STRING(tSECURITY_STATE::DISCONNECTING);
     CASE_RETURN_STRING(tSECURITY_STATE::DELAY_FOR_ENC);
-    CASE_RETURN_STRING(tSECURITY_STATE::DISCONNECTING_BLE);
-    CASE_RETURN_STRING(tSECURITY_STATE::DISCONNECTING_BOTH);
-    CASE_RETURN_STRING(tSECURITY_STATE::LE_ENCRYPTING);
     default:
       RETURN_UNKNOWN_TYPE_STRING(tSECURITY_STATE, state);
   }
@@ -193,12 +180,11 @@ typedef enum : uint8_t {
   BTM_SM4_UNKNOWN = 0x00,
   BTM_SM4_KNOWN = 0x10,
   BTM_SM4_TRUE = 0x11,
-  BTM_SM4_REQ_PEND = 0x08, /* set this bit when getting remote features */
-  BTM_SM4_UPGRADE = 0x04,  /* set this bit when upgrading link key */
-  BTM_SM4_RETRY = 0x02,    /* set this bit to retry on HCI_ERR_KEY_MISSING or \
-                              HCI_ERR_LMP_ERR_TRANS_COLLISION */
-  BTM_SM4_DD_ACP =
-      0x20, /* set this bit to indicate peer initiated dedicated bonding */
+  BTM_SM4_REQ_PEND = 0x08,  /* set this bit when getting remote features */
+  BTM_SM4_UPGRADE = 0x04,   /* set this bit when upgrading link key */
+  BTM_SM4_RETRY = 0x02,     /* set this bit to retry on HCI_ERR_KEY_MISSING or \
+                               HCI_ERR_LMP_ERR_TRANS_COLLISION */
+  BTM_SM4_DD_ACP = 0x20,    /* set this bit to indicate peer initiated dedicated bonding */
   BTM_SM4_CONN_PEND = 0x40, /* set this bit to indicate accepting acl conn; to
                              be cleared on \ btm_acl_created */
 } tBTM_SM4_BIT;
@@ -208,41 +194,39 @@ typedef enum : uint8_t {
  * A record exists for each device authenticated with this device
  */
 struct tBTM_SEC_REC {
-  tSECURITY_STATE sec_state; /* Operating state                    */
+  tSECURITY_STATE classic_link; /* Operating state of Classic link */
+  tSECURITY_STATE le_link;      /* Operating state of LE link */
 
-  tHCI_STATUS sec_status; /* Status in encryption change event  */
-  uint16_t sec_flags;     /* Current device security state      */
+  tHCI_STATUS sec_status; /* Status in encryption change event */
+  uint16_t sec_flags;     /* Current device security state */
 
   uint8_t pin_code_length; /* Length of the pin_code used for pairing */
   uint32_t required_security_flags_for_pairing;
-  uint16_t security_required; /* Security required for connection   */
+  uint16_t security_required; /* Security required for connection */
   // security callback and its argument
   tBTM_SEC_CALLBACK* p_callback;
   void* p_ref_data;
 
-  bool link_key_not_sent; /* link key notification has not been sent waiting for
-                             name */
-  tBTM_IO_CAP rmt_io_caps;    /* IO capability of the peer device */
-  tBTM_AUTH_REQ rmt_auth_req; /* the auth_req flag as in the IO caps rsp evt */
+  bool link_key_not_sent;          /* link key notification has not been sent waiting for
+                                      name */
+  tBTM_IO_CAP rmt_io_caps;         /* IO capability of the peer device */
+  tBTM_AUTH_REQ rmt_auth_req;      /* the auth_req flag as in the IO caps rsp evt */
   bool new_encryption_key_is_p256; /* Set to true when the newly generated LK
                                    ** is generated from P-256.
                                    ** Link encrypted with such LK can be used
                                    ** for SM over BR/EDR. */
 
   // BREDR Link Key Info
-  LinkKey link_key;      /* Device link key                    */
-  uint8_t link_key_type; /* Type of key used in pairing        */
-  uint8_t enc_key_size;  /* current link encryption key size   */
+  LinkKey link_key;      /* Device link key */
+  uint8_t link_key_type; /* Type of key used in pairing */
+  uint8_t enc_key_size;  /* current link encryption key size */
+  tBTM_BOND_TYPE bond_type; /* Whether the BR/EDR pairing was persistent or temporary */
 
   // LE Link Key Info
   tBTM_SEC_BLE_KEYS ble_keys;
 
-  tBTM_BOND_TYPE bond_type; /* bond type */
-
- public:
-  bool is_device_authenticated() const {
-    return sec_flags & BTM_SEC_AUTHENTICATED;
-  }
+public:
+  bool is_device_authenticated() const { return sec_flags & BTM_SEC_AUTHENTICATED; }
   void set_device_authenticated() { sec_flags |= BTM_SEC_AUTHENTICATED; }
   void reset_device_authenticated() { sec_flags &= ~BTM_SEC_AUTHENTICATED; }
 
@@ -258,124 +242,72 @@ struct tBTM_SEC_REC {
   void set_link_key_known() { sec_flags |= BTM_SEC_LINK_KEY_KNOWN; }
   void reset_link_key_known() { sec_flags &= ~BTM_SEC_LINK_KEY_KNOWN; }
 
-  bool is_link_key_authenticated() const {
-    return sec_flags & BTM_SEC_LINK_KEY_AUTHED;
-  }
+  bool is_link_key_authenticated() const { return sec_flags & BTM_SEC_LINK_KEY_AUTHED; }
   void set_link_key_authenticated() { sec_flags |= BTM_SEC_LINK_KEY_AUTHED; }
   void reset_link_key_authenticated() { sec_flags &= ~BTM_SEC_LINK_KEY_AUTHED; }
 
-  bool is_le_device_authenticated() const {
-    return sec_flags & BTM_SEC_LE_AUTHENTICATED;
-  }
+  bool is_le_device_authenticated() const { return sec_flags & BTM_SEC_LE_AUTHENTICATED; }
   void set_le_device_authenticated() { sec_flags |= BTM_SEC_LE_AUTHENTICATED; }
-  void reset_le_device_authenticated() {
-    sec_flags &= ~BTM_SEC_LE_AUTHENTICATED;
-  }
+  void reset_le_device_authenticated() { sec_flags &= ~BTM_SEC_LE_AUTHENTICATED; }
 
-  bool is_le_device_encrypted() const {
-    return sec_flags & BTM_SEC_LE_ENCRYPTED;
-  }
+  bool is_le_device_encrypted() const { return sec_flags & BTM_SEC_LE_ENCRYPTED; }
   void set_le_device_encrypted() { sec_flags |= BTM_SEC_LE_ENCRYPTED; }
   void reset_le_device_encrypted() { sec_flags &= ~BTM_SEC_LE_ENCRYPTED; }
 
-  bool is_le_link_key_known() const {
-    return sec_flags & BTM_SEC_LE_LINK_KEY_KNOWN;
-  }
+  bool is_le_link_key_known() const { return sec_flags & BTM_SEC_LE_LINK_KEY_KNOWN; }
   void set_le_link_key_known() { sec_flags |= BTM_SEC_LE_LINK_KEY_KNOWN; }
   void reset_le_link_key_known() { sec_flags &= ~BTM_SEC_LE_LINK_KEY_KNOWN; }
 
-  bool is_le_link_key_authenticated() const {
-    return sec_flags & BTM_SEC_LE_LINK_KEY_AUTHED;
-  }
-  void set_le_link_key_authenticated() {
-    sec_flags |= BTM_SEC_LE_LINK_KEY_AUTHED;
-  }
-  void reset_le_link_key_authenticated() {
-    sec_flags &= ~BTM_SEC_LE_LINK_KEY_AUTHED;
-  }
+  bool is_le_link_key_authenticated() const { return sec_flags & BTM_SEC_LE_LINK_KEY_AUTHED; }
+  void set_le_link_key_authenticated() { sec_flags |= BTM_SEC_LE_LINK_KEY_AUTHED; }
+  void reset_le_link_key_authenticated() { sec_flags &= ~BTM_SEC_LE_LINK_KEY_AUTHED; }
 
   bool is_le_link_16_digit_key_authenticated() const {
     return sec_flags & BTM_SEC_16_DIGIT_PIN_AUTHED;
   }
-  void set_le_link_16_digit_key_authenticated() {
-    sec_flags |= BTM_SEC_16_DIGIT_PIN_AUTHED;
-  }
-  void reset_le_link_16_digit_key_authenticated() {
-    sec_flags &= ~BTM_SEC_16_DIGIT_PIN_AUTHED;
-  }
+  void set_le_link_16_digit_key_authenticated() { sec_flags |= BTM_SEC_16_DIGIT_PIN_AUTHED; }
+  void reset_le_link_16_digit_key_authenticated() { sec_flags &= ~BTM_SEC_16_DIGIT_PIN_AUTHED; }
 
-  bool is_security_state_idle() const { return sec_state == tSECURITY_STATE::IDLE; }
-  bool is_security_state_authenticating() const {
-    return sec_state == tSECURITY_STATE::AUTHENTICATING;
-  }
   bool is_security_state_bredr_encrypting() const {
-    return sec_state == tSECURITY_STATE::ENCRYPTING;
+    return classic_link == tSECURITY_STATE::ENCRYPTING;
   }
-  bool is_security_state_le_encrypting() const {
-    return sec_state == tSECURITY_STATE::LE_ENCRYPTING;
-  }
+  bool is_security_state_le_encrypting() const { return le_link == tSECURITY_STATE::ENCRYPTING; }
   bool is_security_state_encrypting() const {
-    return (is_security_state_bredr_encrypting() ||
-            is_security_state_le_encrypting());
+    return is_security_state_bredr_encrypting() || is_security_state_le_encrypting();
   }
-  bool is_security_state_getting_name() const { return sec_state == tSECURITY_STATE::GETTING_NAME; }
-  bool is_security_state_authorizing() const { return sec_state == tSECURITY_STATE::AUTHORIZING; }
-  bool is_security_state_switching_role() const {
-    return sec_state == tSECURITY_STATE::SWITCHING_ROLE;
-  }
-  bool is_security_state_disconnecting() const {
-    return sec_state == tSECURITY_STATE::DISCONNECTING;
-  }
-  bool is_security_state_wait_for_encryption() const {
-    return sec_state == tSECURITY_STATE::DELAY_FOR_ENC;
-  }
-  bool is_security_state_ble_disconnecting() const {
-    return sec_state == tSECURITY_STATE::DISCONNECTING_BLE;
-  }
-  bool is_security_state_br_edr_and_ble() const {
-    return sec_state == tSECURITY_STATE::DISCONNECTING_BOTH;
+  bool is_security_state_getting_name() const {
+    return classic_link == tSECURITY_STATE::GETTING_NAME;
   }
 
   bool is_bond_type_unknown() const { return bond_type == BOND_TYPE_UNKNOWN; }
-  bool is_bond_type_persistent() const {
-    return bond_type == BOND_TYPE_PERSISTENT;
-  }
-  bool is_bond_type_temporary() const {
-    return bond_type == BOND_TYPE_TEMPORARY;
-  }
+  bool is_bond_type_persistent() const { return bond_type == BOND_TYPE_PERSISTENT; }
+  bool is_bond_type_temporary() const { return bond_type == BOND_TYPE_TEMPORARY; }
+
+  bool is_bonded(tBT_TRANSPORT transport = BT_TRANSPORT_AUTO) const;
 
   uint8_t get_encryption_key_size() const { return enc_key_size; }
 
   void increment_sign_counter(bool local);
 
   std::string ToString() const {
-    return base::StringPrintf(
-        "bredr_linkkey_known:%c,le_linkkey_known:%c,"
-        "bond_type:%s,"
-        "bredr_linkkey_type:%s,"
-        "ble_enc_key_size:%d,"
-        "bredr_authenticated:%c,le_authenticated:%c,"
-        "16_digit_key_authenticated:%c,"
-        "bredr_encrypted:%c,le_encrypted:%c",
-        is_link_key_known() ? 'T' : 'F', is_le_link_key_known() ? 'T' : 'F',
-        bond_type_text(bond_type).c_str(),
-        linkkey_type_text(link_key_type).c_str(), enc_key_size,
-        is_device_authenticated() ? 'T' : 'F',
-        is_le_device_authenticated() ? 'T' : 'F',
-        is_le_link_16_digit_key_authenticated() ? 'T' : 'F',
-        is_device_encrypted() ? 'T' : 'F',
-        is_le_device_encrypted() ? 'T' : 'F');
+    return std::format(
+            "bredr_linkkey_known:{:c},le_linkkey_known:{:c},bond_type:{},bredr_linkkey_type:{},ble_"
+            "enc_key_size:{},bredr_authenticated:{:c},le_authenticated:{:c},16_digit_key_"
+            "authenticated:{:c},bredr_encrypted:{:c},le_encrypted:{:c}",
+            is_link_key_known() ? 'T' : 'F', is_le_link_key_known() ? 'T' : 'F',
+            bond_type_text(bond_type), linkkey_type_text(link_key_type), enc_key_size,
+            is_device_authenticated() ? 'T' : 'F', is_le_device_authenticated() ? 'T' : 'F',
+            is_le_link_16_digit_key_authenticated() ? 'T' : 'F', is_device_encrypted() ? 'T' : 'F',
+            is_le_device_encrypted() ? 'T' : 'F');
   }
 };
 
 class tBTM_SEC_DEV_REC {
- public:
+public:
   RawAddress RemoteAddress() const { return bd_addr; }
 
   /* Data length extension */
-  void set_suggested_tx_octect(uint16_t octets) {
-    suggested_tx_octets = octets;
-  }
+  void set_suggested_tx_octect(uint16_t octets) { suggested_tx_octets = octets; }
 
   uint16_t get_suggested_tx_octets() const { return suggested_tx_octets; }
   bool IsLocallyInitiated() const { return is_originator; }
@@ -383,49 +315,47 @@ class tBTM_SEC_DEV_REC {
   uint16_t get_br_edr_hci_handle() const { return hci_handle; }
   uint16_t get_ble_hci_handle() const { return ble_hci_handle; }
 
-  bool is_device_type_br_edr() const {
-    return device_type == BT_DEVICE_TYPE_BREDR;
-  }
+  bool is_device_type_br_edr() const { return device_type == BT_DEVICE_TYPE_BREDR; }
   bool is_device_type_ble() const { return device_type == BT_DEVICE_TYPE_BLE; }
-  bool is_device_type_dual_mode() const {
-    return device_type == BT_DEVICE_TYPE_DUMO;
-  }
+  bool is_device_type_dual_mode() const { return device_type == BT_DEVICE_TYPE_DUMO; }
 
-  bool is_device_type_has_ble() const {
-    return device_type & BT_DEVICE_TYPE_BLE;
+  bool is_device_type_has_ble() const { return device_type & BT_DEVICE_TYPE_BLE; }
+
+  bool HostSupportsSecureConnections() const { return remote_host_supports_secure_connections; }
+  bool ControllerSupportsSecureConnections() const {
+    return remote_controller_supports_secure_connections;
   }
 
   bool SupportsSecureConnections() const {
-    return remote_supports_secure_connections;
+    return HostSupportsSecureConnections() && ControllerSupportsSecureConnections();
   }
 
   std::string ToString() const {
-    return base::StringPrintf(
-        "%s %6s cod:%s remote_info:%-14s sm4:0x%02x SecureConn:%c name:\"%s\""
-        "sec_prop:%s",
-        ADDRESS_TO_LOGGABLE_CSTR(bd_addr), DeviceTypeText(device_type).c_str(),
-        dev_class_text(dev_class).c_str(),
-        remote_version_info.ToString().c_str(), sm4,
-        (remote_supports_secure_connections) ? 'T' : 'F',
-        PRIVATE_NAME(sec_bd_name), sec_rec.ToString().c_str());
+    return std::format(
+            "{} {:6s} cod:{} remote_info:{:<14s} sm4:0x{:02x} SecureConn:{:c} "
+            "name:\"{}\" sec_prop:{}, in_resolving_list: {}",
+            bd_addr, DeviceTypeText(device_type), dev_class_text(dev_class),
+            remote_version_info.ToString(), sm4,
+            remote_host_supports_secure_connections ? 'T' : 'F',
+            reinterpret_cast<char const*>(sec_bd_name), sec_rec.ToString(),
+            (ble.in_controller_list & BTM_RESOLVING_LIST_BIT) ? 'T' : 'F');
   }
 
- public:
+public:
   RawAddress bd_addr; /* BD_ADDR of the device */
   tBTM_BLE_ADDR_INFO ble;
-  BD_NAME sec_bd_name;      /* User friendly name of the device. (may be
-                                    truncated to save space in dev_rec table) */
-  DEV_CLASS dev_class;      /* DEV_CLASS of the device            */
+  BD_NAME sec_bd_name; /* User friendly name of the device. (may be
+                               truncated to save space in dev_rec table) */
+  DEV_CLASS dev_class; /* DEV_CLASS of the device */
   tBT_DEVICE_TYPE device_type;
 
-  uint32_t timestamp;      /* Timestamp of the last connection   */
+  uint32_t timestamp;      /* Timestamp of the last connection */
   uint16_t hci_handle;     /* Handle to BR/EDR ACL connection when exists */
   uint16_t ble_hci_handle; /* use in DUMO connection */
 
-  uint16_t suggested_tx_octets; /* Recently suggested tx octects for data length
+  uint16_t suggested_tx_octets; /* Recently suggested tx octets for data length
                                    extension */
   uint16_t clock_offset;        /* Latest known clock offset          */
-
   // whether the peer device can read GAP characteristics only visible in
   // "discoverable" mode
   bool can_read_discoverable{true};
@@ -438,13 +368,15 @@ class tBTM_SEC_DEV_REC {
   bool remote_supports_hci_role_switch = false;
   bool remote_supports_bredr;
   bool remote_supports_ble;
-  bool remote_supports_secure_connections;
+  bool remote_host_supports_secure_connections;
+  bool remote_controller_supports_secure_connections;
   bool remote_feature_received = false;
 
   tREMOTE_VERSION_INFO remote_version_info;
 
-  bool role_central;  /* true if current mode is central (BLE)    */
+  bool role_central;  /* true if current mode is central (BLE) */
   bool is_originator; /* true if device is originating ACL connection */
+  bool switch_role_after_encryption; /* true if role switch must be requested after encryption */
 
   // BLE connection parameters
   tBTM_LE_CONN_PRAMS conn_params;
@@ -452,10 +384,9 @@ class tBTM_SEC_DEV_REC {
   tBTM_SEC_REC sec_rec;
 };
 
-namespace fmt {
+namespace std {
 template <>
-struct formatter<tSECURITY_STATE>
-    : string_formatter<tSECURITY_STATE, &security_state_text> {};
+struct formatter<tSECURITY_STATE> : string_formatter<tSECURITY_STATE, &security_state_text> {};
 template <>
 struct formatter<tBLE_RAND_ADDR_TYPE> : enum_formatter<tBLE_RAND_ADDR_TYPE> {};
-}  // namespace fmt
+}  // namespace std

@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,11 @@
 
 package android.bluetooth;
 
+import static java.util.Objects.requireNonNull;
+
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.annotation.RequiresNoPermission;
 import android.annotation.SystemApi;
 import android.os.Parcel;
 import android.os.Parcelable;
@@ -81,6 +84,7 @@ public final class BluetoothLeBroadcastChannel implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public boolean isSelected() {
         return mIsSelected;
     }
@@ -92,6 +96,7 @@ public final class BluetoothLeBroadcastChannel implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public int getChannelIndex() {
         return mChannelIndex;
     }
@@ -103,6 +108,7 @@ public final class BluetoothLeBroadcastChannel implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public @NonNull BluetoothLeAudioCodecConfigMetadata getCodecMetadata() {
         return mCodecMetadata;
     }
@@ -195,6 +201,7 @@ public final class BluetoothLeBroadcastChannel implements Parcelable {
          * @hide
          */
         @SystemApi
+        @RequiresNoPermission
         public @NonNull Builder setSelected(boolean isSelected) {
             mIsSelected = isSelected;
             return this;
@@ -209,6 +216,7 @@ public final class BluetoothLeBroadcastChannel implements Parcelable {
          * @hide
          */
         @SystemApi
+        @RequiresNoPermission
         public @NonNull Builder setChannelIndex(int channelIndex) {
             if (channelIndex == UNKNOWN_VALUE_PLACEHOLDER) {
                 throw new IllegalArgumentException(
@@ -227,10 +235,10 @@ public final class BluetoothLeBroadcastChannel implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setCodecMetadata(
+        @RequiresNoPermission
+        public @NonNull Builder setCodecMetadata(
                 @NonNull BluetoothLeAudioCodecConfigMetadata codecMetadata) {
-            Objects.requireNonNull(codecMetadata, "codecMetadata cannot be null");
+            requireNonNull(codecMetadata);
             mCodecMetadata = codecMetadata;
             return this;
         }
@@ -244,8 +252,9 @@ public final class BluetoothLeBroadcastChannel implements Parcelable {
          * @hide
          */
         @SystemApi
+        @RequiresNoPermission
         public @NonNull BluetoothLeBroadcastChannel build() {
-            Objects.requireNonNull(mCodecMetadata, "codec metadata cannot be null");
+            requireNonNull(mCodecMetadata);
             if (mChannelIndex == UNKNOWN_VALUE_PLACEHOLDER) {
                 throw new IllegalArgumentException(
                         "mChannelIndex cannot be " + UNKNOWN_VALUE_PLACEHOLDER);

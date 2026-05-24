@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ namespace packet {
 // A little-endian PacketBuilder can contain a big-endian PacketBuilder,
 // so BasePacketBuilder provides a common base class.
 class BasePacketBuilder {
- public:
+public:
   virtual ~BasePacketBuilder() = default;
 
   virtual size_t size() const = 0;
@@ -38,17 +38,13 @@ class BasePacketBuilder {
   // Write to the vector with the given iterator.
   virtual void Serialize(BitInserter& it) const = 0;
 
-  void SetFlushable(bool is_flushable) {
-    is_flushable_ = is_flushable;
-  }
-  bool IsFlushable() const {
-    return is_flushable_;
-  }
+  void SetFlushable(bool is_flushable) { is_flushable_ = is_flushable; }
+  bool IsFlushable() const { return is_flushable_; }
 
- protected:
+protected:
   BasePacketBuilder() = default;
 
- private:
+private:
   bool is_flushable_{false};
 };
 

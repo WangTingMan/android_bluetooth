@@ -18,6 +18,7 @@
 #include <base/functional/bind.h>
 #include <base/threading/platform_thread.h>
 #include <bluetooth/log.h>
+#include <com_android_bluetooth_flags.h>
 #include <gtest/gtest.h>
 #include <sys/capability.h>
 #include <syscall.h>
@@ -25,6 +26,9 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <string>
+#include <thread>
+#include <utility>
 
 using bluetooth::common::MessageLoopThread;
 using namespace bluetooth;
@@ -33,7 +37,7 @@ using namespace bluetooth;
  * Unit tests to verify MessageLoopThread. Must have CAP_SYS_NICE capability.
  */
 class MessageLoopThreadTest : public ::testing::Test {
- public:
+public:
   void ShouldNotHappen() { FAIL() << "Should not happen"; }
 
   void GetThreadId(std::promise<base::PlatformThreadId> thread_id_promise) {
@@ -50,8 +54,7 @@ class MessageLoopThreadTest : public ::testing::Test {
     name_promise.set_value(my_name);
   }
 
-  void GetSchedulingPolicyAndPriority(int* scheduling_policy,
-                                      int* schedule_priority,
+  void GetSchedulingPolicyAndPriority(int* scheduling_policy, int* schedule_priority,
                                       std::promise<void> execution_promise) {
     *scheduling_policy = sched_getscheduler(0);
     struct sched_param param = {};
@@ -65,17 +68,14 @@ class MessageLoopThreadTest : public ::testing::Test {
     GetName(std::move(name_promise));
   }
 
- protected:
+protected:
   static bool CanSetCurrentThreadPriority() {
-    struct __user_cap_header_struct linux_user_header = {
-        .version = _LINUX_CAPABILITY_VERSION_3};
+    struct __user_cap_header_struct linux_user_header = {.version = _LINUX_CAPABILITY_VERSION_3};
     struct __user_cap_data_struct linux_user_data[2] = {};
     if (capget(&linux_user_header, linux_user_data) != 0) {
-      log::error("Failed to get capability for current thread, error: {}",
-                 strerror(errno));
+      log::error("Failed to get capability for current thread, error: {}", strerror(errno));
       // Log record in XML
-      RecordProperty("MessageLoopThreadTestCannotGetCapabilityReason",
-                     strerror(errno));
+      RecordProperty("MessageLoopThreadTestCannotGetCapabilityReason", strerror(errno));
       return false;
     }
     return ((linux_user_data[0].permitted >> CAP_SYS_NICE) & 0x1) != 0;
@@ -83,6 +83,10 @@ class MessageLoopThreadTest : public ::testing::Test {
 };
 
 TEST_F(MessageLoopThreadTest, get_weak_ptr) {
+  if (com::android::bluetooth::flags::replace_message_loop_thread_with_gd_handler()) {
+    GTEST_SKIP()
+            << "Skipping this test, flag replace_message_loop_thread_with_gd_handler is enabled.";
+  }
   base::WeakPtr<MessageLoopThread> message_loop_thread_ptr;
   {
     MessageLoopThread message_loop_thread("test_thread");
@@ -95,22 +99,38 @@ TEST_F(MessageLoopThreadTest, get_weak_ptr) {
 TEST_F(MessageLoopThreadTest, test_running_thread) {
   MessageLoopThread message_loop_thread("test_thread");
   message_loop_thread.StartUp();
-  ASSERT_GE(message_loop_thread.GetThreadId(), 0);
+  if (!com::android::bluetooth::flags::replace_message_loop_thread_with_gd_handler()) {
+    ASSERT_GE(message_loop_thread.GetThreadId(), 0);
+    ASSERT_TRUE(message_loop_thread.IsRunning());
+    message_loop_thread.ShutDown();
+    ASSERT_LT(message_loop_thread.GetThreadId(), 0);
+    ASSERT_FALSE(message_loop_thread.IsRunning());
+    return;
+  }
+
   ASSERT_TRUE(message_loop_thread.IsRunning());
   message_loop_thread.ShutDown();
-  ASSERT_LT(message_loop_thread.GetThreadId(), 0);
   ASSERT_FALSE(message_loop_thread.IsRunning());
 }
 
 TEST_F(MessageLoopThreadTest, test_not_self) {
+  if (com::android::bluetooth::flags::replace_message_loop_thread_with_gd_handler()) {
+    GTEST_SKIP()
+            << "Skipping this test, flag replace_message_loop_thread_with_gd_handler is enabled.";
+  }
+
   MessageLoopThread message_loop_thread("test_thread");
   message_loop_thread.StartUp();
   ASSERT_GE(message_loop_thread.GetThreadId(), 0);
-  ASSERT_NE(message_loop_thread.GetThreadId(),
-            base::PlatformThread::CurrentId());
+  ASSERT_NE(message_loop_thread.GetThreadId(), base::PlatformThread::CurrentId());
 }
 
 TEST_F(MessageLoopThreadTest, test_shutdown_without_start) {
+  if (com::android::bluetooth::flags::replace_message_loop_thread_with_gd_handler()) {
+    GTEST_SKIP()
+            << "Skipping this test, flag replace_message_loop_thread_with_gd_handler is enabled.";
+  }
+
   MessageLoopThread message_loop_thread("test_thread");
   message_loop_thread.ShutDown();
   ASSERT_LT(message_loop_thread.GetThreadId(), 0);
@@ -120,8 +140,7 @@ TEST_F(MessageLoopThreadTest, test_do_in_thread_before_start) {
   std::string name = "test_thread";
   MessageLoopThread message_loop_thread(name);
   ASSERT_FALSE(message_loop_thread.DoInThread(
-      FROM_HERE, base::BindOnce(&MessageLoopThreadTest::ShouldNotHappen,
-                                base::Unretained(this))));
+          base::BindOnce(&MessageLoopThreadTest::ShouldNotHappen, base::Unretained(this))));
 }
 
 TEST_F(MessageLoopThreadTest, test_do_in_thread_after_shutdown) {
@@ -130,39 +149,41 @@ TEST_F(MessageLoopThreadTest, test_do_in_thread_after_shutdown) {
   message_loop_thread.StartUp();
   message_loop_thread.ShutDown();
   ASSERT_FALSE(message_loop_thread.DoInThread(
-      FROM_HERE, base::BindOnce(&MessageLoopThreadTest::ShouldNotHappen,
-                                base::Unretained(this))));
+          base::BindOnce(&MessageLoopThreadTest::ShouldNotHappen, base::Unretained(this))));
 }
 
 TEST_F(MessageLoopThreadTest, test_name) {
   std::string name = "test_thread";
   MessageLoopThread message_loop_thread(name);
   message_loop_thread.StartUp();
-  ASSERT_GE(message_loop_thread.GetThreadId(), 0);
+  if (!com::android::bluetooth::flags::replace_message_loop_thread_with_gd_handler()) {
+    ASSERT_GE(message_loop_thread.GetThreadId(), 0);
+  }
   std::promise<std::string> name_promise;
   std::future<std::string> name_future = name_promise.get_future();
-  message_loop_thread.DoInThread(
-      FROM_HERE,
-      base::BindOnce(&MessageLoopThreadTest::GetName, base::Unretained(this),
-                     std::move(name_promise)));
+  message_loop_thread.DoInThread(base::BindOnce(&MessageLoopThreadTest::GetName,
+                                                base::Unretained(this), std::move(name_promise)));
   std::string my_name = name_future.get();
   ASSERT_EQ(name, my_name);
   ASSERT_EQ(name, message_loop_thread.GetName());
 }
 
 TEST_F(MessageLoopThreadTest, test_thread_id) {
+  if (com::android::bluetooth::flags::replace_message_loop_thread_with_gd_handler()) {
+    GTEST_SKIP()
+            << "Skipping this test, flag replace_message_loop_thread_with_gd_handler is enabled.";
+  }
+
   std::string name = "test_thread";
   MessageLoopThread message_loop_thread(name);
   message_loop_thread.StartUp();
   base::PlatformThreadId thread_id = message_loop_thread.GetThreadId();
   ASSERT_GE(thread_id, 0);
   std::promise<base::PlatformThreadId> thread_id_promise;
-  std::future<base::PlatformThreadId> thread_id_future =
-      thread_id_promise.get_future();
-  message_loop_thread.DoInThread(
-      FROM_HERE,
-      base::BindOnce(&MessageLoopThreadTest::GetThreadId,
-                     base::Unretained(this), std::move(thread_id_promise)));
+  std::future<base::PlatformThreadId> thread_id_future = thread_id_promise.get_future();
+  message_loop_thread.DoInThread(base::BindOnce(&MessageLoopThreadTest::GetThreadId,
+                                                base::Unretained(this),
+                                                std::move(thread_id_promise)));
   base::PlatformThreadId my_thread_id = thread_id_future.get();
   ASSERT_EQ(thread_id, my_thread_id);
 }
@@ -175,7 +196,7 @@ TEST_F(MessageLoopThreadTest, test_set_realtime_priority_fail_before_start) {
 
 TEST_F(MessageLoopThreadTest, test_set_realtime_priority_success) {
   std::string name = "test_thread";
-  MessageLoopThread message_loop_thread(name);
+  MessageLoopThread message_loop_thread(name, os::Thread::Priority::REAL_TIME);
   message_loop_thread.StartUp();
   bool ret = message_loop_thread.EnableRealTimeScheduling();
   if (!ret) {
@@ -183,8 +204,8 @@ TEST_F(MessageLoopThreadTest, test_set_realtime_priority_success) {
       FAIL() << "Cannot set real time priority even though we have permission";
     } else {
       log::warn(
-          "Allowing EnableRealTimeScheduling to fail because we don't have "
-          "CAP_SYS_NICE capability");
+              "Allowing EnableRealTimeScheduling to fail because we don't have "
+              "CAP_SYS_NICE capability");
       // Log record in XML
       RecordProperty("MessageLoopThreadTestConditionalSuccess",
                      "Mark test as success even though EnableRealTimeScheduling"
@@ -197,21 +218,17 @@ TEST_F(MessageLoopThreadTest, test_set_realtime_priority_success) {
   std::future<void> execution_future = execution_promise.get_future();
   int scheduling_policy = -1;
   int scheduling_priority = -1;
-  message_loop_thread.DoInThread(
-      FROM_HERE,
-      base::BindOnce(&MessageLoopThreadTest::GetSchedulingPolicyAndPriority,
-                     base::Unretained(this), &scheduling_policy,
-                     &scheduling_priority, std::move(execution_promise)));
+  message_loop_thread.DoInThread(base::BindOnce(
+          &MessageLoopThreadTest::GetSchedulingPolicyAndPriority, base::Unretained(this),
+          &scheduling_policy, &scheduling_priority, std::move(execution_promise)));
   execution_future.wait();
   ASSERT_EQ(scheduling_policy, SCHED_FIFO);
   // Internal implementation verified here
   ASSERT_EQ(scheduling_priority, 1);
   std::promise<pid_t> tid_promise;
   std::future<pid_t> tid_future = tid_promise.get_future();
-  message_loop_thread.DoInThread(
-      FROM_HERE,
-      base::BindOnce(&MessageLoopThreadTest::GetLinuxTid,
-                     base::Unretained(this), std::move(tid_promise)));
+  message_loop_thread.DoInThread(base::BindOnce(&MessageLoopThreadTest::GetLinuxTid,
+                                                base::Unretained(this), std::move(tid_promise)));
   pid_t linux_tid = tid_future.get();
   ASSERT_GT(linux_tid, 0);
   ASSERT_EQ(sched_getscheduler(linux_tid), SCHED_FIFO);
@@ -222,12 +239,20 @@ TEST_F(MessageLoopThreadTest, test_set_realtime_priority_success) {
 }
 
 TEST_F(MessageLoopThreadTest, test_message_loop_null_before_start) {
+  if (com_android_bluetooth_flags_replace_message_loop_thread_with_gd_handler()) {
+    GTEST_SKIP()
+            << "Skipping this test, flag replace_message_loop_thread_with_gd_handler is enabled.";
+  }
   std::string name = "test_thread";
   MessageLoopThread message_loop_thread(name);
   ASSERT_EQ(message_loop_thread.message_loop(), nullptr);
 }
 
 TEST_F(MessageLoopThreadTest, test_message_loop_not_null_start) {
+  if (com_android_bluetooth_flags_replace_message_loop_thread_with_gd_handler()) {
+    GTEST_SKIP()
+            << "Skipping this test, flag replace_message_loop_thread_with_gd_handler is enabled.";
+  }
   std::string name = "test_thread";
   MessageLoopThread message_loop_thread(name);
   message_loop_thread.StartUp();
@@ -235,6 +260,11 @@ TEST_F(MessageLoopThreadTest, test_message_loop_not_null_start) {
 }
 
 TEST_F(MessageLoopThreadTest, test_message_loop_null_after_stop) {
+  if (com_android_bluetooth_flags_replace_message_loop_thread_with_gd_handler()) {
+    GTEST_SKIP()
+            << "Skipping this test, flag replace_message_loop_thread_with_gd_handler is enabled.";
+  }
+
   std::string name = "test_thread";
   MessageLoopThread message_loop_thread(name);
   message_loop_thread.StartUp();
@@ -254,14 +284,12 @@ TEST_F(MessageLoopThreadTest, test_to_string_method) {
   ASSERT_FALSE(thread_string_running.empty());
   log::info("Running: {}", message_loop_thread);
   // String representation should look different when thread is not running
-  ASSERT_STRNE(thread_string_running.c_str(),
-               thread_string_before_start.c_str());
+  ASSERT_STRNE(thread_string_running.c_str(), thread_string_before_start.c_str());
   message_loop_thread.ShutDown();
   std::string thread_string_after_shutdown = message_loop_thread.ToString();
   log::info("After shutdown: {}", message_loop_thread);
   // String representation should look the same when thread is not running
-  ASSERT_STREQ(thread_string_after_shutdown.c_str(),
-               thread_string_before_start.c_str());
+  ASSERT_STREQ(thread_string_after_shutdown.c_str(), thread_string_before_start.c_str());
 }
 
 // Verify the message loop thread will shutdown after callback finishes
@@ -272,10 +300,9 @@ TEST_F(MessageLoopThreadTest, shut_down_while_in_callback) {
   std::promise<std::string> name_promise;
   std::future<std::string> name_future = name_promise.get_future();
   uint32_t delay_ms = 5;
-  message_loop_thread.DoInThread(
-      FROM_HERE, base::BindOnce(&MessageLoopThreadTest::SleepAndGetName,
-                                base::Unretained(this), std::move(name_promise),
-                                delay_ms));
+  message_loop_thread.DoInThread(base::BindOnce(&MessageLoopThreadTest::SleepAndGetName,
+                                                base::Unretained(this), std::move(name_promise),
+                                                delay_ms));
   message_loop_thread.ShutDown();
   std::string my_name = name_future.get();
   ASSERT_EQ(name, my_name);
@@ -283,13 +310,16 @@ TEST_F(MessageLoopThreadTest, shut_down_while_in_callback) {
 
 // Verify the message loop thread will shutdown after callback finishes
 TEST_F(MessageLoopThreadTest, shut_down_while_in_callback_check_lock) {
+  if (com::android::bluetooth::flags::replace_message_loop_thread_with_gd_handler()) {
+    GTEST_SKIP()
+            << "Skipping this test, flag replace_message_loop_thread_with_gd_handler is enabled.";
+  }
+
   std::string name = "test_thread";
   MessageLoopThread message_loop_thread(name);
   message_loop_thread.StartUp();
-  message_loop_thread.DoInThread(
-      FROM_HERE,
-      base::BindOnce([](MessageLoopThread* thread) { thread->IsRunning(); },
-                     &message_loop_thread));
+  message_loop_thread.DoInThread(base::BindOnce(
+          [](MessageLoopThread* thread) { thread->IsRunning(); }, &message_loop_thread));
   message_loop_thread.ShutDown();
 }
 
@@ -337,14 +367,12 @@ TEST_F(MessageLoopThreadTest, test_post_twice) {
   MessageLoopThread message_loop_thread(name);
   int counter = 0;
   message_loop_thread.StartUp();
-  message_loop_thread.Post(
-      base::BindOnce([](MessageLoopThread* thread,
-                        int* counter) { ASSERT_EQ((*counter)++, 0); },
-                     &message_loop_thread, &counter));
-  message_loop_thread.Post(
-      base::BindOnce([](MessageLoopThread* thread,
-                        int* counter) { ASSERT_EQ((*counter)++, 1); },
-                     &message_loop_thread, &counter));
+  message_loop_thread.Post(base::BindOnce(
+          [](MessageLoopThread* /* thread */, int* counter) { ASSERT_EQ((*counter)++, 0); },
+          &message_loop_thread, &counter));
+  message_loop_thread.Post(base::BindOnce(
+          [](MessageLoopThread* /* thread */, int* counter) { ASSERT_EQ((*counter)++, 1); },
+          &message_loop_thread, &counter));
   message_loop_thread.ShutDown();
   ASSERT_EQ(counter, 2);
 }

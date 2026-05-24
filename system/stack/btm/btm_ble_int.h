@@ -23,43 +23,35 @@
  *
  ******************************************************************************/
 
-#ifndef BTM_BLE_INT_H
-#define BTM_BLE_INT_H
+#pragma once
+
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/ble_address_with_type.h>
 
 #include "stack/btm/btm_ble_int_types.h"
 #include "stack/btm/security_device_record.h"
+#include "stack/include/ble_hci_link_interface.h"
 #include "stack/include/hci_error_code.h"
-#include "types/ble_address_with_type.h"
-#include "types/raw_address.h"
 
-void btm_send_hci_set_scan_params(uint8_t scan_type, uint16_t scan_int,
-                                  uint16_t scan_win, uint8_t scan_phy,
-                                  tBLE_ADDR_TYPE addr_type_own,
+void btm_send_hci_set_scan_params(uint8_t scan_type, uint16_t scan_int_1m, uint16_t scan_win_1m,
+                                  uint16_t scan_int_coded, uint16_t scan_win_coded,
+                                  uint8_t scan_phy, tBLE_ADDR_TYPE addr_type_own,
                                   uint8_t scan_filter_policy);
 
 void btm_ble_init(void);
 void btm_ble_free();
-void btm_ble_connected(const RawAddress& bda, uint16_t handle, uint8_t enc_mode,
-                       uint8_t role, tBLE_ADDR_TYPE addr_type,
-                       bool addr_matched,
+void btm_ble_connected(const RawAddress& bda, uint16_t handle, uint8_t enc_mode, uint8_t role,
+                       tBLE_ADDR_TYPE addr_type, bool addr_matched,
                        bool can_read_discoverable_characteristics);
+void btm_ble_connection_established(const RawAddress& bda);
 
-/* acceptlist function */
-void btm_update_scanner_filter_policy(tBTM_BLE_SFP scan_policy);
-
-/* background connection function */
-void btm_ble_update_mode_operation(uint8_t link_role, const RawAddress* bda,
-                                   tHCI_STATUS status);
 /* BLE address management */
 tBTM_SEC_DEV_REC* btm_ble_resolve_random_addr(const RawAddress& random_bda);
 
 void btm_ble_batchscan_init(void);
 void btm_ble_adv_filter_init(void);
-bool btm_ble_topology_check(tBTM_BLE_STATE_MASK request);
-bool btm_ble_clear_topology_mask(tBTM_BLE_STATE_MASK request_state);
-bool btm_ble_set_topology_mask(tBTM_BLE_STATE_MASK request_state);
+tBTM_STATUS btm_ble_start_inquiry(uint8_t duration);
+void btm_ble_stop_inquiry(void);
 
 void btm_ble_scanner_init(void);
 void btm_ble_scanner_cleanup(void);
-
-#endif

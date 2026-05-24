@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 The Android Open Source Project
+ * Copyright (C) 2024 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#include "os/alarm.h"
-
 #include <cctype>
 #include <chrono>
 #include <future>
@@ -23,22 +21,7 @@
 
 #include "common/bind.h"
 #include "gtest/gtest.h"
-
-
-namespace bluetooth::common {
-
-struct IsSpace {
-  bool operator()(std::string::value_type v) {
-    return isspace(static_cast<int>(v));
-  }
-};
-
-std::string StringTrim(std::string str) {
-  str.erase(str.begin(), std::find_if_not(str.begin(), str.end(), IsSpace{}));
-  str.erase(std::find_if_not(str.rbegin(), str.rend(), IsSpace{}).base(), str.end());
-  return str;
-}
-}  // namespace bluetooth::common
+#include "os/alarm.h"
 
 namespace bluetooth::os {
 
@@ -49,44 +32,37 @@ using std::chrono::seconds;
 static constexpr seconds kForever = seconds(1);
 static constexpr milliseconds kShortWait = milliseconds(10);
 
-class AlarmOnTimerFdTest : public ::testing::Test {
- protected:
+class AlarmOnTimerFdTest : public ::testing::TestWithParam<bool> {
+protected:
   void SetUp() override {
+    bool isWakeAlarm = GetParam();
     thread_ = new Thread("test_thread", Thread::Priority::NORMAL);
-    handler_ = new Handler(thread_);
-    alarm_ = std::make_shared<Alarm>(handler_);
+    alarm_ = std::make_shared<Alarm>(thread_, isWakeAlarm);
   }
 
   void TearDown() override {
     alarm_.reset();
-    handler_->Clear();
-    delete handler_;
     delete thread_;
   }
 
-  std::shared_ptr<Alarm> get_new_alarm() {
-    return std::make_shared<Alarm>(handler_);
-  }
+  std::shared_ptr<Alarm> get_new_alarm() { return std::make_shared<Alarm>(thread_, GetParam()); }
 
   std::shared_ptr<Alarm> alarm_;
 
- private:
-  Handler* handler_;
+private:
   Thread* thread_;
 };
 
-TEST_F(AlarmOnTimerFdTest, cancel_while_not_armed) {
-  alarm_->Cancel();
-}
+TEST_P(AlarmOnTimerFdTest, cancel_while_not_armed) { alarm_->Cancel(); }
 
-TEST_F(AlarmOnTimerFdTest, schedule) {
+TEST_P(AlarmOnTimerFdTest, schedule) {
   auto promise = std::make_unique<std::promise<void>>();
   auto future = promise->get_future();
   alarm_->Schedule(BindOnce(&std::promise<void>::set_value, std::move(promise)), kShortWait);
   ASSERT_EQ(std::future_status::ready, future.wait_for(kForever));
 }
 
-TEST_F(AlarmOnTimerFdTest, cancel_alarm) {
+TEST_P(AlarmOnTimerFdTest, cancel_alarm) {
   auto promise = std::make_unique<std::promise<void>>();
   auto future = promise->get_future();
   alarm_->Schedule(BindOnce([]() { FAIL(); }), kForever);
@@ -94,23 +70,21 @@ TEST_F(AlarmOnTimerFdTest, cancel_alarm) {
   ASSERT_NE(std::future_status::ready, future.wait_for(kShortWait));
 }
 
-TEST_F(AlarmOnTimerFdTest, cancel_alarm_from_callback) {
+TEST_P(AlarmOnTimerFdTest, cancel_alarm_from_callback) {
   auto promise = std::promise<void>();
   auto future = promise.get_future();
-  alarm_->Schedule(
-      BindOnce(
-          [](std::shared_ptr<Alarm> alarm, std::promise<void> promise) {
-            alarm->Cancel();
-            alarm.reset();  // Allow alarm to be freed by Teardown
-            promise.set_value();
-          },
-          alarm_,
-          std::move(promise)),
-      kShortWait);
+  alarm_->Schedule(BindOnce(
+                           [](std::shared_ptr<Alarm> alarm, std::promise<void> promise) {
+                             alarm->Cancel();
+                             alarm.reset();  // Allow alarm to be freed by Teardown
+                             promise.set_value();
+                           },
+                           alarm_, std::move(promise)),
+                   kShortWait);
   ASSERT_EQ(std::future_status::ready, future.wait_for(kForever));
 }
 
-TEST_F(AlarmOnTimerFdTest, schedule_while_alarm_armed) {
+TEST_P(AlarmOnTimerFdTest, schedule_while_alarm_armed) {
   auto promise = std::make_unique<std::promise<void>>();
   auto future = promise->get_future();
   alarm_->Schedule(BindOnce([]() { FAIL(); }), kForever);
@@ -118,7 +92,7 @@ TEST_F(AlarmOnTimerFdTest, schedule_while_alarm_armed) {
   ASSERT_EQ(std::future_status::ready, future.wait_for(kForever));
 }
 
-TEST_F(AlarmOnTimerFdTest, delete_while_alarm_armed) {
+TEST_P(AlarmOnTimerFdTest, delete_while_alarm_armed) {
   auto promise = std::make_unique<std::promise<void>>();
   auto future = promise->get_future();
   alarm_->Schedule(BindOnce([]() { FAIL(); }), kForever);
@@ -127,7 +101,7 @@ TEST_F(AlarmOnTimerFdTest, delete_while_alarm_armed) {
 }
 
 class TwoAlarmOnTimerFdTest : public AlarmOnTimerFdTest {
- protected:
+protected:
   void SetUp() override {
     AlarmOnTimerFdTest::SetUp();
     alarm2 = get_new_alarm();
@@ -141,19 +115,24 @@ class TwoAlarmOnTimerFdTest : public AlarmOnTimerFdTest {
   std::shared_ptr<Alarm> alarm2;
 };
 
-TEST_F(TwoAlarmOnTimerFdTest, schedule_from_alarm) {
+TEST_P(TwoAlarmOnTimerFdTest, schedule_from_alarm) {
   auto promise = std::make_unique<std::promise<void>>();
   auto future = promise->get_future();
   alarm_->Schedule(
-      BindOnce(
-          [](std::shared_ptr<Alarm> alarm2, std::unique_ptr<std::promise<void>> promise) {
-            alarm2->Schedule(
-                BindOnce(&std::promise<void>::set_value, std::move(promise)), kShortWait);
-          },
-          alarm2,
-          std::move(promise)),
-      kShortWait);
+          BindOnce(
+                  [](std::shared_ptr<Alarm> alarm2, std::unique_ptr<std::promise<void>> promise) {
+                    alarm2->Schedule(BindOnce(&std::promise<void>::set_value, std::move(promise)),
+                                     kShortWait);
+                  },
+                  alarm2, std::move(promise)),
+          kShortWait);
   EXPECT_EQ(std::future_status::ready, future.wait_for(kForever));
 }
+
+INSTANTIATE_TEST_SUITE_P(
+        /* no label */, AlarmOnTimerFdTest, ::testing::Bool());
+
+INSTANTIATE_TEST_SUITE_P(
+        /* no label */, TwoAlarmOnTimerFdTest, ::testing::Bool());
 
 }  // namespace bluetooth::os

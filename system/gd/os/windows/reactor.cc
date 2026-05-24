@@ -25,7 +25,6 @@
 #include <cstring>
 #include <vector>
 
-#include "os/log.h"
 #include "bluetooth/log.h"
 
 #include <base/bind.h>
@@ -96,7 +95,7 @@ void Reactor::Event::Close() {
     Clear();
 }
 
-void Reactor::Event::Notify() {
+void Reactor::Event::Notify( uint64_t num_events_generated ) {
   std::lock_guard<std::mutex> locker(pimpl_->mutex_);
   pimpl_->received_values_.push_back(1);
 }

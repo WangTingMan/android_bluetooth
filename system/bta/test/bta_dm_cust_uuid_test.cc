@@ -16,24 +16,24 @@
  *
  ******************************************************************************/
 
+#include <bluetooth/types/uuid.h>
 #include <gtest/gtest.h>
 
 #include "bta/dm/bta_dm_int.h"
 #include "bta/test/bta_test_fixtures.h"
-#include "types/bluetooth/uuid.h"
 
 using bluetooth::Uuid;
 
 namespace {
-  uint32_t handle1 = 1;
-  uint32_t handle2 = 2;
-  static const Uuid uuid1 = Uuid::From128BitBE(
-    Uuid::UUID128Bit{{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-                      0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}});
-  static const Uuid uuid2 = Uuid::From128BitBE(
-    Uuid::UUID128Bit{{0x00, 0x00, 0x00, 0x00, 0x22, 0x22, 0x22, 0x22, 0x33,
-                      0x33, 0x55, 0x55, 0x55, 0x55, 0x55, 0x59}});
-}
+uint32_t handle1 = 1;
+uint32_t handle2 = 2;
+static const Uuid uuid1 =
+        Uuid::From128BitBE(Uuid::UUID128Bit{{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+                                             0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}});
+static const Uuid uuid2 =
+        Uuid::From128BitBE(Uuid::UUID128Bit{{0x00, 0x00, 0x00, 0x00, 0x22, 0x22, 0x22, 0x22, 0x33,
+                                             0x33, 0x55, 0x55, 0x55, 0x55, 0x55, 0x59}});
+}  // namespace
 
 // Test we can remove/add 128 bit custom UUID from/to bta_dm_cb.bta_custom_uuid
 TEST_F(BtaWithMocksTest, test_add_remove_cust_uuid) {

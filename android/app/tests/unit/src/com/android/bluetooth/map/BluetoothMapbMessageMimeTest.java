@@ -20,8 +20,10 @@ import static com.google.common.truth.Truth.assertThat;
 
 import android.text.util.Rfc822Token;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.MediumTest;
-import androidx.test.runner.AndroidJUnit4;
+
+import com.android.bluetooth.flags.Flags;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -33,6 +35,7 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.Locale;
 
+/** Test cases for {@link BluetoothMapbMessageMime}. */
 @MediumTest
 @RunWith(AndroidJUnit4.class)
 public class BluetoothMapbMessageMimeTest {
@@ -47,6 +50,8 @@ public class BluetoothMapbMessageMimeTest {
 
     private final SimpleDateFormat format =
             new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z", Locale.US);
+
+    @SuppressWarnings("JavaUtilDate")
     private final Date date = new Date(TEST_DATE);
 
     private final ArrayList<Rfc822Token> TEST_FROM =
@@ -103,7 +108,7 @@ public class BluetoothMapbMessageMimeTest {
         assertThat(mMime.getBcc()).isEqualTo(TEST_BCC);
         assertThat(mMime.getReplyTo()).isEqualTo(TEST_REPLY_TO);
 
-        assertThat(mMime.getMimeParts().size()).isEqualTo(1);
+        assertThat(mMime.getMimeParts()).hasSize(1);
     }
 
     @Test
@@ -186,7 +191,11 @@ public class BluetoothMapbMessageMimeTest {
 
         assertThat(mimeToCreateByParsing.getSubject()).isEqualTo(TEST_SUBJECT);
         assertThat(mimeToCreateByParsing.getMessageId()).isEqualTo(TEST_MESSAGE_ID);
-        assertThat(mimeToCreateByParsing.getContentType()).isEqualTo(TEST_CONTENT_TYPE);
+        if (Flags.mapMimeMultipart()) {
+            assertThat(mimeToCreateByParsing.getContentType()).isEqualTo("multipart/mixed");
+        } else {
+            assertThat(mimeToCreateByParsing.getContentType()).isEqualTo(TEST_CONTENT_TYPE);
+        }
 
         assertThat(mimeToCreateByParsing.getFrom().get(0).getName())
                 .isEqualTo(TEST_FROM.get(0).getName());

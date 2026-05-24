@@ -26,20 +26,17 @@
 #include <map>
 
 #include "btif_common.h"
-#include "btif_storage.h"
 #include "main/shim/config.h"
-#include "main/shim/shim.h"
 #include "os/parameter_provider.h"
 
-using base::Bind;
-using base::Unretained;
 using bluetooth::bluetooth_keystore::BluetoothKeystoreCallbacks;
 using bluetooth::bluetooth_keystore::BluetoothKeystoreInterface;
 
 namespace bluetooth {
 namespace bluetooth_keystore {
+
 class BluetoothKeystoreInterfaceImpl;
-std::unique_ptr<BluetoothKeystoreInterface> bluetoothKeystoreInstance;
+static std::unique_ptr<BluetoothKeystoreInterface> bluetoothKeystoreInstance;
 const int CONFIG_COMPARE_ALL_PASS = 0b11;
 
 class BluetoothKeystoreInterfaceImpl
@@ -50,8 +47,7 @@ class BluetoothKeystoreInterfaceImpl
     log::verbose("");
     this->callbacks = callbacks;
 
-    bluetooth::os::ParameterProvider::SetCommonCriteriaConfigCompareResult(
-        CONFIG_COMPARE_ALL_PASS);
+    bluetooth::os::ParameterProvider::SetCommonCriteriaConfigCompareResult(CONFIG_COMPARE_ALL_PASS);
     ConvertEncryptOrDecryptKeyIfNeeded();
   }
 
@@ -61,13 +57,11 @@ class BluetoothKeystoreInterfaceImpl
       log::info("callback isn't ready.");
       return;
     }
-    do_in_jni_thread(base::BindOnce([]() {
-      shim::BtifConfigInterface::ConvertEncryptOrDecryptKeyIfNeeded();
-    }));
+    do_in_jni_thread(base::BindOnce(
+            []() { shim::BtifConfigInterface::ConvertEncryptOrDecryptKeyIfNeeded(); }));
   }
 
-  bool set_encrypt_key_or_remove_key(std::string prefix,
-                                     std::string decryptedString) override {
+  bool set_encrypt_key_or_remove_key(std::string prefix, std::string decryptedString) override {
     log::verbose("prefix: {}", prefix);
 
     if (!callbacks) {
@@ -78,10 +72,9 @@ class BluetoothKeystoreInterfaceImpl
     // Save the value into a map.
     key_map[prefix] = decryptedString;
 
-    do_in_jni_thread(base::BindOnce(
-        &bluetooth::bluetooth_keystore::BluetoothKeystoreCallbacks::
-            set_encrypt_key_or_remove_key,
-        base::Unretained(callbacks), prefix, decryptedString));
+    do_in_jni_thread(base::BindOnce(&bluetooth::bluetooth_keystore::BluetoothKeystoreCallbacks::
+                                            set_encrypt_key_or_remove_key,
+                                    base::Unretained(callbacks), prefix, decryptedString));
     return true;
   }
 
@@ -115,7 +108,7 @@ class BluetoothKeystoreInterfaceImpl
     key_map.clear();
   }
 
- private:
+private:
   BluetoothKeystoreCallbacks* callbacks = nullptr;
   std::map<std::string, std::string> key_map;
 };

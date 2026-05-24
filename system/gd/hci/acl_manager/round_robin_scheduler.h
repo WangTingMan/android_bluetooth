@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,8 @@
 #include <bluetooth/log.h>
 #include <stdint.h>
 
+#include <map>
+
 #include "common/bidi_queue.h"
 #include "common/multi_priority_queue.h"
 #include "hci/acl_manager/acl_connection.h"
@@ -32,9 +34,9 @@ namespace hci {
 namespace acl_manager {
 
 class RoundRobinScheduler {
- public:
-  RoundRobinScheduler(
-      os::Handler* handler, Controller* controller, common::BidiQueueEnd<AclBuilder, AclView>* hci_queue_end);
+public:
+  RoundRobinScheduler(os::Handler* handler, Controller& controller,
+                      common::BidiQueueEnd<AclBuilder, AclView>* hci_queue_end);
   ~RoundRobinScheduler();
 
   enum ConnectionType { CLASSIC, LE };
@@ -47,12 +49,20 @@ class RoundRobinScheduler {
     bool high_priority_ = false;           // For A2dp use
   };
 
+  struct packet_fragment {
+    ConnectionType connection_type_;
+    uint16_t handle_;
+    int priority_;
+    std::unique_ptr<AclBuilder> packet_;
+  };
+
   void Register(ConnectionType connection_type, uint16_t handle,
                 std::shared_ptr<acl_manager::AclConnection::Queue> queue);
   void Unregister(uint16_t handle);
   void SetLinkPriority(uint16_t handle, bool high_priority);
   uint16_t GetCredits();
   uint16_t GetLeCredits();
+  bool IsRegistered(uint16_t handle);
 
 #ifdef _MSC_VER
   void ScheduleOutgoingAclPacket( uint16_t handle,
@@ -60,22 +70,26 @@ class RoundRobinScheduler {
 #endif
 
  private:
+
+
+private:
   void start_round_robin();
 #ifdef _MSC_VER
   void buffer_packet( uint16_t acl_handle,
     std::unique_ptr<packet::RawBuilder> packet = nullptr );
 #else
-  void buffer_packet( uint16_t acl_handle );
+  void buffer_packet(uint16_t acl_handle);
 #endif
+  void drop_packet_fragments(uint16_t acl_handle);
   void unregister_all_connections();
   void send_next_fragment();
   std::unique_ptr<AclBuilder> handle_enqueue_next_fragment();
   void incoming_acl_credits(uint16_t handle, uint16_t credits);
 
   os::Handler* handler_ = nullptr;
-  Controller* controller_ = nullptr;
+  Controller& controller_;
   std::map<uint16_t, acl_queue_handler> acl_queue_handlers_;
-  common::MultiPriorityQueue<std::pair<ConnectionType, std::unique_ptr<AclBuilder>>, 2> fragments_to_send_;
+  common::MultiPriorityQueue<packet_fragment, 2> fragments_to_send_;
   uint16_t max_acl_packet_credits_ = 0;
   uint16_t acl_packet_credits_ = 0;
   uint16_t le_max_acl_packet_credits_ = 0;
@@ -92,8 +106,8 @@ class RoundRobinScheduler {
 }  // namespace hci
 }  // namespace bluetooth
 
-namespace fmt {
+namespace std {
 template <>
 struct formatter<bluetooth::hci::acl_manager::RoundRobinScheduler::ConnectionType>
     : enum_formatter<bluetooth::hci::acl_manager::RoundRobinScheduler::ConnectionType> {};
-}  // namespace fmt
+}  // namespace std

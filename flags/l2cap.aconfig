@@ -1,35 +1,21 @@
 package: "com.android.bluetooth.flags"
-container: "com.android.btservices"
+container: "com.android.bt"
 
 flag {
-    name: "l2cap_tx_complete_cb_info"
+    name: "delay_offload_le_coc_connection_ind"
     namespace: "bluetooth"
-    description: "Provide l2cap transmit complete information b/301168932"
-    bug: "314819704"
-}
-
-flag {
-    name: "l2cap_p_ccb_check_rewrite"
-    namespace: "bluetooth"
-    description: "Rewrite logic of p_ccb check in l2c_link_sec_comp"
-    bug: "326686472"
-}
-
-flag {
-    name: "l2cap_le_do_not_adjust_min_interval"
-    namespace: "bluetooth"
-    description: "Do not adjust min_interval in connection update request"
-    bug: "346960036"
+    description: "Delay LE CoC connection indication callback if controller Tx window is full"
+    bug: "408478753"
     metadata {
         purpose: PURPOSE_BUGFIX
     }
 }
 
 flag {
-    name: "l2cap_update_existing_conn_interval_with_base_interval"
+    name: "ldac_rate_control"
     namespace: "bluetooth"
-    description: "Update existing connection intervals when base ecosystem interval is set"
-    bug: "348209161"
+    description: "Configure LDAC rate control based on the LDAC bitrate."
+    bug: "422347819"
     metadata {
         purpose: PURPOSE_BUGFIX
     }

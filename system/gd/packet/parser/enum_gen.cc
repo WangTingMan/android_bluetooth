@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 #include "enum_gen.h"
 
+#include <format>
 #include <iostream>
 
 #include "util.h"
@@ -23,12 +24,9 @@
 EnumGen::EnumGen(EnumDef e) : e_(std::move(e)) {}
 
 void EnumGen::GenDefinition(std::ostream& stream) {
-  stream << "enum class ";
-  stream << e_.name_;
-  stream << " : " << util::GetTypeForSize(e_.size_);
-  stream << " {\n";
+  stream << "enum class " << e_.name_ << " : " << util::GetTypeForSize(e_.size_) << " {";
   for (const auto& pair : e_.constants_) {
-    stream << "    " << pair.second << " = 0x" << std::hex << pair.first << std::dec << ",\n";
+    stream << std::format("{} = {:#x},", pair.second, pair.first);
   }
   stream << "};\n";
 }
@@ -43,19 +41,14 @@ void EnumGen::GenDefinitionPybind11(std::ostream& stream) {
 
 void EnumGen::GenLogging(std::ostream& stream) {
   // Print out the switch statement that converts all the constants to strings.
-  stream << "inline std::string " << e_.name_ << "Text(const " << e_.name_ << "& param) {\n";
-  stream << "    std::stringstream builder;\n";
-  stream << "    switch (param) {\n";
+  stream << "inline std::string " << e_.name_ << "Text(const " << e_.name_ << "& param) {";
+  stream << "switch (param) {";
   for (const auto& pair : e_.constants_) {
-    stream << "    case " << e_.name_ << "::" << pair.second << ":\n";
-    stream << "        builder << \"" << pair.second << "\";\n    break;\n";
+    stream << std::format("case {}::{}: return \"{}({:#0{}x})\";", e_.name_, pair.second,
+                          pair.second, pair.first, 2 + (e_.size_ > 4 ? e_.size_ / 4 : 0));
   }
-  stream << "    default:\n";
-  stream << "        builder << \"Unknown " << e_.name_ << "\";\n";
-  stream << "    }\n\n";
-  stream << "    builder << \"(\" << std::hex << \"0x\" << std::setfill('0')";
-  stream << "<< std::setw(" << (e_.size_ > 0 ? e_.size_ : 0) << "/4)";
-  stream << "<< static_cast<uint64_t>(param) << \")\";\n\n";
-  stream << "    return builder.str();\n";
-  stream << "}\n";
+  stream << "default: return std::format(\"Unknown " << e_.name_ << "({:#0"
+         << 2 + (e_.size_ > 4 ? e_.size_ / 4 : 0) << "x})\", static_cast<uint64_t>(param));";
+  stream << "}";
+  stream << "}\n\n";
 }

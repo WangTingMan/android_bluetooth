@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,15 +23,12 @@ namespace bluetooth {
 namespace hci {
 
 constexpr SubeventCode LeConnectionManagementEvents[] = {
-    SubeventCode::CONNECTION_COMPLETE,
-    SubeventCode::ENHANCED_CONNECTION_COMPLETE,
-    SubeventCode::CONNECTION_UPDATE_COMPLETE,
-    SubeventCode::PHY_UPDATE_COMPLETE,
-    SubeventCode::DATA_LENGTH_CHANGE,
-    SubeventCode::REMOTE_CONNECTION_PARAMETER_REQUEST,
-    SubeventCode::LE_SUBRATE_CHANGE,
-    // TODO implement callback for READ_REMOTE_FEATURES_COMPLETE
-    // SubeventCode::READ_REMOTE_FEATURES_COMPLETE
+        SubeventCode::CONNECTION_COMPLETE,        SubeventCode::ENHANCED_CONNECTION_COMPLETE,
+        SubeventCode::CONNECTION_UPDATE_COMPLETE, SubeventCode::PHY_UPDATE_COMPLETE,
+        SubeventCode::DATA_LENGTH_CHANGE,         SubeventCode::REMOTE_CONNECTION_PARAMETER_REQUEST,
+        SubeventCode::LE_SUBRATE_CHANGE,
+        // TODO implement callback for READ_REMOTE_FEATURES_COMPLETE
+        // SubeventCode::READ_REMOTE_FEATURES_COMPLETE
 };
 
 typedef CommandInterface<AclCommandBuilder> LeAclConnectionInterface;

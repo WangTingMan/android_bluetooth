@@ -1,5 +1,3 @@
-// MAP API module
-
 package {
     default_applicable_licenses: ["packages_apps_Bluetooth_license"],
 }
@@ -29,35 +27,14 @@ license {
 }
 
 java_library {
-    name: "bluetooth.mapsapi",
-
-    srcs: ["lib/mapapi/**/*.java"],
-    apex_available: [
-        "com.android.btservices",
-    ],
-    min_sdk_version: "Tiramisu",
-    sdk_version: "module_current",
-    lint: {
-        baseline_filename: "lint-baseline.xml",
-    },
-}
-
-java_library {
     name: "mmslib",
-
+    defaults: ["bluetooth_lint_rules"],
     srcs: [":framework-mms-shared-srcs"],
     libs: ["unsupportedappusage"],
-    apex_available: [
-        "com.android.btservices",
-    ],
-    min_sdk_version: "Tiramisu",
+    apex_available: ["com.android.bt"],
+    min_sdk_version: "36",
     sdk_version: "module_current",
-    lint: {
-        baseline_filename: "lint-baseline.xml",
-    },
 }
-
-// Bluetooth JNI
 
 cc_library_shared {
     name: "libbluetooth_jni",
@@ -76,9 +53,8 @@ cc_library_shared {
     include_dirs: [
         "packages/modules/Bluetooth/system",
         "packages/modules/Bluetooth/system/gd",
-        "packages/modules/Bluetooth/system/types",
     ],
-    // libbluetooth_jni is the jni lib included in the btservices apex.
+    // libbluetooth_jni is the jni lib included in the com.android.bt apex.
     // As this library is inside an APEX the shared_libs that does not
     // expose stubs are copied inside it. As a result using those as
     // shared libraries is less interesting as they are not shared, so we link
@@ -88,6 +64,7 @@ cc_library_shared {
     // is required to maintain FIPS compliance.
     stl: "libc++_static",
     static_libs: [
+        "aics",
         "android.hardware.audio.common@5.0",
         "android.hardware.bluetooth.audio@2.0",
         "android.hardware.bluetooth.audio@2.1",
@@ -98,24 +75,23 @@ cc_library_shared {
         "android.system.suspend-V1-ndk",
         "android.system.suspend.control-V1-ndk",
         "avrcp-target-service",
+        "bluetooth_constants-cpp",
+        "bluetooth_flags_c_lib",
         "lib-bt-packets-avrcp",
         "lib-bt-packets-base",
         "libFraunhoferAAC",
         "libaconfig_storage_read_api_cc",
         "libbase",
-        "libbluetooth",
-        "libbluetooth-dumpsys",
-        "libbluetooth-gdx",
-        "libbluetooth-types",
         "libbluetooth_core_rs",
         "libbluetooth_core_rs_bridge",
         "libbluetooth_crypto_toolbox",
         "libbluetooth_gd",
         "libbluetooth_log",
+        "libbluetooth_metrics",
+        "libbluetooth_types",
         "libbt-audio-asrc",
         "libbt-audio-hal-interface",
         "libbt-bta",
-        "libbt-bta-core",
         "libbt-btu-main-thread",
         "libbt-common",
         "libbt-hci",
@@ -123,17 +99,14 @@ cc_library_shared {
         "libbt-sbc-decoder",
         "libbt-sbc-encoder",
         "libbt-stack",
-        "libbt-stack-core",
-        "libbt_shim_bridge",
         "libbtcore",
         "libbtdevice",
         "libbte",
         "libbtif",
-        "libbtif-core",
         "libchrome",
         "libcutils",
         "libevent",
-        "libexpresslog",
+        "libflags_rust_cpp_bridge",
         "libflatbuffers-cpp",
         "libfmq",
         "libg722codec",
@@ -142,10 +115,8 @@ cc_library_shared {
         "libmodpb64",
         "libopus",
         "libosi",
+        "libperfetto_client_experimental",
         "libprotobuf-cpp-lite",
-        "libstatslog_bt",
-        "libstatslog_express",
-        "libtextclassifier_hash_static",
         "libudrv-uipc",
         "libutils",
         "server_configurable_flags",
@@ -162,104 +133,53 @@ cc_library_shared {
     sanitize: {
         scs: true,
     },
-    apex_available: [
-        "com.android.btservices",
-    ],
-    min_sdk_version: "Tiramisu",
-
-    // TODO(b/346919576) Workaround LTO build breakage.
-    lto_O0: true,
+    apex_available: ["com.android.bt"],
+    min_sdk_version: "36",
 }
 
-cc_library {
-    name: "libbluetooth-core",
-    defaults: ["fluoride_defaults"],
-    header_libs: [
-        "jni_headers",
-        "libbluetooth_headers",
+android_library {
+    name: "BluetoothLib",
+    defaults: [
+        "bluetooth_framework_errorprone_rules",
+        "bluetooth_lint_rules",
     ],
-    include_dirs: [
-        "packages/modules/Bluetooth/system/types",
-    ],
-    static_libs: [
-        "lib-bt-packets",
-        "lib-bt-packets-base",
-        "libbt-bta-core",
-        "libbt-common",
-        "libbt-hci",
-        "libbt-stack-core",
-        "libbtcore",
-        "libbtdevice",
-        "libbte",
-        "libbtif-core",
-        "libosi",
-
-        "libbluetooth-types",
-    ],
-    cflags: [
-        /* we export all classes, so change default visibility, instead of having EXPORT_SYMBOL on each class*/
-        "-Wall",
-        "-Werror",
-        "-Wextra",
-        "-Wno-unused-parameter",
-        "-fvisibility=default",
-    ],
-    sanitize: {
-        scs: true,
-    },
-    apex_available: [
-        "com.android.btservices",
-    ],
-    host_supported: true,
-    min_sdk_version: "Tiramisu",
-}
-
-// Bluetooth APK
-
-android_app {
-    name: "Bluetooth",
+    manifest: "LibAndroidManifest.xml",
 
     srcs: [
         ":statslog-bluetooth-java-gen",
         ":statslog-bt-restricted-java-gen",
         ":system-messages-proto-src",
-        "proto/keystore.proto",
+        "proto/*.proto",
         "src/**/*.java",
+        "src/**/*.kt",
     ],
     proto: {
         type: "lite",
     },
-    aaptflags: [
-        "--custom-package",
-        "com.android.bluetooth",
-    ],
-    certificate: ":com.android.bluetooth.certificate",
 
-    jarjar_rules: ":bluetooth-jarjar-rules",
-    privapp_allowlist: ":privapp_allowlist_com.android.bluetooth.xml",
-
-    jni_uses_platform_apis: true,
     libs: [
-        "app-compat-annotations",
+        "PlatformProperties",
+        "bluetooth_constants-java",
         "bluetooth_flags_java_lib",
         "error_prone_annotations",
         "framework-annotations-lib",
-        "framework-bluetooth-pre-jarjar",
-        "framework-configinfrastructure",
+        "framework-bluetooth.impl",
+        "framework-configinfrastructure.stubs.module_lib",
+        "framework-connectivity-t.stubs.module_lib",
         "framework-connectivity.stubs.module_lib",
         "framework-location.stubs.module_lib",
-        "framework-mediaprovider",
+        "framework-media.stubs.module_lib",
+        "framework-mediaprovider.stubs.module_lib",
         "framework-statsd.stubs.module_lib",
         "framework-tethering.stubs.module_lib",
-        "unsupportedappusage",
-
-        // Need to link the class at runtime
-        "framework-bluetooth",
+        "framework-wifi.stubs.module_lib",
+        "modules-utils-build",
     ],
     static_libs: [
-        "BluetoothApiShims",
         "android.hardware.radio-V1.0-java",
         "android.hardware.radio.sap-V1-java",
+        "android.media.audio-aconfig-exported-java",
+        "android.os.flags-aconfig-java-export",
         "androidx.annotation_annotation",
         "androidx.core_core",
         "androidx.lifecycle_lifecycle-livedata",
@@ -268,8 +188,8 @@ android_app {
         "bluetooth-proto-enums-java-gen",
         "bluetooth-protos-lite",
         "bluetooth.change-ids",
-        "bluetooth.mapsapi",
         "com.android.obex",
+        "com.android.sysprop.bluetooth",
         "com.android.vcard",
         "guava",
         "libprotobuf-java-lite",
@@ -293,80 +213,49 @@ android_app {
     javacflags: ["-Aroom.schemaLocation=packages/modules/Bluetooth/android/app/tests/unit/src/com/android/bluetooth/btservice/storage/schemas"],
 
     lint: {
-        // TODO(b/318814235): Add back ObsoleteSdkInt to this list.
-        error_checks: [
-            "ExtraText",
-            "MissingClass",
-            "NewApi",
-            "Recycle",
-            "RtlHardcoded",
-            "UseSparseArrays",
-            "UseValueOf",
-        ],
-        extra_check_modules: ["BluetoothLintChecker"],
-        baseline_filename: "lint-baseline.xml",
+        baseline_filename: "lib-lint-baseline.xml",
     },
 
+    installable: false,
+    apex_available: ["com.android.bt"],
+    min_sdk_version: "36",
+    sdk_version: "module_current",
+}
+
+// Bluetooth APK
+android_app {
+    name: "Bluetooth",
+    certificate: ":com.android.bluetooth.certificate",
+    static_libs: ["BluetoothLib"],
+    defaults: [
+        "bluetooth_framework_errorprone_rules",
+        "bluetooth_lint_rules",
+    ],
+
+    apex_available: ["com.android.bt"],
+    min_sdk_version: "36",
+    sdk_version: "module_current",
+    updatable: true,
+    jarjar_rules: ":bluetooth-jarjar-rules",
+    privapp_allowlist: ":privapp_allowlist_com.android.bluetooth.xml",
+
+    jni_uses_platform_apis: true,
     optimize: {
         enabled: true,
         shrink: true,
         optimize: false,
-        // TODO(b/289285719): Revisit after resolving mocking issues in testing.
-        proguard_compatibility: true,
+        ignore_warnings: false,
         proguard_flags_files: ["proguard.flags"],
     },
-    apex_available: [
-        "com.android.btservices",
-    ],
-    errorprone: {
-        enabled: true,
-        javacflags: [
-            // "-Xep:AndroidFrameworkRequiresPermission:ERROR",
-            "-Xep:AlmostJavadoc:ERROR",
-            "-Xep:BadImport:ERROR",
-            "-Xep:ClassCanBeStatic:ERROR",
-            "-Xep:EmptyBlockTag:ERROR",
-            "-Xep:InlineMeInliner:ERROR",
-            "-Xep:InvalidBlockTag:ERROR",
-            "-Xep:InvalidParam:ERROR",
-            "-Xep:MockNotUsedInProduction:ERROR",
-            "-Xep:NonApiType:ERROR",
-            "-Xep:NonCanonicalType:ERROR",
-            "-Xep:NotJavadoc:ERROR",
-            "-Xep:ReturnAtTheEndOfVoidFunction:ERROR",
-            "-Xep:StringCaseLocaleUsage:ERROR",
-            "-Xep:StringCharset:ERROR",
-            "-Xep:UnusedMethod:ERROR",
-            "-Xep:UnusedVariable:ERROR",
-            "-XepExcludedPaths:.*/srcjars/.*", // Exclude generated files
-        ],
+
+    lint: {
+        baseline_filename: "lint-baseline.xml",
     },
-    min_sdk_version: "Tiramisu",
-    sdk_version: "module_current",
-}
-
-java_library {
-    name: "bluetooth.change-ids",
-    srcs: [
-        "src/com/android/bluetooth/ChangeIds.java",
-    ],
-    libs: [
-        "app-compat-annotations",
-    ],
-    apex_available: [
-        "com.android.btservices",
-    ],
-    min_sdk_version: "Tiramisu",
-    sdk_version: "module_current",
-}
-
-platform_compat_config {
-    name: "bluetoothapk-platform-compat-config",
-    src: ":bluetooth.change-ids",
 }
 
 java_library {
     name: "bluetooth-proto-enums-java-gen",
+    defaults: ["bluetooth_lint_rules"],
     installable: false,
     proto: {
         type: "stream",
@@ -374,10 +263,8 @@ java_library {
     srcs: [
         ":srcs_bluetooth_protos",
     ],
-    apex_available: [
-        "com.android.btservices",
-    ],
-    min_sdk_version: "Tiramisu",
+    apex_available: ["com.android.bt"],
+    min_sdk_version: "36",
     sdk_version: "module_current",
 }
 

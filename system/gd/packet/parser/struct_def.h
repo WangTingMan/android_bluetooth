@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@
 #include "type_def.h"
 
 class StructDef : public ParentDef {
- public:
+public:
   StructDef(std::string name, FieldList fields);
   StructDef(std::string name, FieldList fields, StructDef* parent);
 
@@ -51,6 +51,6 @@ class StructDef : public ParentDef {
 
   Size GetStructOffsetForField(std::string field_name) const;
 
- private:
+private:
   Size total_size_;
 };

@@ -19,24 +19,21 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <cstring>
 #include <initializer_list>
 #include <optional>
-#include <ostream>
 #include <string>
 
-#include "common/interfaces/ILoggable.h"
-#include "os/logging/log_adapter.h"
-#include "packet/custom_field_fixed_size_interface.h"
 #include "storage/serializable.h"
+
+class RawAddress;
 
 namespace bluetooth {
 namespace hci {
 
-class Address final : public packet::CustomFieldFixedSizeInterface<Address>,
-                      public storage::Serializable<Address>,
-                      public bluetooth::common::IRedactableLoggable {
- public:
+class Address final : public storage::Serializable<Address> {
+public:
   static constexpr size_t kLength = 6;
 
   // Bluetooth MAC address bytes saved in little endian format.
@@ -48,24 +45,22 @@ class Address final : public packet::CustomFieldFixedSizeInterface<Address>,
   Address() = default;
   Address(const uint8_t (&addr)[kLength]);
   Address(std::initializer_list<uint8_t> l);
+  Address(const RawAddress& address);
 
-  // CustomFieldFixedSizeInterface methods
-  inline uint8_t* data() override { return address.data(); }
-  inline const uint8_t* data() const override { return address.data(); }
+  uint8_t* data() { return address.data(); }
+  const uint8_t* data() const { return address.data(); }
 
   // storage::Serializable methods
   std::string ToString() const override;
   std::string ToColonSepHexString() const;
-  std::string ToStringForLogging() const override;
-  std::string ToRedactedStringForLogging() const override;
-
-  static std::optional<Address> FromString(const std::string& from);
+  std::string ToRedactedStringForLogging() const;
   std::string ToLegacyConfigString() const override;
+  static std::optional<Address> FromString(const std::string& from);
   static std::optional<Address> FromLegacyConfigString(const std::string& str);
 
   bool operator<(const Address& rhs) const { return address < rhs.address; }
   bool operator==(const Address& rhs) const { return address == rhs.address; }
-  bool operator>(const Address& rhs) const { return (rhs < *this); }
+  bool operator>(const Address& rhs) const { return rhs < *this; }
   bool operator<=(const Address& rhs) const { return !(*this > rhs); }
   bool operator>=(const Address& rhs) const { return !(*this < rhs); }
   bool operator!=(const Address& rhs) const { return !(*this == rhs); }
@@ -85,16 +80,10 @@ class Address final : public packet::CustomFieldFixedSizeInterface<Address>,
 
   static const Address kEmpty;  // 00:00:00:00:00:00
   static const Address kAny;    // FF:FF:FF:FF:FF:FF
- private:
+
+private:
   std::string _ToMaskedColonSepHexString(int bytes_to_mask) const;
 };
-
-// TODO: to fine-tune this.
-// we need an interface between the logger and ILoggable
-inline std::ostream& operator<<(std::ostream& os, const Address& a) {
-  os << a.ToString();
-  return os;
-}
 
 }  // namespace hci
 }  // namespace bluetooth
@@ -105,8 +94,7 @@ struct hash<bluetooth::hci::Address> {
   std::size_t operator()(const bluetooth::hci::Address& val) const {
     static_assert(sizeof(uint64_t) >= bluetooth::hci::Address::kLength);
     uint64_t int_addr = 0;
-    memcpy(reinterpret_cast<uint8_t*>(&int_addr), val.data(),
-           bluetooth::hci::Address::kLength);
+    memcpy(reinterpret_cast<uint8_t*>(&int_addr), val.data(), bluetooth::hci::Address::kLength);
     return std::hash<uint64_t>{}(int_addr);
   }
 };
@@ -115,18 +103,15 @@ struct hash<bluetooth::hci::Address> {
 #if __has_include(<bluetooth/log.h>)
 #include <bluetooth/log.h>
 
-namespace fmt {
+namespace std {
 template <>
 struct formatter<bluetooth::hci::Address> : formatter<std::string> {
   template <class Context>
-  typename Context::iterator format(const bluetooth::hci::Address& address,
-                                    Context& ctx) const {
-    std::string repr = bluetooth::os::should_log_be_redacted()
-                           ? address.ToRedactedStringForLogging()
-                           : address.ToStringForLogging();
-    return fmt::formatter<std::string>::format(repr, ctx);
+  typename Context::iterator format(const bluetooth::hci::Address& address, Context& ctx) const {
+    std::string repr = address.ToRedactedStringForLogging();
+    return std::formatter<std::string>::format(repr, ctx);
   }
 };
-}  // namespace fmt
+}  // namespace std
 
 #endif  // __has_include(<bluetooth/log.h>)

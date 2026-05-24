@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,53 +20,18 @@ import static com.google.common.truth.Truth.assertThat;
 
 import static org.junit.Assert.assertThrows;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+
 import com.google.common.primitives.Bytes;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
 
 import java.util.Random;
 
-@RunWith(JUnit4.class)
+/** Test cases for {@link BaseData}. */
+@RunWith(AndroidJUnit4.class)
 public class BaseDataTest {
-
-    @Test
-    public void baseInformation() {
-        BaseData.BaseInformation info = new BaseData.BaseInformation();
-        assertThat(info.presentationDelay.length).isEqualTo(3);
-        assertThat(info.codecId.length).isEqualTo(5);
-
-        assertThat(info.codecId)
-                .isEqualTo(
-                        new byte[] {
-                            (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00
-                        });
-        info.codecId[4] = (byte) 0xFE;
-        assertThat(info.codecId)
-                .isNotEqualTo(
-                        new byte[] {
-                            (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00
-                        });
-
-        // info.print() with different combination shouldn't crash.
-        info.print();
-
-        info.level = 1;
-        info.codecConfigLength = 1;
-        info.print();
-
-        info.level = 2;
-        info.codecConfigLength = 3;
-        info.codecConfigInfo = new byte[] {(byte) 0x01, (byte) 0x05};
-        info.metaDataLength = 4;
-        info.metaData = new byte[] {(byte) 0x04, (byte) 0x80, (byte) 0x79, (byte) 0x76};
-        info.print();
-
-        info.level = 3;
-        info.print();
-    }
-
     @Test
     public void parseBaseData() {
         assertThrows(IllegalArgumentException.class, () -> BaseData.parseBaseData(null));
@@ -76,82 +41,339 @@ public class BaseDataTest {
                     // LEVEL 1
                     (byte) 0x01,
                     (byte) 0x02,
-                    (byte) 0x03, // presentationDelay
-                    (byte) 0x01, // numSubGroups
+                    (byte) 0x03, // mPresentationDelay
+                    (byte) 0x01, // mNumSubGroups
                     // LEVEL 2
-                    (byte) 0x01, // numSubGroups
+                    (byte) 0x01, // mNumSubGroups
                     (byte) 0x00,
                     (byte) 0x00,
                     (byte) 0x00,
                     (byte) 0x00,
                     (byte) 0x00, // UNKNOWN_CODEC
-                    (byte) 0x02, // codecConfigLength
+                    (byte) 0x02, // mCodecConfigLength
                     (byte) 0x01,
-                    (byte) 'A', // codecConfigInfo
-                    (byte) 0x03, // metaDataLength
+                    (byte) 'A', // mCodecConfigInfo
+                    (byte) 0x03, // mMetaDataLength
                     (byte) 0x06,
                     (byte) 0x07,
-                    (byte) 0x08, // metaData
+                    (byte) 0x08, // mMetaData
                     // LEVEL 3
-                    (byte) 0x04, // index
-                    (byte) 0x03, // codecConfigLength
+                    (byte) 0x04, // mIndex
+                    (byte) 0x03, // mCodecConfigLength
                     (byte) 0x02,
                     (byte) 'B',
-                    (byte) 'C' // codecConfigInfo
+                    (byte) 'C' // mCodecConfigInfo
                 };
 
         BaseData data = BaseData.parseBaseData(serviceData);
-        BaseData.BaseInformation level = data.getLevelOne();
-        assertThat(level.presentationDelay).isEqualTo(new byte[] {0x01, 0x02, 0x03});
-        assertThat(level.numSubGroups).isEqualTo(1);
+        BaseData.Base base = data.base();
+        assertThat(base.mPresentationDelay).isEqualTo(197121);
+        assertThat(base.mSubgroups.size()).isEqualTo(1);
 
-        assertThat(data.getLevelTwo().size()).isEqualTo(1);
-        level = data.getLevelTwo().get(0);
+        BaseData.BaseSubgroup subgroup = base.mSubgroups.get(0);
 
-        assertThat(level.numSubGroups).isEqualTo(1);
-        assertThat(level.codecId).isEqualTo(new byte[] {0x00, 0x00, 0x00, 0x00, 0x00});
-        assertThat(level.codecConfigLength).isEqualTo(2);
-        assertThat(level.metaDataLength).isEqualTo(3);
+        assertThat(subgroup.mBises.size()).isEqualTo(1);
+        assertThat(subgroup.mCodecId).isEqualTo(0);
+        assertThat(subgroup.mCodecSpecificConfiguration.length).isEqualTo(2);
+        assertThat(subgroup.mMetadata.length).isEqualTo(3);
 
-        assertThat(data.getLevelThree().size()).isEqualTo(1);
-        level = data.getLevelThree().get(0);
-        assertThat(level.index).isEqualTo(4);
-        assertThat(level.codecConfigLength).isEqualTo(3);
+        BaseData.BaseBis bis = subgroup.mBises.get(0);
+        assertThat(bis.mIndex).isEqualTo(4);
+        assertThat(bis.mCodecSpecificConfiguration.length).isEqualTo(3);
+    }
+
+    @Test
+    public void parseBaseDataLvl2TruncatedConfig() {
+        assertThrows(IllegalArgumentException.class, () -> BaseData.parseBaseData(null));
+
+        byte[] serviceData =
+                new byte[] {
+                    // LEVEL 1
+                    (byte) 0x01,
+                    (byte) 0x02,
+                    (byte) 0x03, // mPresentationDelay
+                    (byte) 0x01, // mNumSubGroups
+                    // LEVEL 2
+                    (byte) 0x01, // numBIS
+                    (byte) 0x06,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00, // Lc3
+                    (byte) 0x03, // mCodecConfigLength
+                    (byte) 0x01,
+                    (byte) 'A', // mCodecConfigInfo
+                };
+
+        assertThat(BaseData.parseBaseData(serviceData)).isNull();
+    }
+
+    @Test
+    public void parseBaseDataLvl2TruncatedMetadata() {
+        assertThrows(IllegalArgumentException.class, () -> BaseData.parseBaseData(null));
+
+        byte[] serviceData =
+                new byte[] {
+                    // LEVEL 1
+                    (byte) 0x01,
+                    (byte) 0x02,
+                    (byte) 0x03, // mPresentationDelay
+                    (byte) 0x01, // mNumSubGroups
+                    // LEVEL 2
+                    (byte) 0x01, // numBIS
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00, // UNKNOWN_CODEC
+                    (byte) 0x02, // mCodecConfigLength
+                    (byte) 0x01,
+                    (byte) 'A', // mCodecConfigInfo
+                    (byte) 0x04, // mMetaDataLength
+                    (byte) 0x06,
+                    (byte) 0x07,
+                    (byte) 0x08, // mMetaData
+                };
+
+        assertThat(BaseData.parseBaseData(serviceData)).isNull();
+    }
+
+    @Test
+    public void parseBaseDataLvl3TruncatedConfig() {
+        assertThrows(IllegalArgumentException.class, () -> BaseData.parseBaseData(null));
+
+        byte[] serviceData =
+                new byte[] {
+                    // LEVEL 1
+                    (byte) 0x01,
+                    (byte) 0x02,
+                    (byte) 0x03, // mPresentationDelay
+                    (byte) 0x01, // mNumSubGroups
+                    // LEVEL 2
+                    (byte) 0x01, // numBIS
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00, // UNKNOWN_CODEC
+                    (byte) 0x02, // mCodecConfigLength
+                    (byte) 0x01,
+                    (byte) 'A', // mCodecConfigInfo
+                    (byte) 0x03, // mMetaDataLength
+                    (byte) 0x06,
+                    (byte) 0x07,
+                    (byte) 0x08, // mMetaData
+                    // LEVEL 3
+                    (byte) 0x04, // mIndex
+                    (byte) 0x04, // mCodecConfigLength
+                    (byte) 0x02,
+                    (byte) 'B',
+                    (byte) 'C' // mCodecConfigInfo
+                };
+
+        assertThat(BaseData.parseBaseData(serviceData)).isNull();
+    }
+
+    @Test
+    public void parseBaseDataInvalidLtv() {
+        assertThrows(IllegalArgumentException.class, () -> BaseData.parseBaseData(null));
+
+        byte[] serviceData =
+                new byte[] {
+                    // LEVEL 1
+                    (byte) 0x01,
+                    (byte) 0x02,
+                    (byte) 0x03, // mPresentationDelay
+                    (byte) 0x01, // mNumSubGroups
+                    // LEVEL 2
+                    (byte) 0x01, // numBIS
+                    (byte) 0x06,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00, // LC3
+                    (byte) 0x02, // mCodecConfigLength
+                    (byte) 0x04,
+                    (byte) 'A', // mCodecConfigInfo
+                    (byte) 0x03, // mMetaDataLength
+                    (byte) 0x06,
+                    (byte) 0x07,
+                    (byte) 0x08, // mMetaData
+                    // LEVEL 3
+                    (byte) 0x04, // mIndex
+                    (byte) 0x03, // mCodecConfigLength
+                    (byte) 0x03,
+                    (byte) 'B',
+                    (byte) 'C' // mCodecConfigInfo
+                };
+
+        BaseData data = BaseData.parseBaseData(serviceData);
+        BaseData.Base base = data.base();
+        assertThat(base.mPresentationDelay).isEqualTo(197121);
+        assertThat(base.mSubgroups.size()).isEqualTo(1);
+
+        BaseData.BaseSubgroup subgroup = base.mSubgroups.get(0);
+
+        assertThat(subgroup.mBises.size()).isEqualTo(1);
+        assertThat(subgroup.mCodecId).isEqualTo(6);
+        assertThat(subgroup.mCodecSpecificConfiguration.length).isEqualTo(2);
+        assertThat(subgroup.mMetadata.length).isEqualTo(3);
+
+        BaseData.BaseBis bis = subgroup.mBises.get(0);
+        assertThat(bis.mIndex).isEqualTo(4);
+        assertThat(bis.mCodecSpecificConfiguration.length).isEqualTo(3);
+    }
+
+    @Test
+    public void parseBaseVendorCodecBaseData() {
+        assertThrows(IllegalArgumentException.class, () -> BaseData.parseBaseData(null));
+
+        byte[] serviceData =
+                new byte[] {
+                    // LEVEL 1
+                    (byte) 0x01,
+                    (byte) 0x02,
+                    (byte) 0x03, // mPresentationDelay
+                    (byte) 0x01, // mNumSubGroups
+                    // LEVEL 2
+                    (byte) 0x01, // numBIS
+                    (byte) 0xFF, // VENDOR_CODEC
+                    (byte) 0x0A,
+                    (byte) 0xAB,
+                    (byte) 0xBC,
+                    (byte) 0xCD,
+                    (byte) 0x04, // mCodecConfigLength
+                    (byte) 0x01,
+                    (byte) 0x02,
+                    (byte) 0x03,
+                    (byte) 0x04, // opaque vendor data
+                    (byte) 0x03, // mMetaDataLength
+                    (byte) 0x06,
+                    (byte) 0x07,
+                    (byte) 0x08, // mMetaData
+                    // LEVEL 3
+                    (byte) 0x04, // mIndex
+                    (byte) 0x03, // mCodecConfigLength
+                    (byte) 0x03,
+                    (byte) 0x02,
+                    (byte) 0x01 // opaque vendor data
+                };
+
+        BaseData data = BaseData.parseBaseData(serviceData);
+        BaseData.Base base = data.base();
+        assertThat(base.mPresentationDelay).isEqualTo(197121);
+        assertThat(base.mSubgroups.size()).isEqualTo(1);
+
+        BaseData.BaseSubgroup subgroup = base.mSubgroups.get(0);
+
+        assertThat(subgroup.mBises.size()).isEqualTo(1);
+        assertThat(subgroup.mCodecId).isEqualTo(0xCDBCAB0AFFL);
+        assertThat(subgroup.mCodecSpecificConfiguration.length).isEqualTo(4);
+        assertThat(subgroup.mMetadata.length).isEqualTo(3);
+
+        BaseData.BaseBis bis = subgroup.mBises.get(0);
+
+        assertThat(bis.mIndex).isEqualTo(4);
+        assertThat(bis.mCodecSpecificConfiguration.length).isEqualTo(3);
+    }
+
+    @Test
+    public void parseBaseVendorCodecBaseDataMinimal() {
+        assertThrows(IllegalArgumentException.class, () -> BaseData.parseBaseData(null));
+
+        byte[] serviceData =
+                new byte[] {
+                    // LEVEL 1
+                    (byte) 0x01,
+                    (byte) 0x02,
+                    (byte) 0x03, // mPresentationDelay
+                    (byte) 0x01, // mNumSubGroups
+                    // LEVEL 2
+                    (byte) 0x01, // numBIS
+                    (byte) 0xFF, // VENDOR_CODEC
+                    (byte) 0x0A,
+                    (byte) 0xAB,
+                    (byte) 0xBC,
+                    (byte) 0xCD,
+                    (byte) 0x00, // mCodecConfigLength
+                    (byte) 0x00, // mMetaDataLength
+                    // LEVEL 3
+                    (byte) 0x04, // mIndex
+                    (byte) 0x00, // mCodecConfigLength
+                };
+
+        BaseData data = BaseData.parseBaseData(serviceData);
+        BaseData.Base base = data.base();
+        assertThat(base.mPresentationDelay).isEqualTo(197121);
+        assertThat(base.mSubgroups.size()).isEqualTo(1);
+
+        BaseData.BaseSubgroup subgroup = base.mSubgroups.get(0);
+
+        assertThat(subgroup.mBises.size()).isEqualTo(1);
+        assertThat(subgroup.mCodecId).isEqualTo(0xCDBCAB0AFFL);
+        assertThat(subgroup.mCodecSpecificConfiguration.length).isEqualTo(0);
+        assertThat(subgroup.mMetadata.length).isEqualTo(0);
+
+        BaseData.BaseBis bis = subgroup.mBises.get(0);
+
+        assertThat(bis.mIndex).isEqualTo(4);
+        assertThat(bis.mCodecSpecificConfiguration.length).isEqualTo(0);
+    }
+
+    @Test
+    public void parseBaseVendorCodecBaseDataInvalid() {
+        assertThrows(IllegalArgumentException.class, () -> BaseData.parseBaseData(null));
+
+        byte[] serviceData =
+                new byte[] {
+                    // LEVEL 1
+                    (byte) 0x01,
+                    (byte) 0x02,
+                    (byte) 0x03, // mPresentationDelay
+                    (byte) 0x01, // mNumSubGroups
+                    // LEVEL 2
+                    (byte) 0x00, // numBIS invalid value
+                    (byte) 0xFE, // UNKNOWN CODEC
+                    (byte) 0x00, // mCodecConfigLength
+                    (byte) 0x00, // mMetaDataLength
+                };
+
+        assertThat(BaseData.parseBaseData(serviceData)).isNull();
     }
 
     @Test
     public void parseBaseData_longMetaData() {
         assertThrows(IllegalArgumentException.class, () -> BaseData.parseBaseData(null));
 
-        int metaDataLength = 142;
+        int mMetaDataLength = 142;
 
         byte[] serviceDataLevel1 =
                 new byte[] {
                     // LEVEL 1
                     (byte) 0x01,
                     (byte) 0x02,
-                    (byte) 0x03, // presentationDelay
-                    (byte) 0x01 // numSubGroups
+                    (byte) 0x03, // mPresentationDelay
+                    (byte) 0x01 // mNumSubGroups
                 };
 
         byte[] serviceDataLevel2 =
                 new byte[] {
                     // LEVEL 2
-                    (byte) 0x01, // numSubGroups
+                    (byte) 0x01, // mNumSubGroups
                     (byte) 0x00,
                     (byte) 0x00,
                     (byte) 0x00,
                     (byte) 0x00,
                     (byte) 0x00, // UNKNOWN_CODEC
-                    (byte) 0x02, // codecConfigLength
+                    (byte) 0x02, // mCodecConfigLength
                     (byte) 0x01,
-                    (byte) 'A', // codecConfigInfo
-                    (byte) metaDataLength, // metaDataLength 142
+                    (byte) 'A', // mCodecConfigInfo
+                    (byte) mMetaDataLength, // mMetaDataLength 142
                 };
 
         byte[] metadataHeader =
                 new byte[] {
-                    (byte) (metaDataLength - 1), // length 141
+                    (byte) (mMetaDataLength - 1), // length 141
                     (byte) 0xFF
                 };
 
@@ -161,11 +383,11 @@ public class BaseDataTest {
         byte[] serviceDataLevel3 =
                 new byte[] {
                     // LEVEL 3
-                    (byte) 0x04, // index
-                    (byte) 0x03, // codecConfigLength
+                    (byte) 0x04, // mIndex
+                    (byte) 0x03, // mCodecConfigLength
                     (byte) 0x02,
                     (byte) 'B',
-                    (byte) 'C' // codecConfigInfo
+                    (byte) 'C' // mCodecConfigInfo
                 };
 
         BaseData data =
@@ -174,22 +396,265 @@ public class BaseDataTest {
                                 serviceDataLevel1,
                                 Bytes.concat(serviceDataLevel2, metadataHeader, metadataPayload),
                                 serviceDataLevel3));
-        BaseData.BaseInformation level = data.getLevelOne();
-        assertThat(level.presentationDelay).isEqualTo(new byte[] {0x01, 0x02, 0x03});
-        assertThat(level.numSubGroups).isEqualTo(1);
 
-        assertThat(data.getLevelTwo().size()).isEqualTo(1);
-        level = data.getLevelTwo().get(0);
+        BaseData.Base base = data.base();
+        assertThat(base.mPresentationDelay).isEqualTo(197121);
+        assertThat(base.mSubgroups.size()).isEqualTo(1);
 
-        assertThat(level.numSubGroups).isEqualTo(1);
-        assertThat(level.codecId).isEqualTo(new byte[] {0x00, 0x00, 0x00, 0x00, 0x00});
-        assertThat(level.codecConfigLength).isEqualTo(2);
-        assertThat(level.metaDataLength).isEqualTo(metaDataLength);
-        assertThat(level.metaData).isEqualTo(Bytes.concat(metadataHeader, metadataPayload));
+        BaseData.BaseSubgroup subgroup = base.mSubgroups.get(0);
 
-        assertThat(data.getLevelThree().size()).isEqualTo(1);
-        level = data.getLevelThree().get(0);
-        assertThat(level.index).isEqualTo(4);
-        assertThat(level.codecConfigLength).isEqualTo(3);
+        assertThat(subgroup.mBises.size()).isEqualTo(1);
+        assertThat(subgroup.mCodecId).isEqualTo(0x0000000000L);
+        assertThat(subgroup.mCodecSpecificConfiguration.length).isEqualTo(2);
+        assertThat(subgroup.mMetadata.length).isEqualTo(mMetaDataLength);
+        assertThat(subgroup.mMetadata).isEqualTo(Bytes.concat(metadataHeader, metadataPayload));
+
+        BaseData.BaseBis bis = subgroup.mBises.get(0);
+
+        assertThat(bis.mIndex).isEqualTo(4);
+        assertThat(bis.mCodecSpecificConfiguration.length).isEqualTo(3);
+    }
+
+    @Test
+    public void parseBaseData_multiple_subgroup() {
+        assertThrows(IllegalArgumentException.class, () -> BaseData.parseBaseData(null));
+
+        byte[] serviceData =
+                new byte[] {
+                    // LEVEL 1
+                    (byte) 0x40,
+                    (byte) 0x9C,
+                    (byte) 0x00, // mPresentationDelay
+                    (byte) 0x03, // mNumSubGroups
+                    // LEVEL 2
+                    (byte) 0x01, // mNumBis
+                    (byte) 0x06,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00, // LC3
+                    (byte) 0x0A, // mCodecConfigLength
+                    (byte) 0x02,
+                    (byte) 0x01,
+                    (byte) 0x03,
+                    (byte) 0x02,
+                    (byte) 0x02,
+                    (byte) 0x01,
+                    (byte) 0x03,
+                    (byte) 0x04,
+                    (byte) 0x28,
+                    (byte) 0x00,
+                    (byte) 0x04, // mMetaDataLength
+                    (byte) 0x03,
+                    (byte) 0x02,
+                    (byte) 0x01,
+                    (byte) 0x00, // mMetaData
+                    // LEVEL 3
+                    (byte) 0x01, // mIndex
+                    (byte) 0x00, // mCodecConfigLength
+
+                    // LEVEL 2
+                    (byte) 0x01, // mNumBis
+                    (byte) 0x06,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00, // LC3
+                    (byte) 0x0A, // mCodecConfigLength
+                    (byte) 0x02,
+                    (byte) 0x01,
+                    (byte) 0x03,
+                    (byte) 0x02,
+                    (byte) 0x02,
+                    (byte) 0x01,
+                    (byte) 0x03,
+                    (byte) 0x04,
+                    (byte) 0x28,
+                    (byte) 0x00,
+                    (byte) 0x04, // mMetaDataLength
+                    (byte) 0x03,
+                    (byte) 0x02,
+                    (byte) 0x01,
+                    (byte) 0x00, // mMetaData
+                    // LEVEL 3
+                    (byte) 0x02, // mIndex
+                    (byte) 0x00, // mCodecConfigLength
+
+                    // LEVEL 2
+                    (byte) 0x02, // mNumBis
+                    (byte) 0x06,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00, // LC3
+                    (byte) 0x0A, // mCodecConfigLength
+                    (byte) 0x02,
+                    (byte) 0x01,
+                    (byte) 0x03,
+                    (byte) 0x02,
+                    (byte) 0x02,
+                    (byte) 0x01,
+                    (byte) 0x03,
+                    (byte) 0x04,
+                    (byte) 0x28,
+                    (byte) 0x00,
+                    (byte) 0x04, // mMetaDataLength
+                    (byte) 0x03,
+                    (byte) 0x02,
+                    (byte) 0x01,
+                    (byte) 0x00, // mMetaData
+                    // LEVEL 3
+                    (byte) 0x03, // mIndex
+                    (byte) 0x00, // mCodecConfigLength
+                    (byte) 0x03, // mIndex
+                    (byte) 0x00, // mCodecConfigLength
+                };
+
+        BaseData data = BaseData.parseBaseData(serviceData);
+        BaseData.Base base = data.base();
+        assertThat(base.mPresentationDelay).isEqualTo(40000);
+        assertThat(base.mSubgroups.size()).isEqualTo(3);
+
+        BaseData.BaseSubgroup subgroup = base.mSubgroups.get(0);
+        assertThat(subgroup.mBises.size()).isEqualTo(1);
+        assertThat(subgroup.mCodecId).isEqualTo(6);
+        assertThat(subgroup.mCodecSpecificConfiguration.length).isEqualTo(10);
+        assertThat(subgroup.mMetadata.length).isEqualTo(4);
+        BaseData.BaseBis bis = subgroup.mBises.get(0);
+        assertThat(bis.mIndex).isEqualTo(1);
+        assertThat(bis.mCodecSpecificConfiguration.length).isEqualTo(0);
+
+        subgroup = base.mSubgroups.get(1);
+        assertThat(subgroup.mBises.size()).isEqualTo(1);
+        assertThat(subgroup.mCodecId).isEqualTo(6);
+        assertThat(subgroup.mCodecSpecificConfiguration.length).isEqualTo(10);
+        assertThat(subgroup.mMetadata.length).isEqualTo(4);
+        bis = subgroup.mBises.get(0);
+        assertThat(bis.mIndex).isEqualTo(2);
+        assertThat(bis.mCodecSpecificConfiguration.length).isEqualTo(0);
+
+        subgroup = base.mSubgroups.get(2);
+        assertThat(subgroup.mBises.size()).isEqualTo(2);
+        assertThat(subgroup.mCodecId).isEqualTo(6);
+        assertThat(subgroup.mCodecSpecificConfiguration.length).isEqualTo(10);
+        assertThat(subgroup.mMetadata.length).isEqualTo(4);
+        bis = subgroup.mBises.get(0);
+        assertThat(bis.mIndex).isEqualTo(3);
+        assertThat(bis.mCodecSpecificConfiguration.length).isEqualTo(0);
+    }
+
+    @Test
+    public void parseBaseData_multiple_bis() {
+        assertThrows(IllegalArgumentException.class, () -> BaseData.parseBaseData(null));
+
+        byte[] serviceData =
+                new byte[] {
+                    // LEVEL 1
+                    (byte) 0x40,
+                    (byte) 0x9C,
+                    (byte) 0x00, // mPresentationDelay
+                    (byte) 0x02, // mNumSubGroups
+                    // LEVEL 2
+                    (byte) 0x02, // mNumBis
+                    (byte) 0x06,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00, // LC3
+                    (byte) 0x0A, // mCodecConfigLength
+                    (byte) 0x02,
+                    (byte) 0x01,
+                    (byte) 0x03,
+                    (byte) 0x02,
+                    (byte) 0x02,
+                    (byte) 0x01,
+                    (byte) 0x03,
+                    (byte) 0x04,
+                    (byte) 0x28,
+                    (byte) 0x00,
+                    (byte) 0x04, // mMetaDataLength
+                    (byte) 0x03,
+                    (byte) 0x02,
+                    (byte) 0x01,
+                    (byte) 0x00, // mMetaData
+                    // LEVEL 3
+                    (byte) 0x01, // mIndex
+                    (byte) 0x00, // mCodecConfigLength
+                    (byte) 0x02, // mIndex
+                    (byte) 0x03, // mCodecConfigLength
+                    (byte) 0x03,
+                    (byte) 0x02,
+                    (byte) 0x01, // opaque vendor data
+
+                    // LEVEL 2
+                    (byte) 0x04, // mNumBis
+                    (byte) 0x06,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00,
+                    (byte) 0x00, // LC3
+                    (byte) 0x0A, // mCodecConfigLength
+                    (byte) 0x02,
+                    (byte) 0x01,
+                    (byte) 0x03,
+                    (byte) 0x02,
+                    (byte) 0x02,
+                    (byte) 0x01,
+                    (byte) 0x03,
+                    (byte) 0x04,
+                    (byte) 0x28,
+                    (byte) 0x00,
+                    (byte) 0x03, // mMetaDataLength
+                    (byte) 0x03,
+                    (byte) 0x02,
+                    (byte) 0x01, // mMetaData
+                    // LEVEL 3
+                    (byte) 0x03, // mIndex
+                    (byte) 0x00, // mCodecConfigLength
+                    (byte) 0x04, // mIndex
+                    (byte) 0x00, // mCodecConfigLength
+                    (byte) 0x05, // mIndex
+                    (byte) 0x03, // mCodecConfigLength
+                    (byte) 0x03,
+                    (byte) 0x02,
+                    (byte) 0x01, // opaque vendor data
+                    (byte) 0x06, // mIndex
+                    (byte) 0x00, // mCodecConfigLength
+                };
+
+        BaseData data = BaseData.parseBaseData(serviceData);
+        BaseData.Base base = data.base();
+        assertThat(base.mPresentationDelay).isEqualTo(40000);
+        assertThat(base.mSubgroups.size()).isEqualTo(2);
+
+        BaseData.BaseSubgroup subgroup = base.mSubgroups.get(0);
+        assertThat(subgroup.mBises.size()).isEqualTo(2);
+        assertThat(subgroup.mCodecId).isEqualTo(6);
+        assertThat(subgroup.mCodecSpecificConfiguration.length).isEqualTo(10);
+        assertThat(subgroup.mMetadata.length).isEqualTo(4);
+        BaseData.BaseBis bis = subgroup.mBises.get(0);
+        assertThat(bis.mIndex).isEqualTo(1);
+        assertThat(bis.mCodecSpecificConfiguration.length).isEqualTo(0);
+        bis = subgroup.mBises.get(1);
+        assertThat(bis.mIndex).isEqualTo(2);
+        assertThat(bis.mCodecSpecificConfiguration.length).isEqualTo(3);
+
+        subgroup = base.mSubgroups.get(1);
+        assertThat(subgroup.mBises.size()).isEqualTo(4);
+        assertThat(subgroup.mCodecId).isEqualTo(6);
+        assertThat(subgroup.mCodecSpecificConfiguration.length).isEqualTo(10);
+        assertThat(subgroup.mMetadata.length).isEqualTo(3);
+        bis = subgroup.mBises.get(0);
+        assertThat(bis.mIndex).isEqualTo(3);
+        assertThat(bis.mCodecSpecificConfiguration.length).isEqualTo(0);
+        bis = subgroup.mBises.get(1);
+        assertThat(bis.mIndex).isEqualTo(4);
+        assertThat(bis.mCodecSpecificConfiguration.length).isEqualTo(0);
+        bis = subgroup.mBises.get(2);
+        assertThat(bis.mIndex).isEqualTo(5);
+        assertThat(bis.mCodecSpecificConfiguration.length).isEqualTo(3);
+        bis = subgroup.mBises.get(3);
+        assertThat(bis.mIndex).isEqualTo(6);
+        assertThat(bis.mCodecSpecificConfiguration.length).isEqualTo(0);
     }
 }

@@ -31,7 +31,6 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Request to get a listing of messages in directory. Listing is used to determine the remote
@@ -82,7 +81,7 @@ class RequestGetMessagesListingForOwnNumber extends Request {
         }
 
         /** Returns false if start of window exceeds range; o.w. returns true. */
-        public boolean moveWindow() {
+        boolean moveWindow() {
             if (mListStartOffset > sListStartOffsetUpperLimit) {
                 return false;
             }
@@ -92,31 +91,29 @@ class RequestGetMessagesListingForOwnNumber extends Request {
             }
             mMaxListCount = min(2 * mMaxListCount, sMaxListCountUpperLimit);
             logD(
-                    String.format(
-                            Locale.US,
-                            "MessagesSlidingWindow, moveWindow: startOffset=%d, maxCount=%d",
-                            mListStartOffset,
-                            mMaxListCount));
+                    "MessagesSlidingWindow.moveWindow:"
+                            + (" startOffset= " + mListStartOffset)
+                            + (" maxCount=" + mMaxListCount));
             return true;
         }
 
-        public void reset() {
+        void reset() {
             mListStartOffset = LIST_START_OFFSET_INITIAL;
             mMaxListCount = MAX_LIST_COUNT_INITIAL;
         }
 
-        public int getStartOffset() {
+        int getStartOffset() {
             return mListStartOffset;
         }
 
-        public int getMaxCount() {
+        int getMaxCount() {
             return mMaxListCount;
         }
     }
 
-    private MessagesSlidingWindow mMessageListingWindow;
+    private final MessagesSlidingWindow mMessageListingWindow;
 
-    private ObexAppParameters mOap;
+    private final ObexAppParameters mOap;
 
     private int mFolderCounter;
     private boolean mSearchCompleted;
@@ -162,13 +159,12 @@ class RequestGetMessagesListingForOwnNumber extends Request {
         // Message listings by spec arrive ordered newest first.
         String folderName = FOLDERS_TO_SEARCH.get(mFolderCounter);
         logD(
-                String.format(
-                        Locale.US,
-                        "readResponse: Folder=%s, # of msgs=%d, startOffset=%d, maxCount=%d",
-                        folderName,
-                        messageListing.size(),
-                        mMessageListingWindow.getStartOffset(),
-                        mMessageListingWindow.getMaxCount()));
+                "readResponse:"
+                        + (" folder=" + folderName)
+                        + (" # of msgs=" + messageListing.size())
+                        + (" startOffset= " + mMessageListingWindow.getStartOffset())
+                        + (" maxCount=" + mMessageListingWindow.getMaxCount()));
+
         String number = null;
         for (Message msg : messageListing) {
             if (MceStateMachine.FOLDER_INBOX.equals(folderName)) {
@@ -180,7 +176,7 @@ class RequestGetMessagesListingForOwnNumber extends Request {
                 // Search is completed when a phone number is found
                 mPhoneNumber = number;
                 mSearchCompleted = true;
-                logD(String.format("readResponse: phone number found = %s", mPhoneNumber));
+                logD("readResponse: phone number found = " + mPhoneNumber);
                 return;
             }
         }
@@ -240,16 +236,14 @@ class RequestGetMessagesListingForOwnNumber extends Request {
         int offset = mMessageListingWindow.getStartOffset();
         setListOffsetAndMaxCountInHeaderSet(maxCount, offset);
         logD(
-                String.format(
-                        Locale.US,
-                        "setupCurrentFolderForSearch: folder=%s, filter=%d, offset=%d, maxCount=%d",
-                        folderName,
-                        filter,
-                        maxCount,
-                        offset));
+                "setupCurrentFolderForSearch:"
+                        + (" Folder=" + folderName)
+                        + (" filter= " + filter)
+                        + (" offset= " + offset)
+                        + (" maxCount=" + maxCount));
     }
 
-    private byte messageTypeBasedOnFolder(String folderName) {
+    private static byte messageTypeBasedOnFolder(String folderName) {
         byte messageType =
                 (byte)
                         (MessagesFilter.MESSAGE_TYPE_SMS_GSM

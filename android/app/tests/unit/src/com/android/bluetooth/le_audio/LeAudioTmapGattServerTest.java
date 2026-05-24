@@ -25,15 +25,16 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothUuid;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.MediumTest;
-import androidx.test.runner.AndroidJUnit4;
+
+import com.android.tests.bluetooth.MockitoRule;
 
 import org.junit.After;
 import org.junit.Before;
@@ -42,16 +43,15 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
+/** Test cases for {@link LeAudioTmapGattServer}. */
 @MediumTest
 @RunWith(AndroidJUnit4.class)
 public class LeAudioTmapGattServerTest {
     private static final int TEST_ROLE_MASK =
             LeAudioTmapGattServer.TMAP_ROLE_FLAG_CG | LeAudioTmapGattServer.TMAP_ROLE_FLAG_UMS;
 
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
 
     @Mock private LeAudioTmapGattServer.BluetoothGattServerProxy mGattServerProxy;
 
@@ -74,8 +74,8 @@ public class LeAudioTmapGattServerTest {
         ArgumentCaptor<BluetoothGattService> captor =
                 ArgumentCaptor.forClass(BluetoothGattService.class);
         mServer.start(TEST_ROLE_MASK);
-        verify(mGattServerProxy, times(1)).open(any());
-        verify(mGattServerProxy, times(1)).addService(captor.capture());
+        verify(mGattServerProxy).open(any());
+        verify(mGattServerProxy).addService(captor.capture());
 
         // verify primary service with TMAP UUID
         BluetoothGattService service = captor.getValue();
@@ -96,7 +96,7 @@ public class LeAudioTmapGattServerTest {
 
         // verify stop triggers stop method call
         mServer.stop();
-        verify(mGattServerProxy, times(1)).close();
+        verify(mGattServerProxy).close();
     }
 
     @Test

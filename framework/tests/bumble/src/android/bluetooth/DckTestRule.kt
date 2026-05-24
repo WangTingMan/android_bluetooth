@@ -17,6 +17,7 @@
 package android.bluetooth
 
 import android.app.PendingIntent
+import android.bluetooth.BluetoothProfile.STATE_CONNECTED
 import android.bluetooth.le.BluetoothLeScanner
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
@@ -56,6 +57,7 @@ class DckTestRule(
     private val isRemoteAdvertisingWithUuid: Boolean = false,
     private val isGattConnected: Boolean = false,
 ) : TestRule {
+
     private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)!!
     private val bluetoothAdapter = bluetoothManager.adapter
     private val leScanner = bluetoothAdapter.bluetoothLeScanner
@@ -93,7 +95,7 @@ class DckTestRule(
     fun scanWithCallback(
         scanFilter: ScanFilter,
         scanSettings: ScanSettings,
-        coroutine: CoroutineScope = scope
+        coroutine: CoroutineScope = scope,
     ) =
         callbackFlow {
                 val callback =
@@ -128,7 +130,7 @@ class DckTestRule(
     fun scanWithPendingIntent(
         scanFilter: ScanFilter,
         scanSettings: ScanSettings,
-        coroutine: CoroutineScope = scope
+        coroutine: CoroutineScope = scope,
     ) =
         callbackFlow {
                 val intentFilter = IntentFilter(ACTION_DYNAMIC_RECEIVER_SCAN_RESULT)
@@ -139,8 +141,7 @@ class DckTestRule(
                                 val results =
                                     intent.getParcelableArrayListExtra<ScanResult>(
                                         BluetoothLeScanner.EXTRA_LIST_SCAN_RESULT
-                                    )
-                                        ?: return
+                                    ) ?: return
 
                                 val callbackType =
                                     intent.getIntExtra(BluetoothLeScanner.EXTRA_CALLBACK_TYPE, -1)
@@ -162,7 +163,7 @@ class DckTestRule(
                         scanIntent,
                         PendingIntent.FLAG_MUTABLE or
                             PendingIntent.FLAG_UPDATE_CURRENT or
-                            PendingIntent.FLAG_ALLOW_UNSAFE_IMPLICIT_INTENT
+                            PendingIntent.FLAG_ALLOW_UNSAFE_IMPLICIT_INTENT,
                     )
 
                 leScanner.startScan(listOf(scanFilter), scanSettings, pendingIntent)
@@ -190,7 +191,7 @@ class DckTestRule(
                         override fun onConnectionStateChange(
                             gatt: BluetoothGatt,
                             status: Int,
-                            newState: Int
+                            newState: Int,
                         ) {
                             trySend(GattState(gatt, status, newState))
                         }
@@ -295,7 +296,7 @@ class DckTestRule(
                                 trySend(
                                     intent.getIntExtra(
                                         BluetoothAdapter.EXTRA_STATE,
-                                        BluetoothAdapter.ERROR
+                                        BluetoothAdapter.ERROR,
                                     )
                                 )
                             }
@@ -314,12 +315,10 @@ class DckTestRule(
         val bumbleDevice =
             bluetoothAdapter.getRemoteLeDevice(
                 Utils.BUMBLE_RANDOM_ADDRESS,
-                BluetoothDevice.ADDRESS_TYPE_RANDOM
+                BluetoothDevice.ADDRESS_TYPE_RANDOM,
             )
 
-        withTimeout(TIMEOUT_MS) {
-            connectGatt(bumbleDevice).first { it.state == BluetoothProfile.STATE_CONNECTED }
-        }
+        withTimeout(TIMEOUT_MS) { connectGatt(bumbleDevice).first { it.state == STATE_CONNECTED } }
     }
 
     private fun reset() {
@@ -328,7 +327,7 @@ class DckTestRule(
     }
 
     companion object {
-        private const val TIMEOUT_MS = 3000L
+        private const val TIMEOUT_MS = 5000L
         private const val ACTION_DYNAMIC_RECEIVER_SCAN_RESULT =
             "android.bluetooth.test.ACTION_DYNAMIC_RECEIVER_SCAN_RESULT"
         // CCC DK Specification R3 1.2.0 r14 section 19.2.1.2 Bluetooth Le Pairing

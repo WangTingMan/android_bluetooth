@@ -23,7 +23,6 @@
 #include <atomic>
 
 #include "os/linux_generic/linux.h"
-#include "os/log.h"
 
 namespace bluetooth {
 namespace os {

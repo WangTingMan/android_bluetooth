@@ -16,13 +16,13 @@
  *
  ******************************************************************************/
 
+#include <bluetooth/types/address.h>
 #include <gtest/gtest.h>
 
 #include "bta/hf_client/bta_hf_client_int.h"
 #include "bta/include/bta_hf_client_api.h"
 #include "common/message_loop_thread.h"
 #include "device/include/esco_parameters.h"
-#include "types/raw_address.h"
 
 namespace base {
 class MessageLoop;
@@ -33,7 +33,7 @@ const RawAddress bdaddr1({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
 }  // namespace
 
 class BtaHfClientSecurityTest : public testing::Test {
- protected:
+protected:
   void SetUp() override {
     // Reset the memory block, this is the state on which the allocate handle
     // would start operating

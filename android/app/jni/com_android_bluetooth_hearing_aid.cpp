@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,25 @@
 
 #define LOG_TAG "BluetoothHearingAidServiceJni"
 
-#include "com_android_bluetooth.h"
-#include "hardware/bt_hearing_aid.h"
+#include <bluetooth/log.h>
+#include <bluetooth/types/address.h>
+#include <jni.h>
+#include <nativehelper/JNIHelp.h>
+#include <nativehelper/scoped_local_ref.h>
 
-#include <string.h>
+#include <cerrno>
+#include <cstdint>
+#include <cstring>
+#include <mutex>
 #include <shared_mutex>
 
-using bluetooth::hearing_aid::ConnectionState;
-using bluetooth::hearing_aid::HearingAidInterface;
-using bluetooth::hearing_aid::HearingAidCallbacks;
+#include "com_android_bluetooth.h"
+#include "hardware/bluetooth.h"
+#include "hardware/bt_hearing_aid.h"
+
+using bluetooth::asha::ConnectionState;
+using bluetooth::asha::HearingAidCallbacks;
+using bluetooth::asha::HearingAidInterface;
 
 namespace android {
 static jmethodID method_onConnectionStateChanged;
@@ -37,27 +47,27 @@ static jobject mCallbacksObj = nullptr;
 static std::shared_timed_mutex callbacks_mutex;
 
 class HearingAidCallbacksImpl : public HearingAidCallbacks {
- public:
+public:
   ~HearingAidCallbacksImpl() = default;
-  void OnConnectionState(ConnectionState state,
-                         const RawAddress& bd_addr) override {
+  void OnConnectionState(ConnectionState state, const RawAddress& bd_addr) override {
     log::info("");
 
     std::shared_lock<std::shared_timed_mutex> lock(callbacks_mutex);
     CallbackEnv sCallbackEnv(__func__);
-    if (!sCallbackEnv.valid() || mCallbacksObj == nullptr) return;
+    if (!sCallbackEnv.valid() || mCallbacksObj == nullptr) {
+      return;
+    }
 
-    ScopedLocalRef<jbyteArray> addr(
-        sCallbackEnv.get(), sCallbackEnv->NewByteArray(sizeof(RawAddress)));
+    ScopedLocalRef<jbyteArray> addr(sCallbackEnv.get(),
+                                    sCallbackEnv->NewByteArray(sizeof(RawAddress)));
     if (!addr.get()) {
       log::error("Failed to new jbyteArray bd addr for connection state");
       return;
     }
 
-    sCallbackEnv->SetByteArrayRegion(addr.get(), 0, sizeof(RawAddress),
-                                     (jbyte*)&bd_addr);
-    sCallbackEnv->CallVoidMethod(mCallbacksObj, method_onConnectionStateChanged,
-                                 (jint)state, addr.get());
+    sCallbackEnv->SetByteArrayRegion(addr.get(), 0, sizeof(RawAddress), (jbyte*)&bd_addr);
+    sCallbackEnv->CallVoidMethod(mCallbacksObj, method_onConnectionStateChanged, (jint)state,
+                                 addr.get());
   }
 
   void OnDeviceAvailable(uint8_t capabilities, uint64_t hi_sync_id,
@@ -66,20 +76,20 @@ class HearingAidCallbacksImpl : public HearingAidCallbacks {
 
     std::shared_lock<std::shared_timed_mutex> lock(callbacks_mutex);
     CallbackEnv sCallbackEnv(__func__);
-    if (!sCallbackEnv.valid() || mCallbacksObj == nullptr) return;
+    if (!sCallbackEnv.valid() || mCallbacksObj == nullptr) {
+      return;
+    }
 
-    ScopedLocalRef<jbyteArray> addr(
-        sCallbackEnv.get(), sCallbackEnv->NewByteArray(sizeof(RawAddress)));
+    ScopedLocalRef<jbyteArray> addr(sCallbackEnv.get(),
+                                    sCallbackEnv->NewByteArray(sizeof(RawAddress)));
     if (!addr.get()) {
       log::error("Failed to new jbyteArray bd addr for connection state");
       return;
     }
 
-    sCallbackEnv->SetByteArrayRegion(addr.get(), 0, sizeof(RawAddress),
-                                     (jbyte*)&bd_addr);
-    sCallbackEnv->CallVoidMethod(mCallbacksObj, method_onDeviceAvailable,
-                                 (jbyte)capabilities, (jlong)hi_sync_id,
-                                 addr.get());
+    sCallbackEnv->SetByteArrayRegion(addr.get(), 0, sizeof(RawAddress), (jbyte*)&bd_addr);
+    sCallbackEnv->CallVoidMethod(mCallbacksObj, method_onDeviceAvailable, (jbyte)capabilities,
+                                 (jlong)hi_sync_id, addr.get());
   }
 };
 
@@ -112,8 +122,8 @@ static void initNative(JNIEnv* env, jobject object) {
     return;
   }
 
-  sHearingAidInterface = (HearingAidInterface*)btInf->get_profile_interface(
-      BT_PROFILE_HEARING_AID_ID);
+  sHearingAidInterface =
+          (HearingAidInterface*)btInf->get_profile_interface(BT_PROFILE_HEARING_AID_ID);
   if (sHearingAidInterface == nullptr) {
     log::error("Failed to get Bluetooth Hearing Aid Interface");
     return;
@@ -143,11 +153,12 @@ static void cleanupNative(JNIEnv* env, jobject /* object */) {
   }
 }
 
-static jboolean connectHearingAidNative(JNIEnv* env, jobject /* object */,
-                                        jbyteArray address) {
+static jboolean connectHearingAidNative(JNIEnv* env, jobject /* object */, jbyteArray address) {
   log::info("");
   std::shared_lock<std::shared_timed_mutex> lock(interface_mutex);
-  if (!sHearingAidInterface) return JNI_FALSE;
+  if (!sHearingAidInterface) {
+    return JNI_FALSE;
+  }
 
   jbyte* addr = env->GetByteArrayElements(address, nullptr);
   if (!addr) {
@@ -161,11 +172,12 @@ static jboolean connectHearingAidNative(JNIEnv* env, jobject /* object */,
   return JNI_TRUE;
 }
 
-static jboolean disconnectHearingAidNative(JNIEnv* env, jobject /* object */,
-                                           jbyteArray address) {
+static jboolean disconnectHearingAidNative(JNIEnv* env, jobject /* object */, jbyteArray address) {
   log::info("");
   std::shared_lock<std::shared_timed_mutex> lock(interface_mutex);
-  if (!sHearingAidInterface) return JNI_FALSE;
+  if (!sHearingAidInterface) {
+    return JNI_FALSE;
+  }
 
   jbyte* addr = env->GetByteArrayElements(address, nullptr);
   if (!addr) {
@@ -179,10 +191,11 @@ static jboolean disconnectHearingAidNative(JNIEnv* env, jobject /* object */,
   return JNI_TRUE;
 }
 
-static jboolean addToAcceptlistNative(JNIEnv* env, jobject /* object */,
-                                      jbyteArray address) {
+static jboolean addToAcceptlistNative(JNIEnv* env, jobject /* object */, jbyteArray address) {
   std::shared_lock<std::shared_timed_mutex> lock(interface_mutex);
-  if (!sHearingAidInterface) return JNI_FALSE;
+  if (!sHearingAidInterface) {
+    return JNI_FALSE;
+  }
   jbyte* addr = env->GetByteArrayElements(address, nullptr);
   if (!addr) {
     jniThrowIOException(env, EINVAL);
@@ -195,8 +208,7 @@ static jboolean addToAcceptlistNative(JNIEnv* env, jobject /* object */,
   return JNI_TRUE;
 }
 
-static void setVolumeNative(JNIEnv* /* env */, jclass /* clazz */,
-                            jint volume) {
+static void setVolumeNative(JNIEnv* /* env */, jclass /* clazz */, jint volume) {
   if (!sHearingAidInterface) {
     log::error("Failed to get the Bluetooth Hearing Aid Interface");
     return;
@@ -206,28 +218,24 @@ static void setVolumeNative(JNIEnv* /* env */, jclass /* clazz */,
 
 int register_com_android_bluetooth_hearing_aid(JNIEnv* env) {
   const JNINativeMethod methods[] = {
-      {"initNative", "()V", (void*)initNative},
-      {"cleanupNative", "()V", (void*)cleanupNative},
-      {"connectHearingAidNative", "([B)Z", (void*)connectHearingAidNative},
-      {"disconnectHearingAidNative", "([B)Z",
-       (void*)disconnectHearingAidNative},
-      {"addToAcceptlistNative", "([B)Z", (void*)addToAcceptlistNative},
-      {"setVolumeNative", "(I)V", (void*)setVolumeNative},
+          {"initNative", "()V", (void*)initNative},
+          {"cleanupNative", "()V", (void*)cleanupNative},
+          {"connectHearingAidNative", "([B)Z", (void*)connectHearingAidNative},
+          {"disconnectHearingAidNative", "([B)Z", (void*)disconnectHearingAidNative},
+          {"addToAcceptlistNative", "([B)Z", (void*)addToAcceptlistNative},
+          {"setVolumeNative", "(I)V", (void*)setVolumeNative},
   };
   const int result = REGISTER_NATIVE_METHODS(
-      env, "com/android/bluetooth/hearingaid/HearingAidNativeInterface",
-      methods);
+          env, "com/android/bluetooth/hearingaid/HearingAidNativeInterface", methods);
   if (result != 0) {
     return result;
   }
 
   const JNIJavaMethod javaMethods[] = {
-      {"onConnectionStateChanged", "(I[B)V", &method_onConnectionStateChanged},
-      {"onDeviceAvailable", "(BJ[B)V", &method_onDeviceAvailable},
+          {"onConnectionStateChanged", "(I[B)V", &method_onConnectionStateChanged},
+          {"onDeviceAvailable", "(BJ[B)V", &method_onDeviceAvailable},
   };
-  GET_JAVA_METHODS(env,
-                   "com/android/bluetooth/hearingaid/HearingAidNativeInterface",
-                   javaMethods);
+  GET_JAVA_METHODS(env, "com/android/bluetooth/hearingaid/HearingAidNativeInterface", javaMethods);
 
   return 0;
 }

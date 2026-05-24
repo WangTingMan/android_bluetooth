@@ -26,21 +26,21 @@
 
 static bool is_wake_lock_acquired = false;
 
-static int acquire_wake_lock_cb(const char* lock_name) {
+static int acquire_wake_lock_cb(const char* /*lock_name*/) {
   is_wake_lock_acquired = true;
   return BT_STATUS_SUCCESS;
 }
 
-static int release_wake_lock_cb(const char* lock_name) {
+static int release_wake_lock_cb(const char* /*lock_name*/) {
   is_wake_lock_acquired = false;
   return BT_STATUS_SUCCESS;
 }
 
-static bt_os_callouts_t bt_wakelock_callouts = {
-    sizeof(bt_os_callouts_t), acquire_wake_lock_cb, release_wake_lock_cb};
+static bt_os_callouts_t bt_wakelock_callouts = {sizeof(bt_os_callouts_t), acquire_wake_lock_cb,
+                                                release_wake_lock_cb};
 
 class WakelockTest : public ::testing::Test {
- protected:
+protected:
   void SetUp() override {
 // TODO (jamuraa): maybe use base::CreateNewTempDirectory instead?
 #ifdef __ANDROID__
@@ -95,11 +95,9 @@ class WakelockTest : public ::testing::Test {
 
     EXPECT_GE(lock_stat.st_size, unlock_stat.st_size);
 
-    void* lock_file =
-        mmap(nullptr, lock_stat.st_size, PROT_READ, MAP_PRIVATE, lock_fd, 0);
+    void* lock_file = mmap(nullptr, lock_stat.st_size, PROT_READ, MAP_PRIVATE, lock_fd, 0);
 
-    void* unlock_file = mmap(nullptr, unlock_stat.st_size, PROT_READ,
-                             MAP_PRIVATE, unlock_fd, 0);
+    void* unlock_file = mmap(nullptr, unlock_stat.st_size, PROT_READ, MAP_PRIVATE, unlock_fd, 0);
 
     if (memcmp(lock_file, unlock_file, unlock_stat.st_size) == 0) {
       acquired = lock_stat.st_size > unlock_stat.st_size;

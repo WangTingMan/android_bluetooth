@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package com.android.bluetooth.sap;
 import static com.android.bluetooth.sap.SapMessage.CON_STATUS_ERROR_CONNECTION;
 import static com.android.bluetooth.sap.SapMessage.CON_STATUS_OK;
 import static com.android.bluetooth.sap.SapMessage.CON_STATUS_OK_ONGOING_CALL;
-import static com.android.bluetooth.sap.SapMessage.DISC_GRACEFULL;
+import static com.android.bluetooth.sap.SapMessage.DISC_GRACEFUL;
 import static com.android.bluetooth.sap.SapMessage.ID_CONNECT_REQ;
 import static com.android.bluetooth.sap.SapMessage.ID_CONNECT_RESP;
 import static com.android.bluetooth.sap.SapMessage.ID_DISCONNECT_IND;
@@ -38,13 +38,13 @@ import static com.android.bluetooth.sap.SapServer.SAP_RIL_SOCK_CLOSED;
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
 
-import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.anyInt;
-import static org.mockito.Mockito.anyLong;
-import static org.mockito.Mockito.argThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -65,9 +65,11 @@ import android.os.Message;
 import android.os.RemoteException;
 import android.telephony.TelephonyManager;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.SmallTest;
 import androidx.test.platform.app.InstrumentationRegistry;
-import androidx.test.runner.AndroidJUnit4;
+
+import com.android.tests.bluetooth.MockitoRule;
 
 import org.junit.After;
 import org.junit.Before;
@@ -78,43 +80,40 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatcher;
 import org.mockito.Mock;
 import org.mockito.Spy;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
 
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.concurrent.atomic.AtomicLong;
 
+/** Test cases for {@link SapServer}. */
 @SmallTest
 @RunWith(AndroidJUnit4.class)
 public class SapServerTest {
-    private static final long TIMEOUT_MS = 1_000;
-
-    private HandlerThread mHandlerThread;
-    private Handler mHandler;
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
 
     @Spy
-    private Context mTargetContext =
-            new ContextWrapper(InstrumentationRegistry.getInstrumentation().getTargetContext());
+    private final Context mContext =
+            new ContextWrapper(InstrumentationRegistry.getInstrumentation().getContext());
 
     @Spy private TestHandlerCallback mCallback = new TestHandlerCallback();
-
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
 
     @Mock private InputStream mInputStream;
 
     @Mock private OutputStream mOutputStream;
 
+    private static final long TIMEOUT_MS = 1_000;
+
+    private HandlerThread mHandlerThread;
+    private Handler mHandler;
+
     private SapServer mSapServer;
 
     @Before
     public void setUp() throws Exception {
-
         mHandlerThread = new HandlerThread("SapServerTest");
         mHandlerThread.start();
 
         mHandler = new Handler(mHandlerThread.getLooper(), mCallback);
-        mSapServer = spy(new SapServer(mHandler, mTargetContext, mInputStream, mOutputStream));
+        mSapServer = spy(new SapServer(mHandler, mContext, mInputStream, mOutputStream));
     }
 
     @After
@@ -125,11 +124,10 @@ public class SapServerTest {
     @Test
     public void setNotification() {
         NotificationManager notificationManager = mock(NotificationManager.class);
-        when(mTargetContext.getSystemService(NotificationManager.class))
-                .thenReturn(notificationManager);
+        when(mContext.getSystemService(NotificationManager.class)).thenReturn(notificationManager);
 
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
-        int type = DISC_GRACEFULL;
+        int type = DISC_GRACEFUL;
         int flags = PendingIntent.FLAG_CANCEL_CURRENT;
         mSapServer.setNotification(type, flags);
 
@@ -141,8 +139,7 @@ public class SapServerTest {
     @Test
     public void clearNotification() {
         NotificationManager notificationManager = mock(NotificationManager.class);
-        when(mTargetContext.getSystemService(NotificationManager.class))
-                .thenReturn(notificationManager);
+        when(mContext.getSystemService(NotificationManager.class)).thenReturn(notificationManager);
 
         mSapServer.clearNotification();
 
@@ -299,7 +296,7 @@ public class SapServerTest {
 
     @Test
     public void handleRilInd_whenStateIsConnected_callsSendClientMessage() {
-        int disconnectionType = DISC_GRACEFULL;
+        int disconnectionType = DISC_GRACEFUL;
         SapMessage msg = mock(SapMessage.class);
         when(msg.getMsgType()).thenReturn(ID_RIL_UNSOL_DISCONNECT_IND);
         when(msg.getDisconnectionType()).thenReturn(disconnectionType);
@@ -319,10 +316,9 @@ public class SapServerTest {
 
     @Test
     public void handleRilInd_whenStateIsDisconnected_callsSendDisconnectInd() {
-        int disconnectionType = DISC_GRACEFULL;
+        int disconnectionType = DISC_GRACEFUL;
         NotificationManager notificationManager = mock(NotificationManager.class);
-        when(mTargetContext.getSystemService(NotificationManager.class))
-                .thenReturn(notificationManager);
+        when(mContext.getSystemService(NotificationManager.class)).thenReturn(notificationManager);
         SapMessage msg = mock(SapMessage.class);
         when(msg.getMsgType()).thenReturn(ID_RIL_UNSOL_DISCONNECT_IND);
         when(msg.getDisconnectionType()).thenReturn(disconnectionType);
@@ -383,7 +379,7 @@ public class SapServerTest {
     @Test
     public void handleRfcommReply_connectRespMsg_whenNotInCallOngoingState_errorStatus() {
         AlarmManager alarmManager = mock(AlarmManager.class);
-        when(mTargetContext.getSystemService(AlarmManager.class)).thenReturn(alarmManager);
+        when(mContext.getSystemService(AlarmManager.class)).thenReturn(alarmManager);
         SapMessage msg = mock(SapMessage.class);
         when(msg.getMsgType()).thenReturn(ID_CONNECT_RESP);
 
@@ -420,7 +416,7 @@ public class SapServerTest {
     @Test
     public void handleRfcommReply_disconnectRespMsg_whenInConnectedState_startsDisconnectTimer() {
         AlarmManager alarmManager = mock(AlarmManager.class);
-        when(mTargetContext.getSystemService(AlarmManager.class)).thenReturn(alarmManager);
+        when(mContext.getSystemService(AlarmManager.class)).thenReturn(alarmManager);
         SapMessage msg = mock(SapMessage.class);
         when(msg.getMsgType()).thenReturn(ID_DISCONNECT_RESP);
 
@@ -432,7 +428,7 @@ public class SapServerTest {
     }
 
     @Test
-    public void handleRfcommReply_statusIndMsg_whenInDisonnectingState_doesNotSendMessage()
+    public void handleRfcommReply_statusIndMsg_whenInDisconnectingState_doesNotSendMessage()
             throws Exception {
         SapMessage msg = mock(SapMessage.class);
         when(msg.getMsgType()).thenReturn(ID_STATUS_IND);
@@ -446,8 +442,7 @@ public class SapServerTest {
     @Test
     public void handleRfcommReply_statusIndMsg_whenInConnectedState_setsNotification() {
         NotificationManager notificationManager = mock(NotificationManager.class);
-        when(mTargetContext.getSystemService(NotificationManager.class))
-                .thenReturn(notificationManager);
+        when(mContext.getSystemService(NotificationManager.class)).thenReturn(notificationManager);
         SapMessage msg = mock(SapMessage.class);
         when(msg.getMsgType()).thenReturn(ID_STATUS_IND);
 
@@ -460,7 +455,7 @@ public class SapServerTest {
     @Test
     public void startDisconnectTimer_and_stopDisconnectTimer() {
         AlarmManager alarmManager = mock(AlarmManager.class);
-        when(mTargetContext.getSystemService(AlarmManager.class)).thenReturn(alarmManager);
+        when(mContext.getSystemService(AlarmManager.class)).thenReturn(alarmManager);
 
         mSapServer.startDisconnectTimer(SapMessage.DISC_FORCED, 1_000);
         verify(alarmManager).set(anyInt(), anyLong(), any(PendingIntent.class));
@@ -472,7 +467,7 @@ public class SapServerTest {
     @Test
     public void isCallOngoing() {
         TelephonyManager telephonyManager = mock(TelephonyManager.class);
-        when(mTargetContext.getSystemService(TelephonyManager.class)).thenReturn(telephonyManager);
+        when(mContext.getSystemService(TelephonyManager.class)).thenReturn(telephonyManager);
 
         when(telephonyManager.getCallState()).thenReturn(TelephonyManager.CALL_STATE_OFFHOOK);
         assertThat(mSapServer.isCallOngoing()).isTrue();
@@ -601,7 +596,7 @@ public class SapServerTest {
     public void handleMessage_forRilIndMsg_callsHandleRilInd() throws Exception {
         SapMessage sapMsg = mock(SapMessage.class);
         when(sapMsg.getMsgType()).thenReturn(ID_RIL_UNSOL_DISCONNECT_IND);
-        when(sapMsg.getDisconnectionType()).thenReturn(DISC_GRACEFULL);
+        when(sapMsg.getDisconnectionType()).thenReturn(DISC_GRACEFUL);
         mSapServer.changeState(SapServer.SAP_STATE.CONNECTED);
         mSapServer.mSapHandler = mHandler;
 
@@ -621,7 +616,7 @@ public class SapServerTest {
     @Test
     public void handleMessage_forRilSocketClosedMsg_startsDisconnectTimer() throws Exception {
         AlarmManager alarmManager = mock(AlarmManager.class);
-        when(mTargetContext.getSystemService(AlarmManager.class)).thenReturn(alarmManager);
+        when(mContext.getSystemService(AlarmManager.class)).thenReturn(alarmManager);
 
         Message message = Message.obtain();
         message.what = SAP_RIL_SOCK_CLOSED;
@@ -661,7 +656,7 @@ public class SapServerTest {
 
         mSapServer.changeState(SapServer.SAP_STATE.CONNECTING_CALL_ONGOING);
         assertThat(mSapServer.mState).isEqualTo(SapServer.SAP_STATE.CONNECTING_CALL_ONGOING);
-        mSapServer.mIntentReceiver.onReceive(mTargetContext, intent);
+        mSapServer.mIntentReceiver.onReceive(mContext, intent);
 
         verify(mSapServer)
                 .onConnectRequest(argThat(sapMsg -> sapMsg.getMsgType() == ID_CONNECT_REQ));
@@ -674,7 +669,7 @@ public class SapServerTest {
         int disconnectType = SapMessage.DISC_RFCOMM;
         Intent intent = new Intent(SapServer.SAP_DISCONNECT_ACTION);
         intent.putExtra(SapServer.SAP_DISCONNECT_TYPE_EXTRA, disconnectType);
-        mSapServer.mIntentReceiver.onReceive(mTargetContext, intent);
+        mSapServer.mIntentReceiver.onReceive(mContext, intent);
 
         verify(mSapServer).shutdown();
     }
@@ -684,11 +679,11 @@ public class SapServerTest {
         mSapServer.mIntentReceiver = mSapServer.new SapServerBroadcastReceiver();
         mSapServer.mSapHandler = mHandler;
 
-        int disconnectType = SapMessage.DISC_GRACEFULL;
+        int disconnectType = SapMessage.DISC_GRACEFUL;
         Intent intent = new Intent(SapServer.SAP_DISCONNECT_ACTION);
         intent.putExtra(SapServer.SAP_DISCONNECT_TYPE_EXTRA, disconnectType);
         mSapServer.changeState(SapServer.SAP_STATE.CONNECTED);
-        mSapServer.mIntentReceiver.onReceive(mTargetContext, intent);
+        mSapServer.mIntentReceiver.onReceive(mContext, intent);
 
         verify(mSapServer).sendDisconnectInd(disconnectType);
     }
@@ -698,7 +693,7 @@ public class SapServerTest {
         Intent intent = new Intent("random intent action");
 
         try {
-            mSapServer.mIntentReceiver.onReceive(mTargetContext, intent);
+            mSapServer.mIntentReceiver.onReceive(mContext, intent);
         } catch (Exception e) {
             assertWithMessage("Exception should not happen.").fail();
         }

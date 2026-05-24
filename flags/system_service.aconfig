@@ -1,69 +1,24 @@
 package: "com.android.bluetooth.flags"
-container: "com.android.btservices"
+container: "com.android.bt"
 
 flag {
-    name: "airplane_mode_x_ble_on"
+    name: "only_broadcast_to_local_user"
     namespace: "bluetooth"
-    description: "Airplane mode is not properly listen to when reaching BLE mode"
+    description: "The bluetooth stack start and exist only for the current user. We should only restrict the intent to the current user"
     metadata {
         purpose: PURPOSE_BUGFIX
     }
-    bug: "338079154"
+    bug: "435244086"
 }
 
 flag {
-    name: "auto_on_feature"
-    is_exported: true
+    name: "graceful_disable_without_message"
     namespace: "bluetooth"
-    description: "Turn bluetooth on next morning at 5 am"
-    bug: "323060869"
-}
-
-flag {
-    name: "avoid_static_loading_of_native"
-    namespace: "bluetooth"
-    description: "Prevent loading native during static initialization and prefer doing it during init"
+    description: "Handle disable requests gracefully without a delayed message"
+    bug: "431067156"
     metadata {
         purpose: PURPOSE_BUGFIX
     }
-    bug: "339554081"
-}
-
-flag {
-    name: "explicit_kill_from_system_server"
-    namespace: "bluetooth"
-    description: "Explicit kill and wait of Bluetooth AdapterService when turning Bluetooth OFF"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-    bug: "339548431"
-}
-
-flag {
-    name: "fast_bind_to_app"
-    namespace: "bluetooth"
-    description: "Remove complexity and non necessary initialization when simply binding"
-    bug: "328698375"
-}
-
-flag {
-    name: "kill_instead_of_exit"
-    namespace: "bluetooth"
-    description: "There is no value in pretending we are exiting properly. This is a kill and we should express it this way when finishing the process"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-    bug: "339553092"
-}
-
-flag {
-    name: "respect_ble_scan_setting"
-    namespace: "bluetooth"
-    description: "No longer allow BLE_ON mode when the settings is explicitly disable"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-    bug: "341783936"
 }
 
 flag {
@@ -71,4 +26,38 @@ flag {
     namespace: "bluetooth"
     description: "Replace binder call to the system server with a Messenger to enforce thread safety"
     bug: "321804999"
+}
+
+flag {
+    name: "user_restriction_refactor"
+    namespace: "bluetooth"
+    description: "Move user restriction to Kotlin and properly check before any attempt to start Bluetooth"
+    bug: "420992261"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "on_to_ble_on_via_off"
+    namespace: "bluetooth"
+    description: "When transitioning from ON to BLE_ON, go through OFF state completely to reset bluetooth state."
+    bug: "431079894"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "watch_device_override_airplane_mode"
+    namespace: "bluetooth"
+    description: "If there is a watch connected, keep Bluetooth on"
+    bug: "416092966"
+}
+
+flag {
+    name: "user_visible_on_user_starting"
+    namespace: "bluetooth"
+    description: "Check userVisible API to determine if user should startup bluetooth instance"
+    bug: "438756896"
 }

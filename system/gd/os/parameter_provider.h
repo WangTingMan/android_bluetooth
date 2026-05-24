@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,21 +24,15 @@ namespace bluetooth {
 namespace os {
 
 class ParameterProvider {
- public:
+public:
   // Return the path to config file for storage module
   static std::string ConfigFilePath();
-
-  static void OverrideConfigFilePath(const std::string& path);
 
   // Return the path to the default snoop log file location
   static std::string SnoopLogFilePath();
 
-  static void OverrideSnoopLogFilePath(const std::string& path);
-
   // Return the path to the default snooz log file location
   static std::string SnoozLogFilePath();
-
-  static void OverrideSnoozLogFilePath(const std::string& path);
 
   // Return the path to the default sysprops file
   static std::string SyspropsFilePath();
@@ -56,6 +50,10 @@ class ParameterProvider {
   static int GetCommonCriteriaConfigCompareResult();
 
   static void SetCommonCriteriaConfigCompareResult(int result);
+
+  static void SetHciInstanceName(const std::string& hci_interface_name);
+
+  static std::string GetHciInstanceName();
 };
 
 }  // namespace os

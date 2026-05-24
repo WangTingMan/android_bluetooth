@@ -16,9 +16,9 @@
 
 #pragma once
 
-#include <string>
+#include <bluetooth/types/address.h>
 
-#include "types/raw_address.h"
+#include <string>
 
 /* Some predefined tags */
 static std::string kLogConnectionTag("CONN_STATE");
@@ -50,6 +50,7 @@ static std::string kLogCisCreateOp("CIS_CREATE: ");
 static std::string kLogCisEstablishedOp("CIS_ESTABLISED: ");
 static std::string kLogCisDisconnectOp("CIS_DISCONNECT: ");
 static std::string kLogCisDisconnectedOp("CIS_DISCONNECTED: ");
+static std::string kLogSetIsoDataPathOp("SET_ISO_DATA_PATH: ");
 static std::string kLogSetDataPathOp("SET_DATA_PATH: ");
 static std::string kLogRemoveDataPathOp("REMOVE_DATA_PATH: ");
 static std::string kLogDataPathCompleteOp("DATA_PATH_COMPLETE: ");
@@ -63,18 +64,17 @@ static std::string kLogAfSuspendConfirm("SUSPEND_CONFIRMED: ");
 static std::string kLogAfCancel("REQUEST_CANCELED: ");
 static std::string kLogAfReconfigComplete("RECONFIG_COMPLETE_EVT: ");
 static std::string kLogAfSuspendForReconfig("SUSPEND_FOR_RECONFIG_EVT: ");
+static std::string kLogAfStreamSuspended("SUSPENDED_EVT: ");
 
 class LeAudioLogHistory {
- public:
+public:
   virtual ~LeAudioLogHistory(void) = default;
   static LeAudioLogHistory* Get(void);
   static void Cleanup(void);
   static void DebugDump(int fd);
 
-  virtual void AddLogHistory(const std::string& tag, int group_id,
-                             const RawAddress& addr,
+  virtual void AddLogHistory(const std::string& tag, int group_id, const RawAddress& addr,
                              const std::string& msg) = 0;
-  virtual void AddLogHistory(const std::string& tag, int group_id,
-                             const RawAddress& addr, const std::string& msg,
-                             const std::string& extra) = 0;
+  virtual void AddLogHistory(const std::string& tag, int group_id, const RawAddress& addr,
+                             const std::string& msg, const std::string& extra) = 0;
 };

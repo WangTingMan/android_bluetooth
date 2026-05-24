@@ -26,21 +26,17 @@
  ******************************************************************************/
 #include "bta_pan_co.h"
 
-#include <hardware/bluetooth.h>
-#include <hardware/bt_pan.h>
-#include <string.h>
+#include <bluetooth/log.h>
+#include <bluetooth/types/address.h>
 
-#include "bta_api.h"
-#include "bta_pan_api.h"
+#include <cstdint>
+#include <cstring>
+
+#include "bta/include/bta_pan_api.h"
 #include "bta_pan_ci.h"
 #include "btif_pan_internal.h"
-#include "btif_sock_thread.h"
-#include "btif_util.h"
-#include "os/log.h"
 #include "osi/include/allocator.h"
-#include "pan_api.h"
 #include "stack/include/bt_hdr.h"
-#include "types/raw_address.h"
 
 using namespace bluetooth;
 
@@ -61,7 +57,7 @@ uint8_t bta_pan_co_init(uint8_t* q_level) {
   *q_level = 30;
 
   // return (BTA_PAN_RX_PULL | BTA_PAN_TX_PULL);
-  return (BTA_PAN_RX_PUSH_BUF | BTA_PAN_RX_PUSH | BTA_PAN_TX_PULL);
+  return BTA_PAN_RX_PUSH_BUF | BTA_PAN_RX_PUSH | BTA_PAN_TX_PULL;
 }
 
 /*******************************************************************************
@@ -126,8 +122,7 @@ void bta_pan_co_tx_path(uint16_t handle, uint8_t app_id) {
     log::error("cannot find pan connection");
     return;
   } else if (conn->state != PAN_STATE_OPEN) {
-    log::error("conn is not opened, conn:{}, conn->state:{}", fmt::ptr(conn),
-               conn->state);
+    log::error("conn is not opened, conn:{}, conn->state:{}", std::format_ptr(conn), conn->state);
     return;
   }
 
@@ -135,19 +130,15 @@ void bta_pan_co_tx_path(uint16_t handle, uint8_t app_id) {
     /* read next data buffer from pan */
     p_buf = bta_pan_ci_readbuf(handle, src, dst, &protocol, &ext, &forward);
     if (p_buf) {
-      log::verbose("calling btapp_tap_send, p_buf->len:{}, offset:{}",
-                   p_buf->len, p_buf->offset);
+      log::verbose("calling btapp_tap_send, p_buf->len:{}, offset:{}", p_buf->len, p_buf->offset);
       if (is_empty_eth_addr(conn->eth_addr) && is_valid_bt_eth_addr(src)) {
-        log::verbose("pan bt peer addr: {} update its ethernet addr: {}",
-                     conn->peer, src);
+        log::verbose("pan bt peer addr: {} update its ethernet addr: {}", conn->peer, src);
         conn->eth_addr = src;
       }
-      btpan_tap_send(btpan_cb.tap_fd, src, dst, protocol,
-                     (char*)(p_buf + 1) + p_buf->offset, p_buf->len, ext,
-                     forward);
+      btpan_tap_send(btpan_cb.tap_fd, src, dst, protocol, (char*)(p_buf + 1) + p_buf->offset,
+                     p_buf->len, ext, forward);
       osi_free(p_buf);
     }
-
   } while (p_buf != NULL);
 }
 
@@ -184,7 +175,9 @@ void bta_pan_co_rx_path(uint16_t /* handle */, uint8_t /* app_id */) {
 void bta_pan_co_rx_flow(uint16_t handle, uint8_t /* app_id */, bool enable) {
   log::verbose("bta_pan_co_rx_flow, enabled:{}, not used", enable);
   btpan_conn_t* conn = btpan_find_conn_handle(handle);
-  if (!conn || conn->state != PAN_STATE_OPEN) return;
+  if (!conn || conn->state != PAN_STATE_OPEN) {
+    return;
+  }
   btpan_set_flow_control(enable);
 }
 

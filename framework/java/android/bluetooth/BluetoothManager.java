@@ -16,6 +16,10 @@
 
 package android.bluetooth;
 
+import static android.Manifest.permission.BLUETOOTH_CONNECT;
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTED;
+import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTED;
+
 import android.annotation.RequiresFeature;
 import android.annotation.RequiresNoPermission;
 import android.annotation.RequiresPermission;
@@ -56,14 +60,16 @@ public final class BluetoothManager {
 
     /** @hide */
     public BluetoothManager(Context context) {
-        mAdapter = BluetoothAdapter.createAdapter(context.getAttributionSource());
-        mContext = context;
+        // Pin the context DeviceId prevent the associated attribution source to be obsolete
+        // TODO: b/343739429 -- pass the context to BluetoothAdapter constructor instead
+        mContext = context.createDeviceContext(Context.DEVICE_ID_DEFAULT);
+        mAdapter = BluetoothAdapter.createAdapter(mContext);
     }
 
     /**
-     * Get the BLUETOOTH Adapter for this device.
+     * Get the BluetoothAdapter for this device.
      *
-     * @return the BLUETOOTH Adapter
+     * @return the BluetoothAdapter
      */
     @RequiresNoPermission
     public BluetoothAdapter getAdapter() {
@@ -85,16 +91,16 @@ public final class BluetoothManager {
      */
     @RequiresLegacyBluetoothPermission
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     public int getConnectionState(BluetoothDevice device, int profile) {
         List<BluetoothDevice> connectedDevices = getConnectedDevices(profile);
         for (BluetoothDevice connectedDevice : connectedDevices) {
             if (device.equals(connectedDevice)) {
-                return BluetoothProfile.STATE_CONNECTED;
+                return STATE_CONNECTED;
             }
         }
 
-        return BluetoothProfile.STATE_DISCONNECTED;
+        return STATE_DISCONNECTED;
     }
 
     /**
@@ -111,10 +117,9 @@ public final class BluetoothManager {
      */
     @RequiresLegacyBluetoothPermission
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     public List<BluetoothDevice> getConnectedDevices(int profile) {
-        return getDevicesMatchingConnectionStates(
-                profile, new int[] {BluetoothProfile.STATE_CONNECTED});
+        return getDevicesMatchingConnectionStates(profile, new int[] {STATE_CONNECTED});
     }
 
     /**
@@ -134,17 +139,20 @@ public final class BluetoothManager {
      */
     @RequiresLegacyBluetoothPermission
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
+    @SuppressWarnings("AndroidFrameworkRethrowFromSystem") // iGatt is not system server
     public List<BluetoothDevice> getDevicesMatchingConnectionStates(int profile, int[] states) {
         if (profile != BluetoothProfile.GATT && profile != BluetoothProfile.GATT_SERVER) {
             throw new IllegalArgumentException("Profile not supported: " + profile);
         }
 
-        List<BluetoothDevice> devices = new ArrayList<BluetoothDevice>();
+        List<BluetoothDevice> devices = new ArrayList<>();
 
+        IBluetoothGatt iGatt = mAdapter.getBluetoothGatt();
+        if (iGatt == null) {
+            return devices;
+        }
         try {
-            IBluetoothGatt iGatt = mAdapter.getBluetoothGatt();
-            if (iGatt == null) return devices;
             devices =
                     Attributable.setAttributionSource(
                             iGatt.getDevicesMatchingConnectionStates(
@@ -168,7 +176,7 @@ public final class BluetoothManager {
      * @return BluetoothGattServer instance
      */
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     public BluetoothGattServer openGattServer(
             Context context, BluetoothGattServerCallback callback) {
 
@@ -188,7 +196,7 @@ public final class BluetoothManager {
      * @hide
      */
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     public BluetoothGattServer openGattServer(
             Context context, BluetoothGattServerCallback callback, boolean eattSupport) {
         return (openGattServer(context, callback, BluetoothDevice.TRANSPORT_AUTO, eattSupport));
@@ -209,7 +217,7 @@ public final class BluetoothManager {
      * @hide
      */
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     public BluetoothGattServer openGattServer(
             Context context, BluetoothGattServerCallback callback, int transport) {
         return (openGattServer(context, callback, transport, false));
@@ -231,7 +239,7 @@ public final class BluetoothManager {
      * @hide
      */
     @RequiresBluetoothConnectPermission
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(BLUETOOTH_CONNECT)
     public BluetoothGattServer openGattServer(
             Context context,
             BluetoothGattServerCallback callback,

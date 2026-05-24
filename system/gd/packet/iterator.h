@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ struct IteratorTraits : public std::iterator<std::random_access_iterator_tag, ui
 // Templated Iterator for endianness
 template <bool little_endian>
 class Iterator : public IteratorTraits {
- public:
+public:
   Iterator(const std::forward_list<View>& data, size_t offset);
   Iterator(std::shared_ptr<std::vector<uint8_t>> data);
   Iterator(const Iterator& itr) = default;
@@ -79,20 +79,22 @@ class Iterator : public IteratorTraits {
 
   // Get the next sizeof(T) bytes and return the filled type
   template <typename T, typename std::enable_if<std::is_trivial<T>::value, int>::type = 0>
-  T extract() {
+  T extract(size_t len = sizeof(T)) {
     static_assert(std::is_trivial<T>::value, "Iterator::extract requires a fixed-width type.");
     T extracted_value{};
     uint8_t* value_ptr = (uint8_t*)&extracted_value;
 
-    for (size_t i = 0; i < sizeof(T); i++) {
-      size_t index = (little_endian ? i : sizeof(T) - i - 1);
+    for (size_t i = 0; i < len; i++) {
+      size_t index = (little_endian ? i : len - i - 1);
       value_ptr[index] = this->operator*();
       this->operator++();
     }
     return extracted_value;
   }
 
-  template <typename T, typename std::enable_if<std::is_base_of_v<CustomFieldFixedSizeInterface<T>, T>, int>::type = 0>
+  template <typename T,
+            typename std::enable_if<std::is_base_of_v<CustomFieldFixedSizeInterface<T>, T>,
+                                    int>::type = 0>
   T extract() {
     T extracted_value{};
     for (size_t i = 0; i < CustomFieldFixedSizeInterface<T>::length(); i++) {
@@ -103,7 +105,7 @@ class Iterator : public IteratorTraits {
     return extracted_value;
   }
 
- private:
+private:
   std::forward_list<View> data_;
   size_t index_;
   size_t begin_;

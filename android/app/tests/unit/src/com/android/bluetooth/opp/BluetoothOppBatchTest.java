@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,52 +16,70 @@
 
 package com.android.bluetooth.opp;
 
+import static com.android.bluetooth.TestUtils.getTestDevice;
+
 import static com.google.common.truth.Truth.assertThat;
 
-import static org.mockito.Mockito.any;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
 
 import android.content.Context;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.MediumTest;
 import androidx.test.platform.app.InstrumentationRegistry;
-import androidx.test.runner.AndroidJUnit4;
 
 import com.android.bluetooth.BluetoothMethodProxy;
+import com.android.bluetooth.btservice.AdapterService;
+import com.android.tests.bluetooth.MockitoRule;
 
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.Mock;
 
+/** Test cases for {@link BluetoothOppBatch}. */
 @MediumTest
 @RunWith(AndroidJUnit4.class)
 public class BluetoothOppBatchTest {
-    private BluetoothOppBatch mBluetoothOppBatch;
-    private Context mContext;
+    @Rule public final MockitoRule mMockitoRule = new MockitoRule();
 
-    private BluetoothOppShareInfo mInitShareInfo;
+    @Mock private AdapterService mAdapterService;
+
+    private final Context mContext = InstrumentationRegistry.getInstrumentation().getContext();
+    private final BluetoothOppShareInfo mInitShareInfo =
+            new BluetoothOppShareInfo(
+                    0,
+                    null,
+                    null,
+                    null,
+                    null,
+                    0,
+                    "00:11:22:33:44:55",
+                    0,
+                    0,
+                    BluetoothShare.STATUS_PENDING,
+                    0,
+                    0,
+                    0,
+                    false);
+    private BluetoothOppBatch mBluetoothOppBatch;
 
     @Before
     public void setUp() throws Exception {
-        mInitShareInfo =
-                new BluetoothOppShareInfo(
-                        0,
-                        null,
-                        null,
-                        null,
-                        null,
-                        0,
-                        "00:11:22:33:44:55",
-                        0,
-                        0,
-                        BluetoothShare.STATUS_PENDING,
-                        0,
-                        0,
-                        0,
-                        false);
-        mContext = InstrumentationRegistry.getInstrumentation().getContext();
-        mBluetoothOppBatch = new BluetoothOppBatch(mContext, mInitShareInfo);
+        doAnswer(
+                        invocation -> {
+                            String address = invocation.getArgument(0);
+                            return getTestDevice(address);
+                        })
+                .when(mAdapterService)
+                .getRemoteDevice(anyString());
+        doReturn(mContext.getContentResolver()).when(mAdapterService).getContentResolver();
+        mBluetoothOppBatch = new BluetoothOppBatch(mAdapterService, mInitShareInfo);
     }
 
     @Test
@@ -118,7 +136,6 @@ public class BluetoothOppBatchTest {
 
     @Test
     public void cancelBatch_cancelSuccessfully() {
-
         BluetoothMethodProxy proxy = spy(BluetoothMethodProxy.getInstance());
         BluetoothMethodProxy.setInstanceForTesting(proxy);
         doReturn(0).when(proxy).contentResolverDelete(any(), any(), any(), any());

@@ -16,6 +16,7 @@
 
 package android.bluetooth;
 
+import android.annotation.RequiresNoPermission;
 import android.os.Parcel;
 import android.os.Parcelable;
 
@@ -42,14 +43,17 @@ public class SdpSapsRecord implements Parcelable {
         return 0;
     }
 
+    @RequiresNoPermission
     public int getRfcommCannelNumber() {
         return mRfcommChannelNumber;
     }
 
+    @RequiresNoPermission
     public int getProfileVersion() {
         return mProfileVersion;
     }
 
+    @RequiresNoPermission
     public String getServiceName() {
         return mServiceName;
     }
@@ -58,7 +62,7 @@ public class SdpSapsRecord implements Parcelable {
     public void writeToParcel(Parcel dest, int flags) {
         dest.writeInt(mRfcommChannelNumber);
         dest.writeInt(mProfileVersion);
-        dest.writeString(mServiceName);
+        BluetoothUtils.writeStringToParcel(dest, mServiceName);
     }
 
     @Override
@@ -66,13 +70,13 @@ public class SdpSapsRecord implements Parcelable {
         String ret = "Bluetooth MAS SDP Record:\n";
 
         if (mRfcommChannelNumber != -1) {
-            ret += "RFCOMM Chan Number: " + mRfcommChannelNumber + "\n";
+            ret = ret + "RFCOMM Chan Number: " + mRfcommChannelNumber + "\n";
         }
         if (mServiceName != null) {
-            ret += "Service Name: " + mServiceName + "\n";
+            ret = ret + "Service Name: " + mServiceName + "\n";
         }
         if (mProfileVersion != -1) {
-            ret += "Profile version: " + mProfileVersion + "\n";
+            ret = ret + "Profile version: " + mProfileVersion + "\n";
         }
         return ret;
     }

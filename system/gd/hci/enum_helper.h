@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,11 @@ namespace hci {
 enum DeviceType { UNKNOWN = 0, BR_EDR = 1, LE = 2, DUAL = 3 };
 
 // Scan mode from legacy stack, which is different from hci::ScanEnable
-enum LegacyScanMode { BT_SCAN_MODE_NONE = 0, BT_SCAN_MODE_CONNECTABLE = 1, BT_SCAN_MODE_CONNECTABLE_DISCOVERABLE = 2 };
+enum LegacyScanMode {
+  BT_SCAN_MODE_NONE = 0,
+  BT_SCAN_MODE_CONNECTABLE = 1,
+  BT_SCAN_MODE_CONNECTABLE_DISCOVERABLE = 2
+};
 
 }  // namespace hci
 
@@ -74,14 +78,16 @@ std::optional<hci::KeyType> FromLegacyConfigString(const std::string& str) {
 }
 
 // Must be defined in bluetooth namespace
-template <typename T, typename std::enable_if<std::is_same_v<T, hci::LegacyScanMode>, int>::type = 0>
+template <typename T,
+          typename std::enable_if<std::is_same_v<T, hci::LegacyScanMode>, int>::type = 0>
 std::optional<hci::LegacyScanMode> FromLegacyConfigString(const std::string& str) {
   auto raw_value = common::Int64FromString(str);
   if (!raw_value) {
     return std::nullopt;
   }
   if (*raw_value < static_cast<int64_t>(hci::LegacyScanMode::BT_SCAN_MODE_NONE) ||
-      *raw_value > static_cast<int64_t>(hci::LegacyScanMode::BT_SCAN_MODE_CONNECTABLE_DISCOVERABLE)) {
+      *raw_value >
+              static_cast<int64_t>(hci::LegacyScanMode::BT_SCAN_MODE_CONNECTABLE_DISCOVERABLE)) {
     return std::nullopt;
   }
   return static_cast<hci::LegacyScanMode>(*raw_value);

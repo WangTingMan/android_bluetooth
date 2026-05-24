@@ -17,30 +17,26 @@
 #ifndef BT_STACK_FUZZ_COMMON_HELPERS_H_
 #define BT_STACK_FUZZ_COMMON_HELPERS_H_
 
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/uuid.h>
 #include <fuzzer/FuzzedDataProvider.h>
 
 #include <cstring>  // For memcpy
 #include <functional>
 #include <vector>
 
-#include "types/bluetooth/uuid.h"
-#include "types/raw_address.h"
-
 // Calls a function from the ops_vector
-void callArbitraryFunction(
-    FuzzedDataProvider* fdp,
-    std::vector<std::function<void(FuzzedDataProvider*)>> ops_vector) {
+void callArbitraryFunction(FuzzedDataProvider* fdp,
+                           std::vector<std::function<void(FuzzedDataProvider*)>> ops_vector) {
   // Choose which function we'll be calling
-  uint8_t function_id =
-      fdp->ConsumeIntegralInRange<uint8_t>(0, ops_vector.size() - 1);
+  uint8_t function_id = fdp->ConsumeIntegralInRange<uint8_t>(0, ops_vector.size() - 1);
 
   // Call the function we've chosen
   ops_vector[function_id](fdp);
 }
 
 template <class T>
-T getArbitraryVectorElement(FuzzedDataProvider* fdp, std::vector<T> vect,
-                            bool allow_null) {
+T getArbitraryVectorElement(FuzzedDataProvider* fdp, std::vector<T> vect, bool allow_null) {
   // If we're allowing null, give it a 50:50 shot at returning a zero element
   // (Or if the vector's empty)
   if (vect.empty() || (allow_null && fdp->ConsumeBool())) {
@@ -61,14 +57,13 @@ RawAddress generateRawAddress(FuzzedDataProvider* fdp) {
 
   // Read as much as we can from the buffer and copy it in
   std::vector<uint8_t> bytes = fdp->ConsumeBytes<uint8_t>(retval.kLength);
-  memcpy(retval.address, bytes.data(), bytes.size());
+  memcpy(retval.address.data(), bytes.data(), bytes.size());
 
   return retval;
 }
 
 bluetooth::Uuid generateArbitraryUuid(FuzzedDataProvider* fdp) {
-  std::vector<uint8_t> bytes_vect =
-      fdp->ConsumeBytes<uint8_t>(bluetooth::Uuid::kNumBytes128);
+  std::vector<uint8_t> bytes_vect = fdp->ConsumeBytes<uint8_t>(bluetooth::Uuid::kNumBytes128);
   // We need it to be the correct size regardless of if fdp ran out of bytes
   while (bytes_vect.size() < bluetooth::Uuid::kNumBytes128) {
     bytes_vect.push_back('\0');

@@ -1,12 +1,5 @@
 package: "com.android.bluetooth.flags"
-container: "com.android.btservices"
-
-flag {
-    name: "enable_hap_by_default"
-    namespace: "bluetooth"
-    description: "On device that support HAP, enable it by default and disable ASHA"
-    bug: "345826775"
-}
+container: "com.android.bt"
 
 flag {
     name: "settings_can_control_hap_preset"
@@ -14,4 +7,24 @@ flag {
     namespace: "bluetooth"
     description: "Allow user to control the preset of hearing aid devices"
     bug: "306236481"
+}
+
+flag {
+    name: "synchronize_preset_can_timeout"
+    namespace: "bluetooth"
+    description: "Once a group preset operation timeout, we should be able to recover"
+    bug: "422249143"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "hap_safely_erase_pending_operation_timeout"
+    namespace: "bluetooth"
+    description: "Fixes erasing pending operation timeout"
+    bug: "437279372"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
 }

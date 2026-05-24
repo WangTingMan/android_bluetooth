@@ -32,12 +32,12 @@
 
 package com.android.bluetooth.opp;
 
-import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.content.Context;
 import android.util.Log;
 
 import com.android.bluetooth.BluetoothMethodProxy;
+import com.android.bluetooth.btservice.AdapterService;
 
 import java.util.ArrayList;
 
@@ -59,7 +59,7 @@ import java.util.ArrayList;
  */
 
 public class BluetoothOppBatch {
-    private static final String TAG = "BtOppBatch";
+    private static final String TAG = BluetoothOppBatch.class.getSimpleName();
 
     public int mId;
     public int mStatus;
@@ -93,19 +93,13 @@ public class BluetoothOppBatch {
         void onBatchCanceled();
     }
 
-    /**
-     * A batch is always created with at least one ShareInfo
-     *
-     * @param context, Context
-     * @param info, BluetoothOppShareInfo
-     */
-    public BluetoothOppBatch(Context context, BluetoothOppShareInfo info) {
-        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
-        mContext = context;
-        mShares = new ArrayList();
+    /** A batch is always created with at least one ShareInfo */
+    BluetoothOppBatch(AdapterService adapterService, BluetoothOppShareInfo info) {
+        mContext = adapterService;
+        mShares = new ArrayList<>();
         mTimestamp = info.mTimestamp;
         mDirection = info.mDirection;
-        mDestination = adapter.getRemoteDevice(info.mDestination);
+        mDestination = adapterService.getRemoteDevice(info.mDestination);
         mStatus = Constants.BATCH_STATUS_PENDING;
         mShares.add(info);
 

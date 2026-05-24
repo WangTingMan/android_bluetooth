@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,33 +19,20 @@
 #error "sysprops_module is not supposed to be used on Android"
 #endif
 
-#include "module.h"
+#include <string>
 
 namespace bluetooth {
 namespace sysprops {
 
-class SyspropsModule : public bluetooth::Module {
- public:
+class SyspropsModule {
+public:
   SyspropsModule();
   SyspropsModule(const SyspropsModule&) = delete;
   SyspropsModule& operator=(const SyspropsModule&) = delete;
 
-  ~SyspropsModule();
+  ~SyspropsModule() = default;
 
-  static const ModuleFactory Factory;
-
- protected:
-  void ListDependencies(ModuleList* list) const override;
-
-  void Start() override;
-
-  void Stop() override;
-
-  std::string ToString() const override;
-
- private:
-  struct impl;
-  std::unique_ptr<impl> pimpl_;
+private:
   void parse_config(std::string file_path);
 };
 

@@ -16,15 +16,15 @@
 
 #pragma once
 
-#include <base/strings/stringprintf.h>
 #include <bluetooth/log.h>
+#include <bluetooth/types/address.h>
 
 #include <string>
+#include <variant>
 
 #include "bta/include/bta_api.h"
 #include "macros.h"
 #include "stack/btm/neighbor_inquiry.h"
-#include "types/raw_address.h"
 
 /* DM search events */
 typedef enum : uint16_t {
@@ -57,8 +57,7 @@ typedef struct {
   tHCI_STATUS hci_status;
 } tBTA_DM_REMOTE_NAME;
 
-using tBTA_DM_SEARCH_MSG =
-    std::variant<tBTA_DM_API_SEARCH, tBTA_DM_REMOTE_NAME>;
+using tBTA_DM_SEARCH_MSG = std::variant<tBTA_DM_API_SEARCH, tBTA_DM_REMOTE_NAME>;
 
 /* DM search state */
 typedef enum {
@@ -91,11 +90,9 @@ typedef struct {
   tBTA_DM_SEARCH_CBACK* p_csis_scan_cback;
 } tBTA_DM_SEARCH_CB;
 
-namespace fmt {
+namespace std {
 template <>
-struct formatter<tBTA_DM_DEV_SEARCH_EVT>
-    : enum_formatter<tBTA_DM_DEV_SEARCH_EVT> {};
+struct formatter<tBTA_DM_DEV_SEARCH_EVT> : enum_formatter<tBTA_DM_DEV_SEARCH_EVT> {};
 template <>
-struct formatter<tBTA_DM_DEVICE_SEARCH_STATE>
-    : enum_formatter<tBTA_DM_DEVICE_SEARCH_STATE> {};
-}  // namespace fmt
+struct formatter<tBTA_DM_DEVICE_SEARCH_STATE> : enum_formatter<tBTA_DM_DEVICE_SEARCH_STATE> {};
+}  // namespace std

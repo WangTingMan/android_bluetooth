@@ -16,8 +16,6 @@
 
 package com.android.bluetooth.mapclient;
 
-import android.util.Log;
-
 import com.android.bluetooth.ObexAppParameters;
 import com.android.obex.ClientSession;
 import com.android.obex.HeaderSet;
@@ -25,15 +23,16 @@ import com.android.obex.HeaderSet;
 import java.io.IOException;
 
 final class RequestSetMessageStatus extends Request {
+    private static final String TAG = RequestSetMessageStatus.class.getSimpleName();
+
     public enum StatusIndicator {
         READ,
         DELETED
     }
 
-    private static final String TAG = "RequestSetMessageStatus";
     private static final String TYPE = "x-bt/messageStatus";
-    private static StatusIndicator mStatusInd;
-    private static byte mValue;
+    private final StatusIndicator mStatusInd;
+    private final byte mValue;
 
     public RequestSetMessageStatus(String handle, StatusIndicator statusInd, byte value) {
         mHeaderSet.setHeader(HeaderSet.TYPE, TYPE);
@@ -60,12 +59,7 @@ final class RequestSetMessageStatus extends Request {
     }
 
     public String getHandle() {
-        try {
-            return (String) mHeaderSet.getHeader(HeaderSet.NAME);
-        } catch (IOException e) {
-            Log.e(TAG, "Unexpected exception while reading handle!", e);
-            return null;
-        }
+        return (String) mHeaderSet.getHeader(HeaderSet.NAME);
     }
 
     @Override

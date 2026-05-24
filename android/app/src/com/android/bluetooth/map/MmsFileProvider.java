@@ -12,6 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.map;
 
 import android.bluetooth.BluetoothProfile;
@@ -26,6 +27,7 @@ import android.provider.Telephony.Mms;
 import android.util.Log;
 
 import com.android.bluetooth.BluetoothStatsLog;
+import com.android.bluetooth.Utils;
 import com.android.bluetooth.content_profiles.ContentProfileErrorReportUtils;
 
 import com.google.android.mms.MmsException;
@@ -43,8 +45,9 @@ import java.io.IOException;
  */
 // Next tag value for ContentProfileErrorReportUtils.report(): 5
 public class MmsFileProvider extends ContentProvider {
-    static final String TAG = "BluetoothMmsFileProvider";
-    private PipeWriter mPipeWriter = new PipeWriter();
+    private static final String TAG = Utils.BT_PREFIX + MmsFileProvider.class.getSimpleName();
+
+    private final PipeWriter mPipeWriter = new PipeWriter();
 
     /*package*/
     static final Uri CONTENT_URI = Uri.parse("content://com.android.bluetooth.map.MmsFileProvider");

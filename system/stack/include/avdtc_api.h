@@ -27,10 +27,11 @@
 #ifndef AVDT_CAPI_H
 #define AVDT_CAPI_H
 
+#include <bluetooth/types/address.h>
+
 #include <cstdint>
 
 #include "avdt_api.h"
-#include "types/raw_address.h"
 
 /* start AVDTC events here to distinguish from AVDT events */
 #define AVDTC_EVT_BEGIN 0x80
@@ -72,8 +73,8 @@ typedef union {
   tAVDT_MULTI suspend_ind;
 } tAVDTC_CTRL;
 
-typedef void tAVDTC_CTRL_CBACK(uint8_t handle, const RawAddress& bd_addr,
-                               uint8_t event, tAVDTC_CTRL* p_data);
+typedef void tAVDTC_CTRL_CBACK(uint8_t handle, const RawAddress& bd_addr, uint8_t event,
+                               tAVDTC_CTRL* p_data);
 
 /*******************************************************************************
  *
@@ -97,8 +98,8 @@ void AVDTC_Init(tAVDTC_CTRL_CBACK* p_cback);
  * Returns          void
  *
  ******************************************************************************/
-void AVDTC_DiscoverRsp(const RawAddress& bd_addr, uint8_t label,
-                       tAVDT_SEP_INFO sep_info[], uint8_t num_seps);
+void AVDTC_DiscoverRsp(const RawAddress& bd_addr, uint8_t label, tAVDT_SEP_INFO sep_info[],
+                       uint8_t num_seps);
 
 /*******************************************************************************
  *
@@ -109,8 +110,7 @@ void AVDTC_DiscoverRsp(const RawAddress& bd_addr, uint8_t label,
  * Returns          void
  *
  ******************************************************************************/
-void AVDTC_GetCapRsp(const RawAddress& bd_addr, uint8_t label,
-                     AvdtpSepConfig* p_cap);
+void AVDTC_GetCapRsp(const RawAddress& bd_addr, uint8_t label, AvdtpSepConfig* p_cap);
 
 /*******************************************************************************
  *
@@ -121,8 +121,7 @@ void AVDTC_GetCapRsp(const RawAddress& bd_addr, uint8_t label,
  * Returns          void
  *
  ******************************************************************************/
-void AVDTC_GetAllCapRsp(const RawAddress& bd_addr, uint8_t label,
-                        AvdtpSepConfig* p_cap);
+void AVDTC_GetAllCapRsp(const RawAddress& bd_addr, uint8_t label, AvdtpSepConfig* p_cap);
 
 /*******************************************************************************
  *
@@ -232,7 +231,7 @@ void AVDTC_AbortRsp(uint8_t handle, uint8_t label);
  * Returns          void
  *
  ******************************************************************************/
-void AVDTC_Rej(uint8_t handle, const RawAddress& bd_addr, uint8_t cmd,
-               uint8_t label, uint8_t err_code, uint8_t err_param);
+void AVDTC_Rej(uint8_t handle, const RawAddress& bd_addr, uint8_t cmd, uint8_t label,
+               uint8_t err_code, uint8_t err_param);
 
 #endif /* AVDT_CAPI_H */

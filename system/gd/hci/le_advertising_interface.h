@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,8 @@ namespace bluetooth {
 namespace hci {
 
 constexpr hci::SubeventCode LeAdvertisingEvents[] = {
-    hci::SubeventCode::SCAN_REQUEST_RECEIVED,
-    hci::SubeventCode::ADVERTISING_SET_TERMINATED,
+        hci::SubeventCode::SCAN_REQUEST_RECEIVED,
+        hci::SubeventCode::ADVERTISING_SET_TERMINATED,
 };
 
 typedef CommandInterface<LeAdvertisingCommandBuilder> LeAdvertisingInterface;

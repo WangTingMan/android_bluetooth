@@ -17,20 +17,19 @@
 
 #pragma once
 
+#include <bluetooth/types/address.h>
+
 #include "stack/btm/security_device_record.h"
-#include "types/raw_address.h"
 
 void btm_ble_resolving_list_init(uint8_t max_irk_list_sz);
 
 void btm_ble_refresh_peer_resolvable_private_addr(const RawAddress& pseudo_bda,
-                                                  const RawAddress& rra,
-                                                  tBLE_RAND_ADDR_TYPE type);
+                                                  const RawAddress& rra, tBLE_RAND_ADDR_TYPE type);
 bool btm_ble_read_resolving_list_entry(tBTM_SEC_DEV_REC* p_dev_rec);
 
-bool btm_ble_addr_resolvable(const RawAddress& rpa,
-                             tBTM_SEC_DEV_REC* p_dev_rec);
+bool btm_ble_addr_resolvable(const RawAddress& rpa, tBTM_SEC_DEV_REC* p_dev_rec);
 
 void btm_ble_resolving_list_load_dev(tBTM_SEC_DEV_REC& p_dev_rec);
 void btm_ble_resolving_list_remove_dev(tBTM_SEC_DEV_REC* p_dev_rec);
 
-uint64_t btm_get_next_private_addrress_interval_ms();
+uint64_t btm_get_next_private_address_interval_ms();

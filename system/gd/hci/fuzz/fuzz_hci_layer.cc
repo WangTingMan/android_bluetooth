@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,69 +28,61 @@ using bluetooth::fuzz::GetArbitraryBytes;
 using bluetooth::fuzz::InvokeIfValid;
 
 hci::SecurityInterface* FuzzHciLayer::GetSecurityInterface(
-    ContextualCallback<void(hci::EventView)> /* event_handler */) {
+        ContextualCallback<void(hci::EventView)> /* event_handler */) {
   return &security_interface_;
 }
 
 hci::LeSecurityInterface* FuzzHciLayer::GetLeSecurityInterface(
-    ContextualCallback<void(hci::LeMetaEventView)> /* event_handler */) {
+        ContextualCallback<void(hci::LeMetaEventView)> /* event_handler */) {
   return &le_security_interface_;
 }
 
 hci::AclConnectionInterface* FuzzHciLayer::GetAclConnectionInterface(
-    ContextualCallback<void(hci::EventView)> /* event_handler */,
-    ContextualCallback<void(uint16_t, hci::ErrorCode)> /* on_disconnect */,
-    ContextualCallback<void(Address, ClassOfDevice)> /* on_connection_request */,
-    ContextualCallback<void(
-        hci::ErrorCode,
-        uint16_t,
-        uint8_t version,
-        uint16_t manufacturer_name,
-        uint16_t sub_version)>
-    /* on_read_remote_version */) {
+        ContextualCallback<void(hci::EventView)> /* event_handler */,
+        ContextualCallback<void(uint16_t, hci::ErrorCode)> /* on_disconnect */,
+        ContextualCallback<void(Address, ClassOfDevice)> /* on_connection_request */,
+        ContextualCallback<void(hci::ErrorCode, uint16_t, uint8_t version,
+                                uint16_t manufacturer_name, uint16_t sub_version)>
+        /* on_read_remote_version */) {
   return &acl_connection_interface_;
 }
 
 hci::LeAclConnectionInterface* FuzzHciLayer::GetLeAclConnectionInterface(
-    ContextualCallback<void(hci::LeMetaEventView)> /* event_handler */,
-    ContextualCallback<void(uint16_t, hci::ErrorCode)> /* on_disconnect */,
-    ContextualCallback<void(
-        hci::ErrorCode,
-        uint16_t,
-        uint8_t version,
-        uint16_t manufacturer_name,
-        uint16_t sub_version)>
-    /* on_read_remote_version */) {
+        ContextualCallback<void(hci::LeMetaEventView)> /* event_handler */,
+        ContextualCallback<void(uint16_t, hci::ErrorCode)> /* on_disconnect */,
+        ContextualCallback<void(hci::ErrorCode, uint16_t, uint8_t version,
+                                uint16_t manufacturer_name, uint16_t sub_version)>
+        /* on_read_remote_version */) {
   return &le_acl_connection_interface_;
 }
 
 hci::LeAdvertisingInterface* FuzzHciLayer::GetLeAdvertisingInterface(
-    ContextualCallback<void(hci::LeMetaEventView)> /* event_handler */) {
+        ContextualCallback<void(hci::LeMetaEventView)> /* event_handler */) {
   return &le_advertising_interface_;
 }
 
 hci::LeScanningInterface* FuzzHciLayer::GetLeScanningInterface(
-    ContextualCallback<void(hci::LeMetaEventView)> /* event_handler */) {
+        ContextualCallback<void(hci::LeMetaEventView)> /* event_handler */) {
   return &le_scanning_interface_;
 }
 
 hci::LeIsoInterface* FuzzHciLayer::GetLeIsoInterface(
-    ContextualCallback<void(hci::LeMetaEventView)> /* event_handler */) {
+        ContextualCallback<void(hci::LeMetaEventView)> /* event_handler */) {
   return &le_iso_interface_;
 }
 
 hci::DistanceMeasurementInterface* FuzzHciLayer::GetDistanceMeasurementInterface(
-    ContextualCallback<void(hci::LeMetaEventView)> /* event_handler */) {
+        ContextualCallback<void(hci::LeMetaEventView)> /* event_handler */) {
   return &distance_measurement_interface_;
 }
 
-void FuzzHciLayer::Start() {
-  acl_dev_null_ = new os::fuzz::DevNullQueue<AclBuilder>(acl_queue_.GetDownEnd(), GetHandler());
+FuzzHciLayer::FuzzHciLayer(os::Handler* handler) : HciLayer(handler) {
+  acl_dev_null_ = new os::fuzz::DevNullQueue<AclBuilder>(acl_queue_.GetDownEnd(), handler);
   acl_dev_null_->Start();
-  acl_inject_ = new os::fuzz::FuzzInjectQueue<AclView>(acl_queue_.GetDownEnd(), GetHandler());
+  acl_inject_ = new os::fuzz::FuzzInjectQueue<AclView>(acl_queue_.GetDownEnd(), handler);
 }
 
-void FuzzHciLayer::Stop() {
+FuzzHciLayer::~FuzzHciLayer() {
   acl_dev_null_->Stop();
   delete acl_dev_null_;
   delete acl_inject_;
@@ -162,7 +154,8 @@ void FuzzHciLayer::injectEvent(FuzzedDataProvider& fdp) {
 }
 
 void FuzzHciLayer::injectLeEvent(FuzzedDataProvider& fdp) {
-  auto handler_pair = le_event_handlers_.find(static_cast<SubeventCode>(fdp.ConsumeIntegral<uint8_t>()));
+  auto handler_pair =
+          le_event_handlers_.find(static_cast<SubeventCode>(fdp.ConsumeIntegral<uint8_t>()));
   if (handler_pair != le_event_handlers_.end()) {
     InvokeIfValid<LeMetaEventView>(handler_pair->second, GetArbitraryBytes(&fdp));
   }
@@ -182,9 +175,8 @@ void FuzzHciLayer::injectAclEvent(std::vector<uint8_t> data) {
 
 void FuzzHciLayer::injectAclDisconnect(FuzzedDataProvider& fdp) {
   if (acl_on_disconnect_) {
-    acl_on_disconnect_(
-        fdp.ConsumeIntegral<uint16_t>(),
-        static_cast<hci::ErrorCode>(fdp.ConsumeIntegral<uint8_t>()));
+    acl_on_disconnect_(fdp.ConsumeIntegral<uint16_t>(),
+                       static_cast<hci::ErrorCode>(fdp.ConsumeIntegral<uint8_t>()));
   }
 }
 
@@ -194,9 +186,8 @@ void FuzzHciLayer::injectLeAclEvent(std::vector<uint8_t> data) {
 
 void FuzzHciLayer::injectLeAclDisconnect(FuzzedDataProvider& fdp) {
   if (le_acl_on_disconnect_) {
-    le_acl_on_disconnect_(
-        fdp.ConsumeIntegral<uint16_t>(),
-        static_cast<hci::ErrorCode>(fdp.ConsumeIntegral<uint8_t>()));
+    le_acl_on_disconnect_(fdp.ConsumeIntegral<uint16_t>(),
+                          static_cast<hci::ErrorCode>(fdp.ConsumeIntegral<uint8_t>()));
   }
 }
 
@@ -211,8 +202,6 @@ void FuzzHciLayer::injectLeScanningEvent(std::vector<uint8_t> data) {
 void FuzzHciLayer::injectLeIsoEvent(std::vector<uint8_t> data) {
   InvokeIfValid<LeMetaEventView>(le_iso_event_handler_, data);
 }
-
-const ModuleFactory FuzzHciLayer::Factory = ModuleFactory([]() { return new FuzzHciLayer(); });
 
 }  // namespace fuzz
 }  // namespace hci

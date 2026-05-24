@@ -82,14 +82,14 @@ public class AvrcpCoverArtStorage {
     public Uri addImage(BluetoothDevice device, String imageUuid, Bitmap image) {
         debug("Storing image '" + imageUuid + "' from device " + device);
         if (device == null || imageUuid == null || "".equals(imageUuid) || image == null) {
-            debug("Cannot store image. Improper aruguments");
+            debug("Cannot store image. Improper arguments");
             return null;
         }
 
         // A Thread safe way of creating a new UUID->Image set for a device. The putIfAbsent()
         // function will return the value of the key if it wasn't absent. If it returns null, then
         // there was no value there and we are to assume the reference we passed in was added.
-        Map<String, Bitmap> newImageSet = new ConcurrentHashMap<String, Bitmap>(1);
+        Map<String, Bitmap> newImageSet = new ConcurrentHashMap<>(1);
         Map<String, Bitmap> images = mDeviceImages.putIfAbsent(device, newImageSet);
         if (images == null) {
             newImageSet.put(imageUuid, image);
@@ -145,19 +145,19 @@ public class AvrcpCoverArtStorage {
 
     @Override
     public String toString() {
-        String s = "CoverArtStorage:\n";
+        StringBuilder sb = new StringBuilder("CoverArtStorage:\n");
         for (BluetoothDevice device : mDeviceImages.keySet()) {
             Map<String, Bitmap> images = mDeviceImages.get(device);
-            s += "  " + device + " (" + images.size() + "):";
+            sb.append("  ").append(device).append(" (").append(images.size()).append("):");
             for (String uuid : images.keySet()) {
-                s += "\n    " + uuid;
+                sb.append("\n    ").append(uuid);
             }
-            s += "\n";
+            sb.append("\n");
         }
-        return s;
+        return sb.toString();
     }
 
-    private void debug(String msg) {
+    private static void debug(String msg) {
         Log.d(TAG, msg);
     }
 }

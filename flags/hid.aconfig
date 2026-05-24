@@ -1,12 +1,5 @@
 package: "com.android.bluetooth.flags"
-container: "com.android.btservices"
-
-flag {
-    name: "break_uhid_polling_early"
-    namespace: "bluetooth"
-    description: "Break from UHID polling early if HID host disconnects"
-    bug: "319846147"
-}
+container: "com.android.bt"
 
 flag {
     name: "allow_switching_hid_and_hogp"
@@ -17,48 +10,111 @@ flag {
 }
 
 flag {
-    name: "prevent_hogp_reconnect_when_connected"
+    name: "early_incoming_hid_connection"
     namespace: "bluetooth"
-    description: "Do not request GATT connection while the HOGP is already connected"
-    bug: "329720661"
+    description: "Allow early incoming HID connection"
+    bug: "398105207"
     metadata {
         purpose: PURPOSE_BUGFIX
     }
 }
 
 flag {
-    name: "save_initial_hid_connection_policy"
+    name: "hh_state_update_race_fix"
     namespace: "bluetooth"
-    description: "Save HID connection policy on initial successful connection"
-    bug: "335904609"
+    description: "Fix stuck in connecting state due to race when updating state"
+    bug: "403420458"
     metadata {
         purpose: PURPOSE_BUGFIX
     }
 }
 
 flag {
-    name: "android_headtracker_service"
+    name: "simpler_hid_connection_policy"
     namespace: "bluetooth"
-    description: "Support headtracking through Android Headtracker Service"
-    bug: "335708774"
+    description: "Simplify native HID host connection policy enforcement"
+    bug: "404590499"
     metadata {
         purpose: PURPOSE_BUGFIX
     }
 }
 
 flag {
-    name: "suppress_hid_rejection_broadcast"
+    name: "hogp_encryption_collision"
     namespace: "bluetooth"
-    description: "Don't generate state change event when an incoming HID connection is rejected"
-    bug: "339018102"
+    description: "HOGP host may not be able to proceed with connection if the link is getting encrypted"
+    bug: "405437978"
     metadata {
         purpose: PURPOSE_BUGFIX
     }
 }
 
 flag {
-    name: "hid_report_queuing"
+    name: "reconnect_on_hogp_connection_failure"
     namespace: "bluetooth"
-    description: "Queue incoming HID reports if UHID is not ready"
-    bug: "345498287"
+    description: "Put the added HOGP device in the background connection list if the connection attempt failed"
+    bug: "406399172"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "wait_hid_disconnect_before_marking_unused"
+    namespace: "bluetooth"
+    description: "Mark device unused only after it's properly disconnected"
+    bug: "412876005"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "hogp_direct_connection_upgrade"
+    namespace: "bluetooth"
+    description: "Allow background connection requests to be upgraded to direct connections"
+    bug: "430179438"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "reset_state_when_removing_non_connected_hid_device"
+    namespace: "bluetooth"
+    description: "When removing a not-yet-connected HID device, set conn_state to UNUSED and CID to 0"
+    bug: "441425948"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "hidh_close_in_jni_thread"
+    namespace: "bluetooth"
+    description: "Handle incoming HID connection timeout in JNI thread"
+    bug: "441661424"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "hidd_handle_set_protocol_before_interrupt_connected"
+    namespace: "bluetooth"
+    description: "Handle incoming SET_PROTOCOL command even when the host hasn't established the interrupt channel"
+    bug: "442379143"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "hid_connection_timeout_in_jni_thread"
+    namespace: "bluetooth"
+    description: "Handle incoming HID connection timeout in JNI thread"
+    bug: "440091360"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
 }

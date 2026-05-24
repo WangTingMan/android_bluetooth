@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,11 @@
 #pragma once
 
 #include "hci_hal.h"
-#include "module.h"
 
 namespace bluetooth::hal {
 
 class ReadClockHandler {
- public:
+public:
   virtual ~ReadClockHandler() = default;
 
   /// Report a measurement of the BT clock.
@@ -32,25 +31,14 @@ class ReadClockHandler {
   virtual void OnEvent(uint32_t timestamp, uint32_t bt_clock) = 0;
 };
 
-class LinkClocker : public ::bluetooth::Module {
- public:
-  static const ModuleFactory Factory;
-
+class LinkClocker {
+public:
+  LinkClocker();
+  ~LinkClocker();
   void OnHciEvent(const HciPacket& packet);
 
   static void Register(ReadClockHandler*);
   static void Unregister();
-
- protected:
-  LinkClocker() = default;
-
-  void ListDependencies(ModuleList*) const override {}
-  void Start() override {}
-  void Stop() override {}
-
-  std::string ToString() const override {
-    return std::string("LinkClocker");
-  }
 };
 
 }  // namespace bluetooth::hal

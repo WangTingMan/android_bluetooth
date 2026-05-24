@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ namespace fuzz {
 // Drops stuff you send it, and banishes it into the void.
 template <typename T>
 class DevNullQueue {
- public:
+public:
   DevNullQueue(IQueueDequeue<T>* queue, Handler* handler) : queue_(queue), handler_(handler) {}
   ~DevNullQueue() {}
 
@@ -33,15 +33,11 @@ class DevNullQueue {
     queue_->RegisterDequeue(handler_, common::Bind(&DevNullQueue::Dump, common::Unretained(this)));
   }
 
-  void Stop() {
-    queue_->UnregisterDequeue();
-  }
+  void Stop() { queue_->UnregisterDequeue(); }
 
-  void Dump() {
-    queue_->TryDequeue();
-  }
+  void Dump() { queue_->TryDequeue(); }
 
- private:
+private:
   IQueueDequeue<T>* queue_;
   Handler* handler_;
 };

@@ -17,23 +17,23 @@
 
 #pragma once
 
+#include <bluetooth/types/address.h>
+
 #include <algorithm>
 #include <cstdint>
+#include <string>
 #include <unordered_set>
 #include <vector>
 
 #include "bta/include/bta_gatt_api.h"
 #include "bta/vc/types.h"
-#include "common/interfaces/ILoggable.h"
-#include "os/logging/log_adapter.h"
-#include "types/raw_address.h"
 
 namespace bluetooth {
 namespace vc {
 namespace internal {
 
-class VolumeControlDevice : public bluetooth::common::IRedactableLoggable {
- public:
+class VolumeControlDevice {
+public:
   RawAddress address;
 
   /* We are making active attempt to connect to this device */
@@ -45,8 +45,10 @@ class VolumeControlDevice : public bluetooth::common::IRedactableLoggable {
   uint8_t change_counter;
   bool mute;
   uint8_t flags;
+  int group_id;
 
-  uint16_t connection_id;
+  tCONN_ID connection_id;
+  uint16_t mtu_ = GATT_DEF_BLE_MTU_SIZE;
 
   /* Volume Control Service */
   uint16_t volume_state_handle;
@@ -55,6 +57,7 @@ class VolumeControlDevice : public bluetooth::common::IRedactableLoggable {
   uint16_t volume_flags_handle;
   uint16_t volume_flags_ccc_handle;
 
+  VolumeAudioInputs audio_inputs;
   VolumeOffsets audio_offsets;
 
   /* Set when device successfully reads server status and registers for
@@ -69,46 +72,44 @@ class VolumeControlDevice : public bluetooth::common::IRedactableLoggable {
         change_counter(0),
         mute(false),
         flags(0),
+        group_id(bluetooth::groups::kGroupUnknown),
         connection_id(GATT_INVALID_CONN_ID),
         volume_state_handle(0),
         volume_state_ccc_handle(0),
         volume_control_point_handle(0),
         volume_flags_handle(0),
         volume_flags_ccc_handle(0),
-        device_ready(false) {}
+        device_ready(false),
+        requests_initiated(false) {}
 
   ~VolumeControlDevice() = default;
 
-  // TODO: remove
-  inline std::string ToString() { return address.ToString(); }
-
-  std::string ToStringForLogging() const override {
-    return address.ToStringForLogging();
-  }
-
-  std::string ToRedactedStringForLogging() const override {
-    return address.ToRedactedStringForLogging();
-  }
+  std::string ToRedactedStringForLogging() const { return address.ToRedactedStringForLogging(); }
 
   void DebugDump(int fd) {
     std::stringstream stream;
-    stream << "   == device address: " << ADDRESS_TO_LOGGABLE_STR(address)
-           << " == \n";
+    stream << "   == device address: " << address.ToRedactedStringForLogging() << " == \n";
 
-    if (connection_id == GATT_INVALID_CONN_ID)
+    if (connection_id == GATT_INVALID_CONN_ID) {
       stream << "    Not connected\n";
-    else
-      stream << "    Connected. Conn_id = " << connection_id << "\n";
+    } else {
+      stream << "    Connected. Conn_id = " << static_cast<int>(connection_id) << "\n";
+    }
 
     stream << "    volume: " << +volume << "\n"
            << "    mute: " << +mute << "\n"
+           << "    change_counter: " << +change_counter << "\n"
            << "    flags: " << +flags << "\n"
-           << "    device read: " << device_ready << "\n"
+           << "    device ready: " << device_ready << "\n"
+           << "    group_id: " << group_id << "\n"
            << "    connecting_actively: " << connecting_actively << "\n"
-           << "    change_counter: " << +change_counter << "\n";
+           << "    is encrypted: " << IsEncryptionEnabled() << "\n"
+           << "    GATT operations initiated: " << requests_initiated << "\n"
+           << "    GATT operations pending: " << handles_pending.size() << "\n";
 
     dprintf(fd, "%s", stream.str().c_str());
     audio_offsets.Dump(fd);
+    audio_inputs.Dump(fd);
   }
 
   bool IsConnected() { return connection_id != GATT_INVALID_CONN_ID; }
@@ -123,19 +124,25 @@ class VolumeControlDevice : public bluetooth::common::IRedactableLoggable {
 
   bool HasHandles(void) { return GATT_HANDLE_IS_VALID(volume_state_handle); }
 
-  void ControlPointOperation(uint8_t opcode, const std::vector<uint8_t>* arg,
-                             GATT_WRITE_OP_CB cb, void* cb_data);
-  void GetExtAudioOutVolumeOffset(uint8_t ext_output_id, GATT_READ_OP_CB cb,
-                                  void* cb_data);
+  void ControlPointOperation(uint8_t opcode, const std::vector<uint8_t>* arg, GATT_WRITE_OP_CB cb,
+                             void* cb_data);
+  void GetExtAudioOutVolumeOffset(uint8_t ext_output_id, GATT_READ_OP_CB cb, void* cb_data);
   void SetExtAudioOutLocation(uint8_t ext_output_id, uint32_t location);
-  void GetExtAudioOutLocation(uint8_t ext_output_id, GATT_READ_OP_CB cb,
-                              void* cb_data);
-  void GetExtAudioOutDescription(uint8_t ext_output_id, GATT_READ_OP_CB cb,
-                                 void* cb_data);
-  void SetExtAudioOutDescription(uint8_t ext_output_id, std::string& descr);
+  void GetExtAudioOutLocation(uint8_t ext_output_id, GATT_READ_OP_CB cb, void* cb_data);
+  void GetExtAudioOutDescription(uint8_t ext_output_id, GATT_READ_OP_CB cb, void* cb_data);
+  void SetExtAudioOutDescription(uint8_t ext_output_id, const std::string& descr);
   void ExtAudioOutControlPointOperation(uint8_t ext_output_id, uint8_t opcode,
-                                        const std::vector<uint8_t>* arg,
-                                        GATT_WRITE_OP_CB cb, void* cb_data);
+                                        const std::vector<uint8_t>* arg, GATT_WRITE_OP_CB cb,
+                                        void* cb_data);
+  void GetExtAudioInState(uint8_t ext_input_id, GATT_READ_OP_CB cb, void* cb_data);
+  void GetExtAudioInStatus(uint8_t ext_input_id, GATT_READ_OP_CB cb, void* cb_data);
+  void GetExtAudioInType(uint8_t ext_input_id, GATT_READ_OP_CB cb, void* cb_data);
+  void GetExtAudioInGainProps(uint8_t ext_input_id, GATT_READ_OP_CB cb, void* cb_data);
+  void GetExtAudioInDescription(uint8_t ext_input_id, GATT_READ_OP_CB cb, void* cb_data);
+  void SetExtAudioInDescription(uint8_t ext_input_id, const std::string& descr);
+  bool ExtAudioInControlPointOperation(uint8_t ext_input_id, uint8_t opcode,
+                                       const std::vector<uint8_t>* arg, GATT_WRITE_OP_CB cb,
+                                       void* cb_data);
   bool IsEncryptionEnabled();
 
   bool EnableEncryption();
@@ -143,30 +150,35 @@ class VolumeControlDevice : public bluetooth::common::IRedactableLoggable {
   bool EnqueueInitialRequests(tGATT_IF gatt_if, GATT_READ_OP_CB chrc_read_cb,
                               GATT_WRITE_OP_CB cccd_write_cb);
   void EnqueueRemainingRequests(tGATT_IF gatt_if, GATT_READ_OP_CB chrc_read_cb,
+                                GATT_READ_MULTI_OP_CB chrc_multi_read,
                                 GATT_WRITE_OP_CB cccd_write_cb);
+  bool VerifyReady();
   bool VerifyReady(uint16_t handle);
   bool IsReady() { return device_ready; }
 
- private:
+private:
   /*
-   * This is used to track the pending GATT operation handles. Once the list is
-   * empty the device is assumed ready and connected. We are doing it because we
-   * want to make sure all the required characteristics and descritors are
-   * available on server side.
+   * This is used to track the pending GATT operation handles. Once the operations are requested
+   * and list is empty the device is assumed ready and connected. We are doing it because we want
+   * to make sure all the required characteristics and descriptors are available on server side.
    */
+  bool requests_initiated;
   std::unordered_set<uint16_t> handles_pending;
 
   uint16_t find_ccc_handle(uint16_t chrc_handle);
   bool set_volume_control_service_handles(const gatt::Service& service);
   void set_volume_offset_control_service_handles(const gatt::Service& service);
-  bool subscribe_for_notifications(tGATT_IF gatt_if, uint16_t handle,
-                                   uint16_t ccc_handle, GATT_WRITE_OP_CB cb);
+  void set_audio_input_control_service_handles(const gatt::Service& service);
+  bool subscribe_for_notifications(tGATT_IF gatt_if, uint16_t handle, uint16_t ccc_handle,
+                                   GATT_WRITE_OP_CB cb);
 };
 
 class VolumeControlDevices {
- public:
+public:
   void Add(const RawAddress& address, bool connecting_actively) {
-    if (FindByAddress(address) != nullptr) return;
+    if (FindByAddress(address) != nullptr) {
+      return;
+    }
 
     devices_.emplace_back(address, connecting_actively);
   }
@@ -181,25 +193,44 @@ class VolumeControlDevices {
   }
 
   VolumeControlDevice* FindByAddress(const RawAddress& address) {
+    auto iter = std::find_if(
+            devices_.begin(), devices_.end(),
+            [&address](const VolumeControlDevice& device) { return device.address == address; });
+
+    return (iter == devices_.end()) ? nullptr : &(*iter);
+  }
+
+  VolumeControlDevice* FindByConnId(tCONN_ID connection_id) {
     auto iter = std::find_if(devices_.begin(), devices_.end(),
-                             [&address](const VolumeControlDevice& device) {
-                               return device.address == address;
+                             [&connection_id](const VolumeControlDevice& device) {
+                               return device.connection_id == connection_id;
                              });
 
     return (iter == devices_.end()) ? nullptr : &(*iter);
   }
 
-  VolumeControlDevice* FindByConnId(uint16_t connection_id) {
-    auto iter =
-        std::find_if(devices_.begin(), devices_.end(),
-                     [&connection_id](const VolumeControlDevice& device) {
-                       return device.connection_id == connection_id;
-                     });
+  std::vector<VolumeControlDevice*> getGroupDevices(int group_id) {
+    std::vector<VolumeControlDevice*> groupDevices;
+    std::for_each(devices_.begin(), devices_.end(),
+                  [&groupDevices, &group_id](VolumeControlDevice& device) {
+                    if (device.group_id == group_id) {
+                      groupDevices.push_back(&device);
+                    }
+                  });
 
-    return (iter == devices_.end()) ? nullptr : &(*iter);
+    return groupDevices;
   }
 
-  size_t Size() { return (devices_.size()); }
+  std::vector<RawAddress> getGroupDevicesAddresses(int group_id) {
+    std::vector<RawAddress> groupDevicesAddresses;
+    for (auto groupDevice : getGroupDevices(group_id)) {
+      groupDevicesAddresses.push_back(groupDevice->address);
+    }
+
+    return groupDevicesAddresses;
+  }
+
+  size_t Size() { return devices_.size(); }
 
   void Clear() { devices_.clear(); }
 
@@ -220,17 +251,17 @@ class VolumeControlDevices {
     }
   }
 
-  void ControlPointOperation(std::vector<RawAddress>& devices, uint8_t opcode,
-                             const std::vector<uint8_t>* arg,
-                             GATT_WRITE_OP_CB cb, void* cb_data) {
+  void ControlPointOperation(const std::vector<RawAddress>& devices, uint8_t opcode,
+                             const std::vector<uint8_t>* arg, GATT_WRITE_OP_CB cb, void* cb_data) {
     for (auto& addr : devices) {
       VolumeControlDevice* device = FindByAddress(addr);
-      if (device && device->IsConnected())
+      if (device && device->IsConnected()) {
         device->ControlPointOperation(opcode, arg, cb, cb_data);
+      }
     }
   }
 
- private:
+private:
   std::vector<VolumeControlDevice> devices_;
 };
 

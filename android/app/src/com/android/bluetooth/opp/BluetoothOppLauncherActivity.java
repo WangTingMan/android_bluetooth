@@ -34,6 +34,10 @@ package com.android.bluetooth.opp;
 
 import static android.view.WindowManager.LayoutParams.SYSTEM_FLAG_HIDE_NON_SYSTEM_OVERLAY_WINDOWS;
 
+import static java.util.function.Predicate.not;
+import static java.util.stream.Collectors.toList;
+
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.bluetooth.BluetoothDevicePicker;
 import android.bluetooth.BluetoothProfile;
@@ -41,8 +45,12 @@ import android.bluetooth.BluetoothProtoEnums;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ProviderInfo;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.util.Log;
 import android.util.Patterns;
@@ -52,7 +60,9 @@ import com.android.bluetooth.BluetoothMethodProxy;
 import com.android.bluetooth.BluetoothStatsLog;
 import com.android.bluetooth.R;
 import com.android.bluetooth.Utils;
+import com.android.bluetooth.btservice.MetricsLogger;
 import com.android.bluetooth.content_profiles.ContentProfileErrorReportUtils;
+import com.android.bluetooth.flags.Flags;
 import com.android.internal.annotations.VisibleForTesting;
 
 import java.io.File;
@@ -60,6 +70,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -70,7 +81,7 @@ import java.util.regex.Pattern;
  */
 // Next tag value for ContentProfileErrorReportUtils.report(): 11
 public class BluetoothOppLauncherActivity extends Activity {
-    private static final String TAG = "BluetoothOppLauncherActivity";
+    private static final String TAG = BluetoothOppLauncherActivity.class.getSimpleName();
 
     // Regex that matches characters that have special meaning in HTML. '<', '>', '&' and
     // multiple continuous spaces.
@@ -106,6 +117,8 @@ public class BluetoothOppLauncherActivity extends Activity {
                 return;
             }
 
+            reportOppMetrics(intent);
+
             /*
              * Other application is trying to share a file via Bluetooth,
              * probably Pictures, videos, or vCards. The Intent should contain
@@ -116,29 +129,31 @@ public class BluetoothOppLauncherActivity extends Activity {
                 final String type = intent.getType();
                 final Uri stream = (Uri) intent.getParcelableExtra(Intent.EXTRA_STREAM);
                 CharSequence extraText = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
-                // If we get ACTION_SEND intent with EXTRA_STREAM, we'll use the
-                // uri data;
-                // If we get ACTION_SEND intent without EXTRA_STREAM, but with
-                // EXTRA_TEXT, we will try send this TEXT out; Currently in
-                // Browser, share one link goes to this case;
+                // If we get ACTION_SEND intent with EXTRA_STREAM, we'll use the uri data;
+                // If we get ACTION_SEND intent without EXTRA_STREAM, but with EXTRA_TEXT, we will
+                // try send this TEXT out; Currently in Browser, share one link goes to this case;
                 if (stream != null && type != null) {
                     Log.v(TAG, "Get ACTION_SEND intent: Uri = " + stream + "; mimetype = " + type);
-                    // Save type/stream, will be used when adding transfer
-                    // session to DB.
-                    Thread t =
-                            new Thread(
-                                    new Runnable() {
-                                        @Override
-                                        public void run() {
-                                            sendFileInfo(
-                                                    type,
-                                                    stream.toString(),
-                                                    false /* isHandover */,
-                                                    true /*
-                                                         fromExternal */);
-                                        }
-                                    });
-                    t.start();
+                    if (Flags.oppCheckContentUriPermissions()) {
+                        if (!checkCallerAndSelfContentUriPermission(stream)) {
+                            finish();
+                            return;
+                        } else {
+                            Log.v(TAG, "Sender has permissions to access Uri = " + stream);
+                        }
+                    } else {
+                        Log.v(TAG, "Did not check sender permissions to Uri = " + stream);
+                    }
+                    // Save type/stream, will be used when adding transfer session to DB.
+                    new Thread(
+                                    () -> {
+                                        sendFileInfo(
+                                                type,
+                                                stream.toString(),
+                                                false /* isHandover */,
+                                                true /* fromExternal */);
+                                    })
+                            .start();
                     return;
                 } else if (extraText != null && type != null) {
                     Log.v(
@@ -151,19 +166,15 @@ public class BluetoothOppLauncherActivity extends Activity {
                             createFileForSharedContent(
                                     this.createCredentialProtectedStorageContext(), extraText);
                     if (fileUri != null) {
-                        Thread t =
-                                new Thread(
-                                        new Runnable() {
-                                            @Override
-                                            public void run() {
-                                                sendFileInfo(
-                                                        type,
-                                                        fileUri.toString(),
-                                                        false /* isHandover */,
-                                                        false /* fromExternal */);
-                                            }
-                                        });
-                        t.start();
+                        new Thread(
+                                        () -> {
+                                            sendFileInfo(
+                                                    type,
+                                                    fileUri.toString(),
+                                                    false /* isHandover */,
+                                                    false /* fromExternal */);
+                                        })
+                                .start();
                         return;
                     } else {
                         Log.w(TAG, "Error trying to do set text...File not created!");
@@ -190,6 +201,7 @@ public class BluetoothOppLauncherActivity extends Activity {
             } else if (action.equals(Intent.ACTION_SEND_MULTIPLE)) {
                 final String mimeType = intent.getType();
                 final ArrayList<Uri> uris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+                final List<Uri> permittedUris;
                 if (mimeType != null && uris != null) {
                     Log.v(
                             TAG,
@@ -197,37 +209,70 @@ public class BluetoothOppLauncherActivity extends Activity {
                                     + uris
                                     + "\n Type= "
                                     + mimeType);
-                    Thread t =
-                            new Thread(
-                                    new Runnable() {
-                                        @Override
-                                        public void run() {
-                                            try {
-                                                BluetoothOppManager.getInstance(
-                                                                BluetoothOppLauncherActivity.this)
-                                                        .saveSendingFileInfo(
-                                                                mimeType,
-                                                                uris,
-                                                                false /* isHandover */,
-                                                                true /* fromExternal */);
-                                                // Done getting file info..Launch device picker
-                                                // and finish this activity
-                                                launchDevicePicker();
-                                                finish();
-                                            } catch (IllegalArgumentException exception) {
-                                                ContentProfileErrorReportUtils.report(
-                                                        BluetoothProfile.OPP,
-                                                        BluetoothProtoEnums
-                                                                .BLUETOOTH_OPP_LAUNCHER_ACTIVITY,
-                                                        BluetoothStatsLog
-                                                                .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__EXCEPTION,
-                                                        3);
-                                                showToast(exception.getMessage());
-                                                finish();
+                    if (Flags.oppCheckContentUriPermissions()) {
+                        permittedUris =
+                                uris.stream()
+                                        .filter(this::checkCallerAndSelfContentUriPermission)
+                                        .collect(toList());
+                        if (permittedUris.isEmpty()) {
+                            Log.w(TAG, "Sender has no permissions to access any uris in " + uris);
+                            finish();
+                            return;
+                        } else if (!permittedUris.equals(uris)) {
+                            List<Uri> blockedUris =
+                                    uris.stream()
+                                            .filter(not(permittedUris::contains))
+                                            .collect(toList());
+                            Log.w(
+                                    TAG,
+                                    "Sender has partial permissions to uris. "
+                                            + "Permitted uris: "
+                                            + permittedUris
+                                            + ", "
+                                            + "Blocked uris: "
+                                            + blockedUris
+                                            + ". "
+                                            + "Proceeding only with permitted uris.");
+                        } else {
+                            Log.v(TAG, "Sender has permissions to all uris in " + uris);
+                        }
+                    } else {
+                        permittedUris = uris;
+                        Log.v(TAG, "Did not check sender permissions to uris in " + uris);
+                    }
+                    new Thread(
+                                    () -> {
+                                        try {
+                                            BluetoothOppManager.getInstance(
+                                                            BluetoothOppLauncherActivity.this)
+                                                    .saveSendingFileInfo(
+                                                            mimeType,
+                                                            permittedUris,
+                                                            false /* isHandover */,
+                                                            true /* fromExternal */);
+                                            if (Flags.sendOppDevicePickerExtraIntent()) {
+                                                BluetoothOppUtility
+                                                        .grantPermissionToNearbyComponent(
+                                                                BluetoothOppLauncherActivity.this,
+                                                                uris);
                                             }
+                                            // Done getting file info..Launch device picker
+                                            // and finish this activity
+                                            launchDevicePicker();
+                                            finish();
+                                        } catch (IllegalArgumentException exception) {
+                                            ContentProfileErrorReportUtils.report(
+                                                    BluetoothProfile.OPP,
+                                                    BluetoothProtoEnums
+                                                            .BLUETOOTH_OPP_LAUNCHER_ACTIVITY,
+                                                    BluetoothStatsLog
+                                                            .BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__EXCEPTION,
+                                                    3);
+                                            showToast(exception.getMessage());
+                                            finish();
                                         }
-                                    });
-                    t.start();
+                                    })
+                            .start();
                     return;
                 } else {
                     Log.e(TAG, "type is null; or sending files URIs are null");
@@ -246,7 +291,7 @@ public class BluetoothOppLauncherActivity extends Activity {
             Log.v(TAG, "Get ACTION_OPEN intent: Uri = " + uri);
             Intent intent1 = new Intent(Constants.ACTION_OPEN);
             intent1.setClassName(this, BluetoothOppReceiver.class.getName());
-            intent1.setDataAndNormalize(uri);
+            intent1.setData(uri.normalizeScheme());
             BluetoothMethodProxy.getInstance().contextSendBroadcast(this, intent1);
             finish();
         } else {
@@ -260,6 +305,130 @@ public class BluetoothOppLauncherActivity extends Activity {
             if (!Utils.isInstrumentationTestMode()) {
                 finish();
             }
+        }
+    }
+
+    /**
+     * Returns the file size from the given URI.
+     *
+     * @param context The context to use.
+     * @param uri The URI to get the file size from.
+     * @return The file size in bytes, or -1 if the URI is null or the file size cannot be
+     *     determined.
+     */
+    private static long getFileSizeFromUri(Context context, Uri uri) {
+        if (uri == null || !ContentResolver.SCHEME_CONTENT.equals(uri.getScheme())) {
+            return -1;
+        }
+
+        try (Cursor cursor =
+                BluetoothMethodProxy.getInstance()
+                        .getContentResolver(context)
+                        .query(uri, null, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int sizeIndex = cursor.getColumnIndexOrThrow(OpenableColumns.SIZE);
+                if (!cursor.isNull(sizeIndex)) {
+                    return cursor.getLong(sizeIndex);
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting file size from URI: " + uri.toString(), e);
+        }
+
+        return -1;
+    }
+
+    /**
+     * Calculates the total size of the files in the given intent.
+     *
+     * @param context The context of the activity.
+     * @param intent The intent to get the total size of the files from.
+     * @return The total size of the files in the intent, or 0 if the intent is null.
+     */
+    private static long calculateTotalSizeFromIntent(Context context, Intent intent) {
+        if (intent == null) {
+            return 0;
+        }
+
+        String action = intent.getAction();
+        long totalSize = 0;
+
+        if (Intent.ACTION_SEND.equals(action)) {
+            Uri streamUri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            if (streamUri != null) {
+                totalSize = getFileSizeFromUri(context, streamUri);
+            }
+        } else if (Intent.ACTION_SEND_MULTIPLE.equals(action)) {
+            ArrayList<Uri> uris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            if (uris != null) {
+                for (Uri uri : uris) {
+                    long fileSize = getFileSizeFromUri(context, uri);
+                    if (fileSize > 0) {
+                        totalSize += fileSize;
+                    }
+                }
+            }
+        }
+
+        return totalSize;
+    }
+
+    /**
+     * Reports the metrics for the OPP launcher activity.
+     *
+     * @param intent The intent that was received by the activity.
+     */
+    private void reportOppMetrics(Intent intent) {
+        String action = intent.getAction();
+
+        int fileCount = 0;
+        int callingUid = -1;
+        long totalFileSize = calculateTotalSizeFromIntent(this, intent);
+
+        if (action.equals(Intent.ACTION_SEND)) {
+            fileCount = 1;
+        } else if (action.equals(Intent.ACTION_SEND_MULTIPLE)) {
+            ArrayList<Uri> uris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            if (uris != null) {
+                fileCount = uris.size();
+            }
+        }
+
+        Uri streamUri = null;
+        if (action.equals(Intent.ACTION_SEND)) {
+            streamUri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+        } else if (action.equals(Intent.ACTION_SEND_MULTIPLE)) {
+            ArrayList<Uri> uris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            if (uris != null && !uris.isEmpty()) {
+                streamUri = uris.get(0);
+            }
+        }
+
+        if (streamUri != null && ContentResolver.SCHEME_CONTENT.equals(streamUri.getScheme())) {
+            String authority = streamUri.getAuthority();
+            if (authority != null) {
+                try {
+                    PackageManager pm = BluetoothMethodProxy.getInstance().getPackageManager(this);
+                    ProviderInfo providerInfo = pm.resolveContentProvider(authority, 0);
+                    if (providerInfo != null) {
+                        callingUid = providerInfo.applicationInfo.uid;
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Error resolving content provider", e);
+                }
+            }
+        } else {
+            Log.w(TAG, " URI error, can not get callingUid.");
+        }
+
+        if (fileCount > 0) {
+            MetricsLogger.getInstance()
+                    .logBluetoothOppLauncherCreated(
+                            callingUid,
+                            fileCount,
+                            BluetoothOppUtility.categorizeFileSize(totalFileSize));
+        } else {
+            Log.w(TAG, "Received " + intent + " with null file count");
         }
     }
 
@@ -285,9 +454,40 @@ public class BluetoothOppLauncherActivity extends Activity {
             in1.putExtra(BluetoothDevicePicker.EXTRA_LAUNCH_PACKAGE, getPackageName());
             in1.putExtra(
                     BluetoothDevicePicker.EXTRA_LAUNCH_CLASS, BluetoothOppReceiver.class.getName());
+            if (Flags.sendOppDevicePickerExtraIntent()) {
+                in1.putExtra(
+                        BluetoothDevicePicker.EXTRA_DEVICE_PICKER_ORIGINAL_SEND_INTENT,
+                        getIntent());
+            }
             Log.v(TAG, "Launching " + BluetoothDevicePicker.ACTION_LAUNCH);
             startActivity(in1);
         }
+    }
+
+    /**
+     * Checks whether the sender (and Bluetooth) have permissions to access the given content uri.
+     * The result does not differentiate the sender vs. Bluetooth's lack of permissions.
+     *
+     * @param uri A uri with a <tt>content</tt> scheme.
+     * @return true if both the sender and Bluetooth have permissions, false otherwise.
+     */
+    private boolean checkCallerAndSelfContentUriPermission(Uri uri) {
+        boolean hasPermission = false;
+        try {
+            hasPermission =
+                    BluetoothMethodProxy.getInstance()
+                                    .componentCallerCheckContentUriPermission(
+                                            getInitialCaller(),
+                                            uri,
+                                            Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            == PackageManager.PERMISSION_GRANTED;
+        } catch (SecurityException e) {
+            Log.w(TAG, "Bluetooth does not have permissions to Uri = " + uri, e);
+        }
+        if (!hasPermission) {
+            Log.w(TAG, "Sender does not have permissions to Uri = " + uri);
+        }
+        return hasPermission;
     }
 
     /* Returns true if Bluetooth is allowed given current airplane mode settings. */
@@ -327,6 +527,7 @@ public class BluetoothOppLauncherActivity extends Activity {
     }
 
     @VisibleForTesting
+    @SuppressLint("AndroidFrameworkEfficientStrings") // Bluetooth min sdk 33 prevent StringBuilder
     Uri createFileForSharedContent(Context context, CharSequence shareContent) {
         if (shareContent == null) {
             return null;
@@ -341,6 +542,7 @@ public class BluetoothOppLauncherActivity extends Activity {
             /*
              * Convert the plain text to HTML
              */
+            // Not using StringBuilder since Matcher.appendReplacement & appendTail require API 34
             StringBuffer sb =
                     new StringBuffer(
                             "<html><head><meta http-equiv=\"Content-Type\""
@@ -390,7 +592,7 @@ public class BluetoothOppLauncherActivity extends Activity {
                     link = "tel:" + matchStr;
                 }
                 if (link != null) {
-                    String href = String.format("<a href=\"%s\">%s</a>", link, matchStr);
+                    String href = "<a href=\"" + link + "\">" + matchStr + "</a>";
                     m.appendReplacement(sb, href);
                 }
             }
@@ -413,8 +615,7 @@ public class BluetoothOppLauncherActivity extends Activity {
                     BluetoothProtoEnums.BLUETOOTH_OPP_LAUNCHER_ACTIVITY,
                     BluetoothStatsLog.BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__EXCEPTION,
                     6);
-            Log.e(TAG, "FileNotFoundException: " + e.toString());
-            e.printStackTrace();
+            Log.e(TAG, e.toString() + "\n" + Log.getStackTraceString(new Throwable()));
         } catch (IOException e) {
             ContentProfileErrorReportUtils.report(
                     BluetoothProfile.OPP,
@@ -440,7 +641,7 @@ public class BluetoothOppLauncherActivity extends Activity {
                         BluetoothProtoEnums.BLUETOOTH_OPP_LAUNCHER_ACTIVITY,
                         BluetoothStatsLog.BLUETOOTH_CONTENT_PROFILE_ERROR_REPORTED__TYPE__EXCEPTION,
                         9);
-                e.printStackTrace();
+                Log.e(TAG, e.toString() + "\n" + Log.getStackTraceString(new Throwable()));
             }
         }
         return fileUri;
@@ -490,6 +691,10 @@ public class BluetoothOppLauncherActivity extends Activity {
     void sendFileInfo(String mimeType, String uriString, boolean isHandover, boolean fromExternal) {
         BluetoothOppManager manager = BluetoothOppManager.getInstance(getApplicationContext());
         try {
+            if (Flags.sendOppDevicePickerExtraIntent()) {
+                BluetoothOppUtility.grantPermissionToNearbyComponent(
+                        this, List.of(Uri.parse(uriString)));
+            }
             manager.saveSendingFileInfo(mimeType, uriString, isHandover, fromExternal);
             launchDevicePicker();
             finish();
@@ -506,11 +711,6 @@ public class BluetoothOppLauncherActivity extends Activity {
 
     private void showToast(final String msg) {
         BluetoothOppLauncherActivity.this.runOnUiThread(
-                new Runnable() {
-                    @Override
-                    public void run() {
-                        Toast.makeText(getApplicationContext(), msg, Toast.LENGTH_SHORT).show();
-                    }
-                });
+                () -> Toast.makeText(getApplicationContext(), msg, Toast.LENGTH_SHORT).show());
     }
 }

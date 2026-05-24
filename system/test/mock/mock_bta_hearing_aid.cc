@@ -20,21 +20,22 @@
  */
 
 #include <base/functional/callback.h>
+#include <bluetooth/types/address.h>
 
 #include <cstdint>
 
 #include "bta/include/bta_gatt_queue.h"
 #include "bta/include/bta_hearing_aid_api.h"
 #include "test/common/mock_functions.h"
-#include "types/raw_address.h"
+
+namespace bluetooth::asha {
 
 int HearingAid::GetDeviceCount() {
   inc_func_call_count(__func__);
   return 0;
 }
 
-void HearingAid::AddFromStorage(const HearingDevice& /* dev_info */,
-                                bool /* is_acceptlisted */) {
+void HearingAid::AddFromStorage(const HearingDevice& /* dev_info */, bool /* is_acceptlisted */) {
   inc_func_call_count(__func__);
 }
 
@@ -47,24 +48,16 @@ bool HearingAid::IsHearingAidRunning() {
 
 void HearingAid::CleanUp() { inc_func_call_count(__func__); }
 
-void HearingAid::Initialize(
-    bluetooth::hearing_aid::HearingAidCallbacks* /* callbacks */,
-    base::Closure /* initCb */) {
+void HearingAid::Initialize(HearingAidCallbacks* /* callbacks */, base::Closure /* initCb */) {
   inc_func_call_count(__func__);
 }
 
-void HearingAid::Connect(const RawAddress& /* address */) {
-  inc_func_call_count(__func__);
-}
+void HearingAid::Connect(const RawAddress& /* address */) { inc_func_call_count(__func__); }
 
-void HearingAid::Disconnect(const RawAddress& /* address */) {
-  inc_func_call_count(__func__);
-}
+void HearingAid::Disconnect(const RawAddress& /* address */) { inc_func_call_count(__func__); }
 
-void HearingAid::AddToAcceptlist(const RawAddress& /* address */) {
-  inc_func_call_count(__func__);
-}
+void HearingAid::AddToAcceptlist(const RawAddress& /* address */) { inc_func_call_count(__func__); }
 
-void HearingAid::SetVolume(int8_t /* volume */) {
-  inc_func_call_count(__func__);
-}
+void HearingAid::SetVolume(int8_t /* volume */) { inc_func_call_count(__func__); }
+
+}  // namespace bluetooth::asha

@@ -16,9 +16,6 @@
 
 package android.bluetooth.cts;
 
-import static com.android.bluetooth.flags.Flags.leaudioBroadcastFeatureSupport;
-import static com.android.modules.utils.build.SdkLevel.isAtLeastV;
-
 import static com.google.common.truth.Truth.assertThat;
 
 import android.bluetooth.BluetoothAdapter;
@@ -30,8 +27,6 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.test.platform.app.InstrumentationRegistry;
-
-import com.google.errorprone.annotations.InlineMe;
 
 public class TestUtils extends android.bluetooth.test_utils.TestUtils {
     /**
@@ -56,9 +51,9 @@ public class TestUtils extends android.bluetooth.test_utils.TestUtils {
             case BluetoothProfile.A2DP_SINK -> {
                 return BluetoothProperties.isProfileA2dpSinkEnabled().orElse(false);
             }
-                // Hidden profile
-                // case BluetoothProfile.AVRCP:
-                //     return BluetoothProperties.isProfileAvrcpTargetEnabled().orElse(false);
+            // Hidden profile
+            // case BluetoothProfile.AVRCP:
+            //     return BluetoothProperties.isProfileAvrcpTargetEnabled().orElse(false);
             case BluetoothProfile.AVRCP_CONTROLLER -> {
                 return BluetoothProperties.isProfileAvrcpControllerEnabled().orElse(false);
             }
@@ -98,27 +93,23 @@ public class TestUtils extends android.bluetooth.test_utils.TestUtils {
                 return BluetoothProperties.isProfileBapUnicastClientEnabled().orElse(false);
             }
             case BluetoothProfile.LE_AUDIO_BROADCAST -> {
-                return isAtLeastV()
-                        && leaudioBroadcastFeatureSupport()
-                        && BluetoothProperties.isProfileBapBroadcastSourceEnabled().orElse(false);
+                return BluetoothProperties.isProfileBapBroadcastSourceEnabled().orElse(false);
             }
             case BluetoothProfile.LE_AUDIO_BROADCAST_ASSISTANT -> {
-                return isAtLeastV()
-                        && leaudioBroadcastFeatureSupport()
-                        && BluetoothProperties.isProfileBapBroadcastAssistEnabled().orElse(false);
+                return BluetoothProperties.isProfileBapBroadcastAssistEnabled().orElse(false);
             }
-                // Hidden profile
-                // case BluetoothProfile.LE_CALL_CONTROL:
-                //     return BluetoothProperties.isProfileCcpServerEnabled().orElse(false);
+            // Hidden profile
+            // case BluetoothProfile.LE_CALL_CONTROL:
+            //     return BluetoothProperties.isProfileCcpServerEnabled().orElse(false);
             case BluetoothProfile.MAP -> {
                 return BluetoothProperties.isProfileMapServerEnabled().orElse(false);
             }
             case BluetoothProfile.MAP_CLIENT -> {
                 return BluetoothProperties.isProfileMapClientEnabled().orElse(false);
             }
-                // Hidden profile
-                // case BluetoothProfile.MCP_SERVER:
-                //     return BluetoothProperties.isProfileMcpServerEnabled().orElse(false);
+            // Hidden profile
+            // case BluetoothProfile.MCP_SERVER:
+            //     return BluetoothProperties.isProfileMcpServerEnabled().orElse(false);
             case BluetoothProfile.OPP -> {
                 return BluetoothProperties.isProfileOppEnabled().orElse(false);
             }
@@ -161,23 +152,6 @@ public class TestUtils extends android.bluetooth.test_utils.TestUtils {
         BluetoothAdapter adapter = manager.getAdapter();
         assertThat(adapter).isNotNull();
         return adapter;
-    }
-
-    /**
-     * Utility method to assert two byte arrays are equal.
-     *
-     * @param expected expected value
-     * @param actual actual value
-     * @deprecated Please use {@link com.google.common.truth.Truth},
-     *     "assertThat(actual).isEqualTo(expected)". Keeping it here since some tests are still
-     *     using it.
-     */
-    @Deprecated
-    @InlineMe(
-            replacement = "assertThat(actual).isEqualTo(expected)",
-            staticImports = "com.google.common.truth.Truth.assertThat")
-    public static void assertArrayEquals(byte[] expected, byte[] actual) {
-        assertThat(actual).isEqualTo(expected);
     }
 
     /**

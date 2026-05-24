@@ -13,47 +13,50 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.gatt;
 
+import static android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED;
+import static android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE;
+
+import static com.android.bluetooth.util.AttributionSourceUtils.getLastAttributionTag;
+
+import android.annotation.Nullable;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothProtoEnums;
 import android.bluetooth.le.AdvertiseData;
 import android.bluetooth.le.AdvertisingSetCallback;
 import android.bluetooth.le.AdvertisingSetParameters;
 import android.bluetooth.le.PeriodicAdvertisingParameters;
+import android.content.AttributionSource;
 import android.os.ParcelUuid;
 import android.util.SparseArray;
 
 import androidx.annotation.VisibleForTesting;
 
 import com.android.bluetooth.BluetoothStatsLog;
+import com.android.bluetooth.Utils;
 import com.android.bluetooth.btservice.MetricsLogger;
-import com.android.bluetooth.flags.Flags;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 /** AdvStats class helps keep track of information about advertising on a per application basis. */
 class AppAdvertiseStats {
-    private static final String TAG = AppAdvertiseStats.class.getSimpleName();
-
-    private static DateTimeFormatter sDateFormat =
-            DateTimeFormatter.ofPattern("MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
+    private static final String TAG = GattUtil.TAG_PREFIX + AppAdvertiseStats.class.getSimpleName();
 
     static final String[] PHY_LE_STRINGS = {"LE_1M", "LE_2M", "LE_CODED"};
     static final int UUID_STRING_FILTER_LEN = 8;
 
-    static class AppAdvertiserData {
-        public boolean includeDeviceName = false;
-        public boolean includeTxPowerLevel = false;
-        public SparseArray<byte[]> manufacturerData;
-        public Map<ParcelUuid, byte[]> serviceData;
-        public List<ParcelUuid> serviceUuids;
+    private static class AppAdvertiserData {
+        private boolean mIncludeDeviceName;
+        private boolean mIncludeTxPowerLevel;
+        private SparseArray<byte[]> mManufacturerData;
+        private Map<ParcelUuid, byte[]> mServiceData;
+        private List<ParcelUuid> mServiceUuids;
 
         AppAdvertiserData(
                 boolean includeDeviceName,
@@ -61,11 +64,11 @@ class AppAdvertiseStats {
                 SparseArray<byte[]> manufacturerData,
                 Map<ParcelUuid, byte[]> serviceData,
                 List<ParcelUuid> serviceUuids) {
-            this.includeDeviceName = includeDeviceName;
-            this.includeTxPowerLevel = includeTxPowerLevel;
-            this.manufacturerData = manufacturerData;
-            this.serviceData = serviceData;
-            this.serviceUuids = serviceUuids;
+            mIncludeDeviceName = includeDeviceName;
+            mIncludeTxPowerLevel = includeTxPowerLevel;
+            mManufacturerData = manufacturerData;
+            mServiceData = serviceData;
+            mServiceUuids = serviceUuids;
         }
     }
 
@@ -74,14 +77,17 @@ class AppAdvertiseStats {
         public Instant stopTime = null;
         public int duration = 0;
         public int maxExtendedAdvertisingEvents = 0;
+        public int appImportanceOnStart;
 
-        AppAdvertiserRecord(Instant startTime) {
+        AppAdvertiserRecord(Instant startTime, int appImportanceOnStart) {
             this.startTime = startTime;
+            this.appImportanceOnStart = appImportanceOnStart;
         }
     }
 
-    private int mAppUid;
+    private final int mAppUid;
     @VisibleForTesting String mAppName;
+    private final @Nullable String mAttributionTag;
     private int mId;
     private boolean mAdvertisingEnabled = false;
     private boolean mPeriodicAdvertisingEnabled = false;
@@ -93,17 +99,20 @@ class AppAdvertiseStats {
     private boolean mAnonymous = false;
     private boolean mConnectable = false;
     private boolean mScannable = false;
-    private AppAdvertiserData mAdvertisingData = null;
-    private AppAdvertiserData mScanResponseData = null;
-    private AppAdvertiserData mPeriodicAdvertisingData = null;
+    private boolean mDiscoverable = false;
+    private @Nullable AppAdvertiserData mAdvertisingData = null;
+    private @Nullable AppAdvertiserData mScanResponseData = null;
+    private @Nullable AppAdvertiserData mPeriodicAdvertisingData = null;
     private boolean mPeriodicIncludeTxPower = false;
     private int mPeriodicInterval = 0;
-    public ArrayList<AppAdvertiserRecord> mAdvertiserRecords = new ArrayList<AppAdvertiserRecord>();
+    private int mAppImportance = IMPORTANCE_CACHED;
+    public ArrayList<AppAdvertiserRecord> mAdvertiserRecords = new ArrayList<>();
 
-    AppAdvertiseStats(int appUid, int id, String name) {
+    AppAdvertiseStats(int appUid, int id, String name, AttributionSource source) {
         this.mAppUid = appUid;
         this.mId = id;
         this.mAppName = name;
+        this.mAttributionTag = getLastAttributionTag(source);
     }
 
     void recordAdvertiseStart(
@@ -116,7 +125,7 @@ class AppAdvertiseStats {
             int maxExtAdvEvents,
             int instanceCount) {
         mAdvertisingEnabled = true;
-        AppAdvertiserRecord record = new AppAdvertiserRecord(Instant.now());
+        AppAdvertiserRecord record = new AppAdvertiserRecord(Instant.now(), mAppImportance);
         record.duration = duration;
         record.maxExtendedAdvertisingEvents = maxExtAdvEvents;
         mAdvertiserRecords.add(record);
@@ -133,6 +142,7 @@ class AppAdvertiseStats {
             mAnonymous = parameters.isAnonymous();
             mConnectable = parameters.isConnectable();
             mScannable = parameters.isScannable();
+            mDiscoverable = parameters.isDiscoverable();
         }
 
         if (advertiseData != null) {
@@ -207,39 +217,37 @@ class AppAdvertiseStats {
     }
 
     void recordAdvertiseErrorCount(int status) {
-        if (Flags.bleScanAdvMetricsRedesign()) {
-            BluetoothStatsLog.write(
-                    BluetoothStatsLog.LE_ADV_ERROR_REPORTED,
-                    new int[] {mAppUid},
-                    new String[] {mAppName},
-                    BluetoothStatsLog.LE_ADV_ERROR_REPORTED__LE_ADV_OP_CODE__ERROR_CODE_ON_START,
-                    convertStatusCode(status));
-        }
+        BluetoothStatsLog.write(
+                BluetoothStatsLog.LE_ADV_ERROR_REPORTED,
+                new int[] {mAppUid},
+                new String[] {mAppName},
+                BluetoothStatsLog.LE_ADV_ERROR_REPORTED__LE_ADV_OP_CODE__ERROR_CODE_ON_START,
+                convertStatusCode(status),
+                getAttributionTag());
         MetricsLogger.getInstance().cacheCount(BluetoothProtoEnums.LE_ADV_ERROR_ON_START_COUNT, 1);
     }
 
-    private int convertStatusCode(int status) {
-        switch (status) {
-            case AdvertisingSetCallback.ADVERTISE_SUCCESS:
-                return BluetoothStatsLog.LE_ADV_ERROR_REPORTED__STATUS_CODE__ADV_STATUS_SUCCESS;
-            case AdvertisingSetCallback.ADVERTISE_FAILED_DATA_TOO_LARGE:
-                return BluetoothStatsLog
-                        .LE_ADV_ERROR_REPORTED__STATUS_CODE__ADV_STATUS_FAILED_DATA_TOO_LARGE;
-            case AdvertisingSetCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS:
-                return BluetoothStatsLog
-                        .LE_ADV_ERROR_REPORTED__STATUS_CODE__ADV_STATUS_FAILED_TOO_MANY_ADVERTISERS;
-            case AdvertisingSetCallback.ADVERTISE_FAILED_ALREADY_STARTED:
-                return BluetoothStatsLog
-                        .LE_ADV_ERROR_REPORTED__STATUS_CODE__ADV_STATUS_FAILED_ALREADY_STARTED;
-            case AdvertisingSetCallback.ADVERTISE_FAILED_INTERNAL_ERROR:
-                return BluetoothStatsLog
-                        .LE_ADV_ERROR_REPORTED__STATUS_CODE__ADV_STATUS_FAILED_INTERNAL_ERROR;
-            case AdvertisingSetCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED:
-                return BluetoothStatsLog
-                        .LE_ADV_ERROR_REPORTED__STATUS_CODE__ADV_STATUS_FAILED_FEATURE_UNSUPPORTED;
-            default:
-                return BluetoothStatsLog.LE_ADV_ERROR_REPORTED__STATUS_CODE__ADV_STATUS_UNKNOWN;
-        }
+    private static int convertStatusCode(int status) {
+        return switch (status) {
+            case AdvertisingSetCallback.ADVERTISE_SUCCESS ->
+                    BluetoothStatsLog.LE_ADV_ERROR_REPORTED__STATUS_CODE__ADV_STATUS_SUCCESS;
+            case AdvertisingSetCallback.ADVERTISE_FAILED_DATA_TOO_LARGE ->
+                    BluetoothStatsLog
+                            .LE_ADV_ERROR_REPORTED__STATUS_CODE__ADV_STATUS_FAILED_DATA_TOO_LARGE;
+            case AdvertisingSetCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS ->
+                    BluetoothStatsLog
+                            .LE_ADV_ERROR_REPORTED__STATUS_CODE__ADV_STATUS_FAILED_TOO_MANY_ADVERTISERS;
+            case AdvertisingSetCallback.ADVERTISE_FAILED_ALREADY_STARTED ->
+                    BluetoothStatsLog
+                            .LE_ADV_ERROR_REPORTED__STATUS_CODE__ADV_STATUS_FAILED_ALREADY_STARTED;
+            case AdvertisingSetCallback.ADVERTISE_FAILED_INTERNAL_ERROR ->
+                    BluetoothStatsLog
+                            .LE_ADV_ERROR_REPORTED__STATUS_CODE__ADV_STATUS_FAILED_INTERNAL_ERROR;
+            case AdvertisingSetCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED ->
+                    BluetoothStatsLog
+                            .LE_ADV_ERROR_REPORTED__STATUS_CODE__ADV_STATUS_FAILED_FEATURE_UNSUPPORTED;
+            default -> BluetoothStatsLog.LE_ADV_ERROR_REPORTED__STATUS_CODE__ADV_STATUS_UNKNOWN;
+        };
     }
 
     void enableAdvertisingSet(
@@ -267,11 +275,11 @@ class AppAdvertiseStats {
                             data.getServiceData(),
                             data.getServiceUuids());
         } else if (data != null) {
-            mAdvertisingData.includeDeviceName = data.getIncludeDeviceName();
-            mAdvertisingData.includeTxPowerLevel = data.getIncludeTxPowerLevel();
-            mAdvertisingData.manufacturerData = data.getManufacturerSpecificData();
-            mAdvertisingData.serviceData = data.getServiceData();
-            mAdvertisingData.serviceUuids = data.getServiceUuids();
+            mAdvertisingData.mIncludeDeviceName = data.getIncludeDeviceName();
+            mAdvertisingData.mIncludeTxPowerLevel = data.getIncludeTxPowerLevel();
+            mAdvertisingData.mManufacturerData = data.getManufacturerSpecificData();
+            mAdvertisingData.mServiceData = data.getServiceData();
+            mAdvertisingData.mServiceUuids = data.getServiceUuids();
         }
     }
 
@@ -285,11 +293,11 @@ class AppAdvertiseStats {
                             data.getServiceData(),
                             data.getServiceUuids());
         } else if (data != null) {
-            mScanResponseData.includeDeviceName = data.getIncludeDeviceName();
-            mScanResponseData.includeTxPowerLevel = data.getIncludeTxPowerLevel();
-            mScanResponseData.manufacturerData = data.getManufacturerSpecificData();
-            mScanResponseData.serviceData = data.getServiceData();
-            mScanResponseData.serviceUuids = data.getServiceUuids();
+            mScanResponseData.mIncludeDeviceName = data.getIncludeDeviceName();
+            mScanResponseData.mIncludeTxPowerLevel = data.getIncludeTxPowerLevel();
+            mScanResponseData.mManufacturerData = data.getManufacturerSpecificData();
+            mScanResponseData.mServiceData = data.getServiceData();
+            mScanResponseData.mServiceUuids = data.getServiceUuids();
         }
     }
 
@@ -303,6 +311,7 @@ class AppAdvertiseStats {
             mAnonymous = parameters.isAnonymous();
             mConnectable = parameters.isConnectable();
             mScannable = parameters.isScannable();
+            mDiscoverable = parameters.isDiscoverable();
         }
     }
 
@@ -323,11 +332,11 @@ class AppAdvertiseStats {
                             data.getServiceData(),
                             data.getServiceUuids());
         } else if (data != null) {
-            mPeriodicAdvertisingData.includeDeviceName = data.getIncludeDeviceName();
-            mPeriodicAdvertisingData.includeTxPowerLevel = data.getIncludeTxPowerLevel();
-            mPeriodicAdvertisingData.manufacturerData = data.getManufacturerSpecificData();
-            mPeriodicAdvertisingData.serviceData = data.getServiceData();
-            mPeriodicAdvertisingData.serviceUuids = data.getServiceUuids();
+            mPeriodicAdvertisingData.mIncludeDeviceName = data.getIncludeDeviceName();
+            mPeriodicAdvertisingData.mIncludeTxPowerLevel = data.getIncludeTxPowerLevel();
+            mPeriodicAdvertisingData.mManufacturerData = data.getManufacturerSpecificData();
+            mPeriodicAdvertisingData.mServiceData = data.getServiceData();
+            mPeriodicAdvertisingData.mServiceUuids = data.getServiceUuids();
         }
     }
 
@@ -337,6 +346,14 @@ class AppAdvertiseStats {
 
     void setId(int id) {
         this.mId = id;
+    }
+
+    void setAppImportance(int importance) {
+        mAppImportance = importance;
+    }
+
+    private String getAttributionTag() {
+        return mAttributionTag != null ? mAttributionTag : "";
     }
 
     private static void recordAdvertiseDurationCount(
@@ -400,21 +417,21 @@ class AppAdvertiseStats {
     }
 
     private void recordAdvertiseEnableCount(boolean enable, int instanceCount, long durationMs) {
-        if (Flags.bleScanAdvMetricsRedesign()) {
-            MetricsLogger.getInstance()
-                    .logAdvStateChanged(
-                            new int[] {mAppUid},
-                            new String[] {mAppName},
-                            enable /* enabled */,
-                            convertAdvInterval(mInterval),
-                            convertTxPowerLevel(mTxPowerLevel),
-                            mConnectable,
-                            mPeriodicAdvertisingEnabled,
-                            mScanResponseData != null && mScannable /* hasScanResponse */,
-                            !mLegacy /* isExtendedAdv */,
-                            instanceCount,
-                            durationMs);
-        }
+        MetricsLogger.getInstance()
+                .logAdvStateChanged(
+                        new int[] {mAppUid},
+                        new String[] {mAppName},
+                        enable /* enabled */,
+                        convertAdvInterval(mInterval),
+                        convertTxPowerLevel(mTxPowerLevel),
+                        mConnectable,
+                        mPeriodicAdvertisingEnabled,
+                        mScanResponseData != null && mScannable /* hasScanResponse */,
+                        !mLegacy /* isExtendedAdv */,
+                        instanceCount,
+                        durationMs,
+                        mAppImportance,
+                        getAttributionTag());
         if (enable) {
             MetricsLogger.getInstance().cacheCount(BluetoothProtoEnums.LE_ADV_COUNT_ENABLE, 1);
             if (mConnectable) {
@@ -438,65 +455,58 @@ class AppAdvertiseStats {
         }
     }
 
-    private int convertAdvInterval(int interval) {
-        switch (interval) {
-            case AdvertisingSetParameters.INTERVAL_HIGH:
-                return BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_INTERVAL__INTERVAL_HIGH;
-            case AdvertisingSetParameters.INTERVAL_MEDIUM:
-                return BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_INTERVAL__INTERVAL_MEDIUM;
-            case AdvertisingSetParameters.INTERVAL_LOW:
-                return BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_INTERVAL__INTERVAL_LOW;
-            default:
-                return BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_INTERVAL__INTERVAL_UNKNOWN;
-        }
+    private static int convertAdvInterval(int interval) {
+        return switch (interval) {
+            case AdvertisingSetParameters.INTERVAL_HIGH ->
+                    BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_INTERVAL__INTERVAL_HIGH;
+            case AdvertisingSetParameters.INTERVAL_MEDIUM ->
+                    BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_INTERVAL__INTERVAL_MEDIUM;
+            case AdvertisingSetParameters.INTERVAL_LOW ->
+                    BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_INTERVAL__INTERVAL_LOW;
+            default -> BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_INTERVAL__INTERVAL_UNKNOWN;
+        };
     }
 
-    private int convertTxPowerLevel(int level) {
-        switch (level) {
-            case AdvertisingSetParameters.TX_POWER_ULTRA_LOW:
-                return BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_TX_POWER__TX_POWER_ULTRA_LOW;
-            case AdvertisingSetParameters.TX_POWER_LOW:
-                return BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_TX_POWER__TX_POWER_LOW;
-            case AdvertisingSetParameters.TX_POWER_MEDIUM:
-                return BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_TX_POWER__TX_POWER_MEDIUM;
-            case AdvertisingSetParameters.TX_POWER_HIGH:
-                return BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_TX_POWER__TX_POWER_HIGH;
-            default:
-                return BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_TX_POWER__TX_POWER_UNKNOWN;
-        }
+    private static int convertTxPowerLevel(int level) {
+        return switch (level) {
+            case AdvertisingSetParameters.TX_POWER_ULTRA_LOW ->
+                    BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_TX_POWER__TX_POWER_ULTRA_LOW;
+            case AdvertisingSetParameters.TX_POWER_LOW ->
+                    BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_TX_POWER__TX_POWER_LOW;
+            case AdvertisingSetParameters.TX_POWER_MEDIUM ->
+                    BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_TX_POWER__TX_POWER_MEDIUM;
+            case AdvertisingSetParameters.TX_POWER_HIGH ->
+                    BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_TX_POWER__TX_POWER_HIGH;
+            default -> BluetoothStatsLog.LE_ADV_STATE_CHANGED__ADV_TX_POWER__TX_POWER_UNKNOWN;
+        };
     }
 
     private static void dumpAppAdvertiserData(StringBuilder sb, AppAdvertiserData advData) {
-        sb.append(
-                "\n          └Include Device Name                          : "
-                        + advData.includeDeviceName);
-        sb.append(
-                "\n          └Include Tx Power Level                       : "
-                        + advData.includeTxPowerLevel);
+        sb.append("\n          └Include Device Name                          : ")
+                .append(advData.mIncludeDeviceName);
+        sb.append("\n          └Include Tx Power Level                       : ")
+                .append(advData.mIncludeTxPowerLevel);
 
-        if (advData.manufacturerData.size() > 0) {
-            sb.append(
-                    "\n          └Manufacturer Data (length of data)           : "
-                            + advData.manufacturerData.size());
+        if (advData.mManufacturerData.size() > 0) {
+            sb.append("\n          └Manufacturer Data (length of data)           : ")
+                    .append(advData.mManufacturerData.size());
         }
 
-        if (!advData.serviceData.isEmpty()) {
+        if (!advData.mServiceData.isEmpty()) {
             sb.append("\n          └Service Data(UUID, length of data)           : ");
-            for (ParcelUuid uuid : advData.serviceData.keySet()) {
-                sb.append(
-                        "\n            ["
-                                + uuid.toString().substring(0, UUID_STRING_FILTER_LEN)
-                                + "-xxxx-xxxx-xxxx-xxxxxxxxxxxx, "
-                                + advData.serviceData.get(uuid).length
-                                + "]");
+            for (ParcelUuid uuid : advData.mServiceData.keySet()) {
+                sb.append("\n            [")
+                        .append(uuid.toString().substring(0, UUID_STRING_FILTER_LEN))
+                        .append("-xxxx-xxxx-xxxx-xxxxxxxxxxxx, ")
+                        .append(advData.mServiceData.get(uuid).length)
+                        .append("]");
             }
         }
 
-        if (!advData.serviceUuids.isEmpty()) {
-            sb.append(
-                    "\n          └Service Uuids                                : \n            "
-                            + advData.serviceUuids.toString().substring(0, UUID_STRING_FILTER_LEN)
-                            + "-xxxx-xxxx-xxxx-xxxxxxxxxxxx");
+        if (!advData.mServiceUuids.isEmpty()) {
+            sb.append("\n          └Service Uuids                                : \n            ")
+                    .append(advData.mServiceUuids.toString().substring(0, UUID_STRING_FILTER_LEN))
+                    .append("-xxxx-xxxx-xxxx-xxxxxxxxxxxx");
         }
     }
 
@@ -510,24 +520,24 @@ class AppAdvertiseStats {
 
     private static void dumpAppAdvertiseStats(StringBuilder sb, AppAdvertiseStats stats) {
         sb.append("\n      └Advertising:");
-        sb.append("\n        └Interval(0.625ms)                              : " + stats.mInterval);
-        sb.append(
-                "\n        └TX POWER(dbm)                                  : "
-                        + stats.mTxPowerLevel);
-        sb.append(
-                "\n        └Primary Phy                                    : "
-                        + dumpPhyString(stats.mPrimaryPhy));
-        sb.append(
-                "\n        └Secondary Phy                                  : "
-                        + dumpPhyString(stats.mSecondaryPhy));
-        sb.append("\n        └Legacy                                         : " + stats.mLegacy);
-        sb.append(
-                "\n        └Anonymous                                      : " + stats.mAnonymous);
-        sb.append(
-                "\n        └Connectable                                    : "
-                        + stats.mConnectable);
-        sb.append(
-                "\n        └Scannable                                      : " + stats.mScannable);
+        sb.append("\n        └Interval(0.625ms)                              : ")
+                .append(stats.mInterval);
+        sb.append("\n        └TX POWER(dbm)                                  : ")
+                .append(stats.mTxPowerLevel);
+        sb.append("\n        └Primary Phy                                    : ")
+                .append(dumpPhyString(stats.mPrimaryPhy));
+        sb.append("\n        └Secondary Phy                                  : ")
+                .append(dumpPhyString(stats.mSecondaryPhy));
+        sb.append("\n        └Legacy                                         : ")
+                .append(stats.mLegacy);
+        sb.append("\n        └Anonymous                                      : ")
+                .append(stats.mAnonymous);
+        sb.append("\n        └Connectable                                    : ")
+                .append(stats.mConnectable);
+        sb.append("\n        └Scannable                                      : ")
+                .append(stats.mScannable);
+        sb.append("\n        └Discoverable                                   : ")
+                .append(stats.mDiscoverable);
 
         if (stats.mAdvertisingData != null) {
             sb.append("\n        └Advertise Data:");
@@ -540,15 +550,12 @@ class AppAdvertiseStats {
         }
 
         if (stats.mPeriodicInterval > 0) {
-            sb.append(
-                    "\n      └Periodic Advertising Enabled                     : "
-                            + stats.mPeriodicAdvertisingEnabled);
-            sb.append(
-                    "\n        └Periodic Include TxPower                       : "
-                            + stats.mPeriodicIncludeTxPower);
-            sb.append(
-                    "\n        └Periodic Interval(1.25ms)                      : "
-                            + stats.mPeriodicInterval);
+            sb.append("\n      └Periodic Advertising Enabled                     : ")
+                    .append(stats.mPeriodicAdvertisingEnabled);
+            sb.append("\n        └Periodic Include TxPower                       : ")
+                    .append(stats.mPeriodicIncludeTxPower);
+            sb.append("\n        └Periodic Interval(1.25ms)                      : ")
+                    .append(stats.mPeriodicInterval);
         }
 
         if (stats.mPeriodicAdvertisingData != null) {
@@ -562,32 +569,47 @@ class AppAdvertiseStats {
     static void dumpToString(StringBuilder sb, AppAdvertiseStats stats) {
         Instant currentTime = Instant.now();
 
-        sb.append("\n    " + stats.mAppName);
-        sb.append("\n     Advertising ID                                     : " + stats.mId);
+        sb.append("\n    ").append(stats.mAppName);
+        if (stats.mAttributionTag != null) {
+            sb.append("\n     Tag                                                : ")
+                    .append(stats.mAttributionTag);
+        }
+        sb.append("\n     Advertising ID                                     : ").append(stats.mId);
         for (int i = 0; i < stats.mAdvertiserRecords.size(); i++) {
             AppAdvertiserRecord record = stats.mAdvertiserRecords.get(i);
 
-            sb.append("\n      " + (i + 1) + ":");
-            sb.append(
-                    "\n        └Start time                                     : "
-                            + sDateFormat.format(record.startTime));
+            sb.append("\n      ").append((i + 1)).append(":");
+            sb.append("\n        └Start time                                     : ")
+                    .append(Utils.formatInstant(record.startTime));
             if (record.stopTime == null) {
                 Duration timeElapsed = Duration.between(record.startTime, currentTime);
+                sb.append("\n        └Elapsed time                                   : ")
+                        .append(timeElapsed.toMillis())
+                        .append("ms");
+            } else {
+                sb.append("\n        └Stop time                                      : ")
+                        .append(Utils.formatInstant(record.stopTime));
+            }
+            sb.append("\n        └Duration(10ms unit)                            : ")
+                    .append(record.duration);
+            sb.append("\n        └Maximum number of extended advertising events  : ")
+                    .append(record.maxExtendedAdvertisingEvents);
+            if (record.appImportanceOnStart < IMPORTANCE_FOREGROUND_SERVICE) {
                 sb.append(
-                        "\n        └Elapsed time                                   : "
-                                + timeElapsed.toMillis()
-                                + "ms");
+                        "\n"
+                                + "        └App Importance                                 : higher"
+                                + " than Foreground Service");
+            } else if (record.appImportanceOnStart > IMPORTANCE_FOREGROUND_SERVICE) {
+                sb.append(
+                        "\n"
+                            + "        └App Importance                                 : lower than"
+                            + " Foreground Service");
             } else {
                 sb.append(
-                        "\n        └Stop time                                      : "
-                                + sDateFormat.format(record.stopTime));
+                        "\n"
+                            + "        └App Importance                                 : Foreground"
+                            + " Service");
             }
-            sb.append(
-                    "\n        └Duration(10ms unit)                            : "
-                            + record.duration);
-            sb.append(
-                    "\n        └Maximum number of extended advertising events  : "
-                            + record.maxExtendedAdvertisingEvents);
         }
 
         dumpAppAdvertiseStats(sb, stats);

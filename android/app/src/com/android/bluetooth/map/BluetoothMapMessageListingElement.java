@@ -12,6 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.map;
 
 import com.android.bluetooth.DeviceWorkArounds;
@@ -22,11 +23,13 @@ import org.xmlpull.v1.XmlSerializer;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Locale;
 
 public class BluetoothMapMessageListingElement
         implements Comparable<BluetoothMapMessageListingElement> {
+    private static final String TAG = BluetoothMapMessageListingElement.class.getSimpleName();
 
-    private static final String TAG = "BluetoothMapMessageListingElement";
+    private final BluetoothMapService mMapService;
 
     private long mCpHandle = 0; /* The content provider handle - without type information */
     private String mSubject = null;
@@ -55,6 +58,10 @@ public class BluetoothMapMessageListingElement
     private boolean mReportRead = false;
     private int mCursorIndex = 0;
 
+    public BluetoothMapMessageListingElement(BluetoothMapService mapService) {
+        mMapService = mapService;
+    }
+
     public int getCursorIndex() {
         return mCursorIndex;
     }
@@ -75,10 +82,11 @@ public class BluetoothMapMessageListingElement
         return mDateTime;
     }
 
+    @SuppressWarnings("JavaUtilDate") // TODO: b/365629730 -- prefer Instant or LocalDate
     public String getDateTimeString() {
         /* TODO: if the feature bit mask of the client supports it, add the time-zone
          *       (as for MSETime) */
-        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss");
+        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss", Locale.ROOT);
         Date date = new Date(mDateTime);
         return format.format(date); // Format to YYYYMMDDTHHMMSS local time
     }
@@ -266,14 +274,13 @@ public class BluetoothMapMessageListingElement
      * */
     public void encode(XmlSerializer xmlMsgElement, boolean includeThreadId)
             throws IllegalArgumentException, IllegalStateException, IOException {
-        // contruct the XML tag for a single msg in the msglisting
+        // construct the XML tag for a single msg in the msglisting
         xmlMsgElement.startTag(null, "msg");
         xmlMsgElement.attribute(null, "handle", BluetoothMapUtils.getMapHandle(mCpHandle, mType));
         if (mSubject != null) {
             String stripped = BluetoothMapUtils.stripInvalidChars(mSubject);
-
             if (DeviceWorkArounds.addressStartsWith(
-                    BluetoothMapService.getRemoteDevice().getAddress(),
+                    mMapService.getRemoteDevice().getAddress(),
                     DeviceWorkArounds.MERCEDES_BENZ_CARKIT)) {
                 stripped = stripped.replaceAll("[\\P{ASCII}&\"><]", "");
                 if (stripped.isEmpty()) {

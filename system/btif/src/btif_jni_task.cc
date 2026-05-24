@@ -20,6 +20,7 @@
 #include <base/location.h>
 #include <base/threading/platform_thread.h>
 #include <bluetooth/log.h>
+#include <com_android_bluetooth_flags.h>
 
 #include <cstdint>
 #include <utility>
@@ -54,7 +55,9 @@ void jni_thread_shutdown() { jni_thread.ShutDown(); }
  ******************************************************************************/
 static void bt_jni_msg_ready(void* context) {
   tBTIF_CONTEXT_SWITCH_CBACK* p = (tBTIF_CONTEXT_SWITCH_CBACK*)context;
-  if (p->p_cb) p->p_cb(p->event, p->p_param);
+  if (p->p_cb) {
+    p->p_cb(p->event, p->p_param);
+  }
   osi_free(p);
 }
 
@@ -75,15 +78,13 @@ static void bt_jni_msg_ready(void* context) {
  *
  ******************************************************************************/
 
-bt_status_t btif_transfer_context(tBTIF_CBACK* p_cback, uint16_t event,
-                                  char* p_params, int param_len,
-                                  tBTIF_COPY_CBACK* p_copy_cback) {
-  tBTIF_CONTEXT_SWITCH_CBACK* p_msg = (tBTIF_CONTEXT_SWITCH_CBACK*)osi_malloc(
-      sizeof(tBTIF_CONTEXT_SWITCH_CBACK) + param_len);
+bt_status_t btif_transfer_context(tBTIF_CBACK* p_cback, uint16_t event, char* p_params,
+                                  int param_len, tBTIF_COPY_CBACK* p_copy_cback) {
+  tBTIF_CONTEXT_SWITCH_CBACK* p_msg =
+          (tBTIF_CONTEXT_SWITCH_CBACK*)osi_malloc(sizeof(tBTIF_CONTEXT_SWITCH_CBACK) + param_len);
 #ifdef _MSC_VER
-  p_msg->p_param = reinterpret_cast<char*>( p_msg ) + sizeof( tBTIF_CONTEXT_SWITCH_CBACK );
+  p_msg->p_param = reinterpret_cast<char*>(p_msg) + sizeof( tBTIF_CONTEXT_SWITCH_CBACK );
 #endif
-
   log::verbose("btif_transfer_context event {}, len {}", event, param_len);
 
   /* allocate and send message that will be executed in btif context */
@@ -107,7 +108,7 @@ bt_status_t btif_transfer_context(tBTIF_CBACK* p_cback, uint16_t event,
  * the JNI message loop.
  **/
 bt_status_t do_in_jni_thread(base::OnceClosure task) {
-  if (!jni_thread.DoInThread(FROM_HERE, std::move(task))) {
+  if (!jni_thread.DoInThread(std::move(task))) {
     log::error("Post task to task runner failed!");
     return BT_STATUS_JNI_THREAD_ATTACH_ERROR;
   }
@@ -115,18 +116,20 @@ bt_status_t do_in_jni_thread(base::OnceClosure task) {
 }
 
 bool is_on_jni_thread() {
+  if (com_android_bluetooth_flags_replace_message_loop_thread_with_gd_handler()) {
+    return jni_thread.IsRunningOnSameThread();
+  }
   return jni_thread.GetThreadId() == PlatformThread::CurrentId();
 }
 
 static void do_post_on_bt_jni(BtJniClosure closure) { closure(); }
 
 void post_on_bt_jni(BtJniClosure closure) {
-  log::assert_that(
-      do_in_jni_thread(base::BindOnce(do_post_on_bt_jni, std::move(closure))) ==
-          BT_STATUS_SUCCESS,
-      "assert failed: do_in_jni_thread("
-      "base::BindOnce(do_post_on_bt_jni, std::move(closure))) == "
-      "BT_STATUS_SUCCESS");
+  log::assert_that(do_in_jni_thread(base::BindOnce(do_post_on_bt_jni, std::move(closure))) ==
+                           BT_STATUS_SUCCESS,
+                   "assert failed: do_in_jni_thread("
+                   "base::BindOnce(do_post_on_bt_jni, std::move(closure))) == "
+                   "BT_STATUS_SUCCESS");
 }
 
 bluetooth::common::PostableContext* get_jni() { return jni_thread.Postable(); }

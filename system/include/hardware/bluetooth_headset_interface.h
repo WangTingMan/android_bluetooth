@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <raw_address.h>
+#include <bluetooth/types/address.h>
 
 #include "bluetooth.h"
 #include "bluetooth_headset_callbacks.h"
@@ -30,7 +30,7 @@ namespace headset {
  * Thread-safe
  */
 class Interface {
- public:
+public:
   virtual ~Interface() = default;
   /**
    * Register the BtHf callbacks
@@ -49,7 +49,7 @@ class Interface {
    * @param bd_addr remote device address
    * @return BT_STATUS_SUCCESS on success
    */
-  virtual bt_status_t Connect(RawAddress* bd_addr) = 0;
+  virtual bt_status_t Connect(RawAddress bd_addr) = 0;
 
   /**
    * Disconnect from headset
@@ -57,7 +57,7 @@ class Interface {
    * @param bd_addr remote device address
    * @return BT_STATUS_SUCCESS on success
    */
-  virtual bt_status_t Disconnect(RawAddress* bd_addr) = 0;
+  virtual bt_status_t Disconnect(const RawAddress bd_addr) = 0;
 
   /**
    * Create an audio connection
@@ -66,8 +66,7 @@ class Interface {
    * @param disabled_codecs bitset of disabled BTM_SCO_CODECs
    * @return BT_STATUS_SUCCESS on success
    */
-  virtual bt_status_t ConnectAudio(RawAddress* bd_addr,
-                                   int disabled_codecs) = 0;
+  virtual bt_status_t ConnectAudio(const RawAddress bd_addr, int disabled_codecs) = 0;
 
   /**
    * Close the audio connection
@@ -75,7 +74,7 @@ class Interface {
    * @param bd_addr remote device address
    * @return BT_STATUS_SUCCESS on success
    */
-  virtual bt_status_t DisconnectAudio(RawAddress* bd_addr) = 0;
+  virtual bt_status_t DisconnectAudio(RawAddress bd_addr) = 0;
 
   /**
    * Checks whether the device support echo cancellation and/or noise reduction
@@ -84,7 +83,7 @@ class Interface {
    * @param bd_addr remote device address
    * @return BT_STATUS_SUCCESS on success
    */
-  virtual bt_status_t isNoiseReductionSupported(RawAddress* bd_addr) = 0;
+  virtual bt_status_t isNoiseReductionSupported(const RawAddress bd_addr) = 0;
 
   /**
    * Checks whether the device supports voice recognition via the AT+BRSF
@@ -93,15 +92,16 @@ class Interface {
    * @param bd_addr remote device address
    * @return BT_STATUS_SUCCESS on success
    */
-  virtual bt_status_t isVoiceRecognitionSupported(RawAddress* bd_addr) = 0;
+  virtual bt_status_t isVoiceRecognitionSupported(const RawAddress bd_addr) = 0;
 
   /** start voice recognition */
   /**
    * Start voice recognition
    * @param bd_addr remote device address
+   * @param sendResult whether a BVRA response should be sent
    * @return BT_STATUS_SUCCESS on success
    */
-  virtual bt_status_t StartVoiceRecognition(RawAddress* bd_addr) = 0;
+  virtual bt_status_t StartVoiceRecognition(const RawAddress bd_addr, bool sendResult) = 0;
 
   /**
    * Stop voice recognition
@@ -109,7 +109,7 @@ class Interface {
    * @param bd_addr remote device address
    * @return BT_STATUS_SUCCESS on success
    */
-  virtual bt_status_t StopVoiceRecognition(RawAddress* bd_addr) = 0;
+  virtual bt_status_t StopVoiceRecognition(const RawAddress bd_addr) = 0;
 
   /**
    * Change HFP related volume on remote headset
@@ -120,7 +120,7 @@ class Interface {
    * @return BT_STATUS_SUCCESS on success
    */
   virtual bt_status_t VolumeControl(bthf_volume_type_t type, int volume,
-                                    RawAddress* bd_addr) = 0;
+                                    const RawAddress bd_addr) = 0;
 
   /**
    * Combined device status change notification
@@ -133,9 +133,8 @@ class Interface {
    * @return BT_STATUS_SUCCESS on success
    */
   virtual bt_status_t DeviceStatusNotification(bthf_network_state_t ntk_state,
-                                               bthf_service_type_t svc_type,
-                                               int signal, int batt_chg,
-                                               RawAddress* bd_addr) = 0;
+                                               bthf_service_type_t svc_type, int signal,
+                                               int batt_chg, const RawAddress bd_addr) = 0;
 
   /**
    * Response for COPS (Query Operator Selection) command
@@ -144,7 +143,7 @@ class Interface {
    * @param bd_addr remote device address
    * @return BT_STATUS_SUCCESS on success
    */
-  virtual bt_status_t CopsResponse(const char* cops, RawAddress* bd_addr) = 0;
+  virtual bt_status_t CopsResponse(const char* cops, const RawAddress bd_addr) = 0;
 
   /**
    * Response for CIND (Stanford Indicator Update) command
@@ -160,9 +159,8 @@ class Interface {
    * @return BT_STATUS_SUCCESS on success
    */
   virtual bt_status_t CindResponse(int svc, int num_active, int num_held,
-                                   bthf_call_state_t call_setup_state,
-                                   int signal, int roam, int batt_chg,
-                                   RawAddress* bd_addr) = 0;
+                                   bthf_call_state_t call_setup_state, int signal, int roam,
+                                   int batt_chg, const RawAddress bd_addr) = 0;
 
   /**
    * Pre-formatted AT response, typically in response to unknown AT cmd
@@ -171,8 +169,7 @@ class Interface {
    * @param bd_addr remote device address
    * @return BT_STATUS_SUCCESS on success
    */
-  virtual bt_status_t FormattedAtResponse(const char* rsp,
-                                          RawAddress* bd_addr) = 0;
+  virtual bt_status_t FormattedAtResponse(const char* rsp, const RawAddress bd_addr) = 0;
 
   /**
    * ok/error response to AT commands
@@ -182,8 +179,8 @@ class Interface {
    * @param bd_addr remote device address
    * @return BT_STATUS_SUCCESS on success
    */
-  virtual bt_status_t AtResponse(bthf_at_response_t response_code,
-                                 int error_code, RawAddress* bd_addr) = 0;
+  virtual bt_status_t AtResponse(bthf_at_response_t response_code, int error_code,
+                                 RawAddress bd_addr) = 0;
 
   /**
    * Response for CLCC (Current List of Calls) command.
@@ -200,10 +197,10 @@ class Interface {
    * @param bd_addr remote device address
    * @return BT_STATUS_SUCCESS on success
    */
-  virtual bt_status_t ClccResponse(
-      int index, bthf_call_direction_t dir, bthf_call_state_t state,
-      bthf_call_mode_t mode, bthf_call_mpty_type_t mpty, const char* number,
-      bthf_call_addrtype_t type, RawAddress* bd_addr) = 0;
+  virtual bt_status_t ClccResponse(int index, bthf_call_direction_t dir, bthf_call_state_t state,
+                                   bthf_call_mode_t mode, bthf_call_mpty_type_t mpty,
+                                   const char* number, bthf_call_addrtype_t type,
+                                   const RawAddress bd_addr) = 0;
 
   /**
    * Notify of a call state change
@@ -223,11 +220,9 @@ class Interface {
    * @return BT_STATUS_SUCCESS on success
    */
   virtual bt_status_t PhoneStateChange(int num_active, int num_held,
-                                       bthf_call_state_t call_setup_state,
-                                       const char* number,
-                                       bthf_call_addrtype_t type,
-                                       const char* name,
-                                       RawAddress* bd_addr) = 0;
+                                       bthf_call_state_t call_setup_state, const char* number,
+                                       bthf_call_addrtype_t type, const char* name,
+                                       const RawAddress bd_addr) = 0;
 
   /**
    * Enable SWB
@@ -237,8 +232,7 @@ class Interface {
    * @param bd_addr remote device address
    * @return BT_STATUS_SUCCESS on success
    */
-  virtual bt_status_t EnableSwb(bthf_swb_codec_t swbCodec, bool enable,
-                                RawAddress* bd_addr) = 0;
+  virtual bt_status_t EnableSwb(bthf_swb_codec_t swbCodec, bool enable, RawAddress bd_addr) = 0;
 
   /**
    * Closes the interface.
@@ -268,14 +262,22 @@ class Interface {
    * @param value true for enabled, false for disable
    * @param bd_addr remote device address
    */
-  virtual bt_status_t SendBsir(bool value, RawAddress* bd_addr) = 0;
+  virtual bt_status_t SendBsir(bool value, const RawAddress bd_addr) = 0;
 
   /**
    * Set the current active headset device for SCO audio
    *
    * @param active_device_addr remote device address
    */
-  virtual bt_status_t SetActiveDevice(RawAddress* active_device_addr) = 0;
+  virtual bt_status_t SetActiveDevice(RawAddress active_device_addr) = 0;
+
+  /**
+   * Set whether we will use the new SCO Management path based on the java flag value/sys prop
+   *
+   * @param value true to allow, false to disallow
+   * @return BT_STATUS_SUCCESS on success
+   */
+  virtual bt_status_t SetIsScoManagedByAudio(bool value) = 0;
 
   /**
    * Trigger a debug dump of the Headset Profile

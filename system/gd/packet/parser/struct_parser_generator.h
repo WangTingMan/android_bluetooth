@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,14 +23,14 @@
 #include "parse_location.h"
 
 class StructParserGenerator {
- public:
+public:
   explicit StructParserGenerator(const Declarations& declarations);
 
   void Generate(std::ostream& s) const;
 
- private:
+private:
   class TreeNode {
-   public:
+  public:
     explicit TreeNode(const StructDef* s)
         : struct_def_(s), packet_field_(s->GetNewField(s->name_ + "_parse", ParseLocation())) {}
     const StructDef* struct_def_;

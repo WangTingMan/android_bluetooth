@@ -33,7 +33,6 @@ import android.util.Log;
 import com.android.bluetooth.BluetoothStatsLog;
 import com.android.bluetooth.content_profiles.ContentProfileErrorReportUtils;
 import com.android.bluetooth.map.BluetoothMapUtils.TYPE;
-import com.android.bluetooth.mapapi.BluetoothMapContract;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -43,7 +42,7 @@ import java.util.Objects;
 
 // Next tag value for ContentProfileErrorReportUtils.report(): 1
 public class BluetoothMapAccountLoader {
-    private static final String TAG = "BluetoothMapAccountLoader";
+    private static final String TAG = BluetoothMapAccountLoader.class.getSimpleName();
 
     private Context mContext = null;
     private PackageManager mPackageManager = null;

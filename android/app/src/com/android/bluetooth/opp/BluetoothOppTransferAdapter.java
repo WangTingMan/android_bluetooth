@@ -34,6 +34,7 @@ package com.android.bluetooth.opp;
 
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothManager;
 import android.content.Context;
 import android.content.res.Resources;
 import android.database.Cursor;
@@ -54,7 +55,7 @@ import java.util.Date;
  * done by this class is to construct a custom view for the line items.
  */
 public class BluetoothOppTransferAdapter extends ResourceCursorAdapter {
-    private Context mContext;
+    private final Context mContext;
 
     public BluetoothOppTransferAdapter(Context context, int layout, Cursor c) {
         super(context, layout, c, true /* autoRequery */);
@@ -62,6 +63,7 @@ public class BluetoothOppTransferAdapter extends ResourceCursorAdapter {
     }
 
     @Override
+    @SuppressWarnings("JavaUtilDate") // TODO: b/365629730 -- prefer Instant or LocalDate
     public void bindView(View view, Context context, Cursor cursor) {
         Resources r = context.getResources();
 
@@ -89,7 +91,7 @@ public class BluetoothOppTransferAdapter extends ResourceCursorAdapter {
 
         // target device
         tv = (TextView) view.findViewById(R.id.targetdevice);
-        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        BluetoothAdapter adapter = mContext.getSystemService(BluetoothManager.class).getAdapter();
         int destinationColumnId = cursor.getColumnIndexOrThrow(BluetoothShare.DESTINATION);
         BluetoothDevice remoteDevice =
                 adapter.getRemoteDevice(cursor.getString(destinationColumnId));

@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,10 @@
 
 #include <bluetooth/log.h>
 
-#include "address.h"
+#include "bta/include/bta_ras_api.h"
 #include "hal/ranging_hal.h"
-#include "module.h"
+#include "hci/address.h"
+#include "hci/hci_packets.h"
 
 namespace bluetooth {
 namespace hci {
@@ -28,6 +29,22 @@ enum DistanceMeasurementMethod {
   METHOD_AUTO,
   METHOD_RSSI,
   METHOD_CS,
+};
+
+// Should match the value of
+// hardware/interfaces/bluetooth/ranging/aidl/android/hardware/bluetooth/ranging/SightType.aidl
+enum DistanceMeasurementSightType {
+  SIGHT_TYPE_UNKNOWN = 0,
+  SIGHT_TYPE_LINE_OF_SIGHT = 1,
+  SIGHT_TYPE_NON_LINE_OF_SIGHT = 2,
+};
+
+// Should match the value of
+// hardware/interfaces/bluetooth/ranging/aidl/android/hardware/bluetooth/ranging/LocationType.aidl
+enum DistanceMeasurementLocationType {
+  LOCATION_TYPE_UNKNOWN = 0,
+  LOCATION_TYPE_INDOOR = 1,
+  LOCATION_TYPE_OUTDOOR = 2,
 };
 
 enum DistanceMeasurementErrorCode {
@@ -41,83 +58,80 @@ enum DistanceMeasurementErrorCode {
   REASON_INTERNAL_ERROR,
 };
 
-struct DistanceMeasurementResult {
-  Address address;
-  uint32_t centimeter;
-  uint32_t error_centimeter;
-  DistanceMeasurementMethod method;
+enum DistanceMeasurementDetectedAttackLevel {
+  NADM_ATTACK_IS_EXTREMELY_UNLIKELY = 0,
+  NADM_ATTACK_IS_VERY_UNLIKELY = 1,
+  NADM_ATTACK_IS_UNLIKELY = 2,
+  NADM_ATTACK_IS_POSSIBLE = 3,
+  NADM_ATTACK_IS_LIKELY = 4,
+  NADM_ATTACK_IS_VERY_LIKELY = 5,
+  NADM_ATTACK_IS_EXTREMELY_LIKELY = 6,
+  NADM_ATTACK_UNKNOWN = 0xFF,
 };
 
 class DistanceMeasurementCallbacks {
- public:
+public:
   virtual ~DistanceMeasurementCallbacks() = default;
   virtual void OnDistanceMeasurementStarted(Address address, DistanceMeasurementMethod method) = 0;
-  virtual void OnDistanceMeasurementStartFail(
-      Address address, DistanceMeasurementErrorCode reason, DistanceMeasurementMethod method) = 0;
-  virtual void OnDistanceMeasurementStopped(
-      Address address, DistanceMeasurementErrorCode reason, DistanceMeasurementMethod method) = 0;
+  virtual void OnDistanceMeasurementStopped(Address address, DistanceMeasurementErrorCode reason,
+                                            DistanceMeasurementMethod method) = 0;
   virtual void OnDistanceMeasurementResult(
-      Address address,
-      uint32_t centimeter,
-      uint32_t error_centimeter,
-      int azimuth_angle,
-      int error_azimuth_angle,
-      int altitude_angle,
-      int error_altitude_angle,
-      DistanceMeasurementMethod method) = 0;
-  virtual void OnRasFragmentReady(
-      Address address, uint16_t procedure_counter, bool is_last, std::vector<uint8_t> raw_data) = 0;
+          Address address, uint32_t centimeter, uint32_t error_centimeter, int azimuth_angle,
+          int error_azimuth_angle, int altitude_angle, int error_altitude_angle,
+          uint64_t elapsed_realtime_nanos, int8_t confidence_level, double delayed_spread_meters,
+          DistanceMeasurementDetectedAttackLevel detected_attack_level,
+          double velocity_meters_per_second, DistanceMeasurementMethod method) = 0;
+  virtual void OnRasFragmentReady(Address address, uint16_t procedure_counter, bool is_last,
+                                  std::vector<uint8_t> raw_data) = 0;
   virtual void OnVendorSpecificCharacteristics(
-      std::vector<hal::VendorSpecificCharacteristic> vendor_specific_characteristics) = 0;
-  virtual void OnVendorSpecificReply(
-      Address address,
-      std::vector<bluetooth::hal::VendorSpecificCharacteristic>
-          vendor_specific_characteristics) = 0;
+          std::vector<hal::VendorSpecificCharacteristic> vendor_specific_characteristics) = 0;
+  virtual void OnVendorSpecificReply(Address address,
+                                     std::vector<bluetooth::hal::VendorSpecificCharacteristic>
+                                             vendor_specific_characteristics) = 0;
   virtual void OnHandleVendorSpecificReplyComplete(Address address, bool success) = 0;
+  virtual void OnRangingHardwareOffloadEnabled() = 0;
 };
 
-class DistanceMeasurementManager : public bluetooth::Module {
- public:
-  DistanceMeasurementManager();
-  ~DistanceMeasurementManager();
-  DistanceMeasurementManager(const DistanceMeasurementManager&) = delete;
-  DistanceMeasurementManager& operator=(const DistanceMeasurementManager&) = delete;
+class DistanceMeasurementManager {
+public:
+  virtual ~DistanceMeasurementManager() = default;
 
-  void RegisterDistanceMeasurementCallbacks(DistanceMeasurementCallbacks* callbacks);
-  void StartDistanceMeasurement(
-      const Address&, uint16_t interval, DistanceMeasurementMethod method);
-  void StopDistanceMeasurement(const Address& address, DistanceMeasurementMethod method);
-  void HandleRasConnectedEvent(
-      const Address& address,
-      uint16_t att_handle,
-      const std::vector<hal::VendorSpecificCharacteristic>& vendor_specific_data);
-  void HandleVendorSpecificReply(
-      const Address& address,
-      const std::vector<hal::VendorSpecificCharacteristic>& vendor_specific_reply);
-  void HandleVendorSpecificReplyComplete(const Address& address, bool success);
-  void HandleRemoteData(const Address& address, const std::vector<uint8_t>& raw_data);
-
-  static const ModuleFactory Factory;
-
- protected:
-  void ListDependencies(ModuleList* list) const override;
-
-  void Start() override;
-
-  void Stop() override;
-
-  std::string ToString() const override;
-
- private:
-  struct impl;
-  std::unique_ptr<impl> pimpl_;
+  virtual void RegisterDistanceMeasurementCallbacks(DistanceMeasurementCallbacks* callbacks) = 0;
+  virtual void StartDistanceMeasurement(int32_t app_uid, const Address&, uint16_t connection_handle,
+                                        hci::Role local_hci_role, uint16_t interval,
+                                        DistanceMeasurementMethod method,
+                                        DistanceMeasurementSightType sight_type,
+                                        DistanceMeasurementLocationType location_type) = 0;
+  virtual void StopDistanceMeasurement(const Address& address, uint16_t connection_handle,
+                                       DistanceMeasurementMethod method) = 0;
+  virtual void HandleRasClientConnectedEvent(
+          const Address& address, uint16_t connection_handle, uint16_t att_handle,
+          const std::vector<hal::VendorSpecificCharacteristic>& vendor_specific_data,
+          uint16_t conn_interval) = 0;
+  virtual void HandleRasClientDisconnectedEvent(
+          const Address& address, const ras::RasDisconnectReason& ras_disconnect_reason) = 0;
+  virtual void HandleVendorSpecificReply(
+          const Address& address, uint16_t connection_handle,
+          const std::vector<hal::VendorSpecificCharacteristic>& vendor_specific_reply) = 0;
+  virtual void HandleRasServerConnected(const Address& identity_address, uint16_t connection_handle,
+                                        hci::Role local_hci_role) = 0;
+  virtual void HandleMtuChanged(uint16_t connection_handle, uint16_t mtu) = 0;
+  virtual void HandleRasServerDisconnected(const Address& identity_address,
+                                           uint16_t connection_handle) = 0;
+  virtual void HandleVendorSpecificReplyComplete(const Address& address, uint16_t connection_handle,
+                                                 bool success) = 0;
+  virtual void HandleRemoteData(const Address& address, uint16_t connection_handle,
+                                const std::vector<uint8_t>& raw_data) = 0;
+  virtual void HandleRemoteDataTimeout(const Address& address, uint16_t connection_handle) = 0;
+  virtual void HandleConnIntervalUpdated(const Address& address, uint16_t connection_handle,
+                                         uint16_t conn_interval) = 0;
 };
 
 }  // namespace hci
 }  // namespace bluetooth
 
-namespace fmt {
+namespace std {
 template <>
 struct formatter<bluetooth::hci::DistanceMeasurementMethod>
     : enum_formatter<bluetooth::hci::DistanceMeasurementMethod> {};
-}  // namespace fmt
+}  // namespace std

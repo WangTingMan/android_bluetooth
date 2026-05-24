@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,11 @@
 
 package android.bluetooth;
 
+import static java.util.Objects.requireNonNull;
+
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.annotation.RequiresNoPermission;
 import android.annotation.SystemApi;
 import android.os.Parcel;
 import android.os.Parcelable;
@@ -89,6 +92,7 @@ public final class BluetoothLeBroadcastSubgroup implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public long getCodecId() {
         return mCodecId;
     }
@@ -100,8 +104,8 @@ public final class BluetoothLeBroadcastSubgroup implements Parcelable {
      * @hide
      */
     @SystemApi
-    @NonNull
-    public BluetoothLeAudioCodecConfigMetadata getCodecSpecificConfig() {
+    @RequiresNoPermission
+    public @NonNull BluetoothLeAudioCodecConfigMetadata getCodecSpecificConfig() {
         return mCodecSpecificConfig;
     }
 
@@ -112,6 +116,7 @@ public final class BluetoothLeBroadcastSubgroup implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public @NonNull BluetoothLeAudioContentMetadata getContentMetadata() {
         return mContentMetadata;
     }
@@ -126,6 +131,7 @@ public final class BluetoothLeBroadcastSubgroup implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public boolean hasChannelPreference() {
         return mChannels.stream().anyMatch(BluetoothLeBroadcastChannel::isSelected);
     }
@@ -141,6 +147,7 @@ public final class BluetoothLeBroadcastSubgroup implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public @NonNull List<BluetoothLeBroadcastChannel> getChannels() {
         return mChannels;
     }
@@ -208,7 +215,7 @@ public final class BluetoothLeBroadcastSubgroup implements Parcelable {
         private long mCodecId = UNKNOWN_VALUE_PLACEHOLDER;
         private BluetoothLeAudioCodecConfigMetadata mCodecSpecificConfig = null;
         private BluetoothLeAudioContentMetadata mContentMetadata = null;
-        private List<BluetoothLeBroadcastChannel> mChannels = new ArrayList<>();
+        private final List<BluetoothLeBroadcastChannel> mChannels = new ArrayList<>();
 
         /**
          * Create an empty constructor.
@@ -229,7 +236,9 @@ public final class BluetoothLeBroadcastSubgroup implements Parcelable {
             mCodecId = original.getCodecId();
             mCodecSpecificConfig = original.getCodecSpecificConfig();
             mContentMetadata = original.getContentMetadata();
-            mChannels = original.getChannels();
+            for (BluetoothLeBroadcastChannel channel : original.getChannels()) {
+                mChannels.add(new BluetoothLeBroadcastChannel.Builder(channel).build());
+            }
         }
 
         /**
@@ -245,6 +254,7 @@ public final class BluetoothLeBroadcastSubgroup implements Parcelable {
          * @hide
          */
         @SystemApi
+        @RequiresNoPermission
         public @NonNull Builder setCodecId(long codecId) {
             mCodecId = codecId;
             return this;
@@ -259,10 +269,10 @@ public final class BluetoothLeBroadcastSubgroup implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setCodecSpecificConfig(
+        @RequiresNoPermission
+        public @NonNull Builder setCodecSpecificConfig(
                 @NonNull BluetoothLeAudioCodecConfigMetadata codecSpecificConfig) {
-            Objects.requireNonNull(codecSpecificConfig, "codecSpecificConfig cannot be null");
+            requireNonNull(codecSpecificConfig);
             mCodecSpecificConfig = codecSpecificConfig;
             return this;
         }
@@ -276,10 +286,10 @@ public final class BluetoothLeBroadcastSubgroup implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setContentMetadata(
+        @RequiresNoPermission
+        public @NonNull Builder setContentMetadata(
                 @NonNull BluetoothLeAudioContentMetadata contentMetadata) {
-            Objects.requireNonNull(contentMetadata, "contentMetadata cannot be null");
+            requireNonNull(contentMetadata);
             mContentMetadata = contentMetadata;
             return this;
         }
@@ -297,8 +307,9 @@ public final class BluetoothLeBroadcastSubgroup implements Parcelable {
          * @hide
          */
         @SystemApi
+        @RequiresNoPermission
         public @NonNull Builder addChannel(@NonNull BluetoothLeBroadcastChannel channel) {
-            Objects.requireNonNull(channel, "channel cannot be null");
+            requireNonNull(channel);
             mChannels.add(channel);
             return this;
         }
@@ -311,6 +322,7 @@ public final class BluetoothLeBroadcastSubgroup implements Parcelable {
          * @hide
          */
         @SystemApi
+        @RequiresNoPermission
         public @NonNull Builder clearChannel() {
             mChannels.clear();
             return this;
@@ -325,9 +337,10 @@ public final class BluetoothLeBroadcastSubgroup implements Parcelable {
          * @hide
          */
         @SystemApi
+        @RequiresNoPermission
         public @NonNull BluetoothLeBroadcastSubgroup build() {
-            Objects.requireNonNull(mCodecSpecificConfig, "CodecSpecificConfig is null");
-            Objects.requireNonNull(mContentMetadata, "ContentMetadata is null");
+            requireNonNull(mCodecSpecificConfig);
+            requireNonNull(mContentMetadata);
             if (mChannels.isEmpty()) {
                 throw new IllegalArgumentException("Must have at least one channel");
             }

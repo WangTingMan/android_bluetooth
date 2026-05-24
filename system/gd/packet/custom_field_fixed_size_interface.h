@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ namespace packet {
 
 template <typename T>
 class CustomFieldFixedSizeInterface {
- public:
+public:
   virtual ~CustomFieldFixedSizeInterface() = default;
   // Get a pointer to a modifiable and readable continuous array of data
   virtual uint8_t* data() = 0;
@@ -31,11 +31,11 @@ class CustomFieldFixedSizeInterface {
   // Get the length of underlying data array, data() + length() would be invalid
   // subclass T must have kLength variable defined
   static constexpr size_t length() {
-    static_assert(
-        std::is_same_v<decltype(T::kLength), const size_t>, "T::kLength must be const size_t or constexpr size_t");
+    static_assert(std::is_same_v<decltype(T::kLength), const size_t>,
+                  "T::kLength must be const size_t or constexpr size_t");
     static_assert(std::is_const_v<decltype(T::kLength)>, "T::kLength must be const");
     return T::kLength;
-  };
+  }
 };
 
 }  // namespace packet

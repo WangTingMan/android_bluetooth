@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,8 @@
 package com.android.bluetooth.btservice;
 
 import static android.Manifest.permission.BLUETOOTH_CONNECT;
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTED;
 
-import android.annotation.RequiresPermission;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothProfile;
 import android.content.Intent;
@@ -29,12 +29,8 @@ import android.os.UserHandle;
 import android.util.Log;
 
 import com.android.bluetooth.Utils;
-import com.android.bluetooth.a2dp.A2dpService;
-import com.android.bluetooth.hfp.HeadsetService;
-import com.android.internal.annotations.VisibleForTesting;
+import com.android.bluetooth.flags.Flags;
 
-import java.io.FileDescriptor;
-import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -52,12 +48,10 @@ import java.util.Map;
  * is not connected with A2DP or HFP, it cannot enter silence mode.
  */
 public class SilenceDeviceManager {
-    private static final String TAG = SilenceDeviceManager.class.getSimpleName();
+    private static final String TAG = Utils.BT_PREFIX + SilenceDeviceManager.class.getSimpleName();
 
     private final AdapterService mAdapterService;
-    private final ServiceFactory mFactory;
-    private Handler mHandler = null;
-    private Looper mLooper = null;
+    private final Handler mHandler;
 
     private final Map<BluetoothDevice, Boolean> mSilenceDevices = new HashMap<>();
     private final List<BluetoothDevice> mA2dpConnectedDevices = new ArrayList<>();
@@ -79,14 +73,11 @@ public class SilenceDeviceManager {
      */
     public void profileActiveDeviceChanged(int profile, BluetoothDevice device) {
         switch (profile) {
-            case BluetoothProfile.A2DP:
-                mHandler.obtainMessage(MSG_A2DP_ACTIVE_DEVICE_CHANGED, device).sendToTarget();
-                break;
-            case BluetoothProfile.HEADSET:
-                mHandler.obtainMessage(MSG_HFP_ACTIVE_DEVICE_CHANGED, device).sendToTarget();
-                break;
-            default:
-                break;
+            case BluetoothProfile.A2DP ->
+                    mHandler.obtainMessage(MSG_A2DP_ACTIVE_DEVICE_CHANGED, device).sendToTarget();
+            case BluetoothProfile.HEADSET ->
+                    mHandler.obtainMessage(MSG_HFP_ACTIVE_DEVICE_CHANGED, device).sendToTarget();
+            default -> {}
         }
     }
 
@@ -115,6 +106,7 @@ public class SilenceDeviceManager {
     }
 
     class SilenceDeviceManagerHandler extends Handler {
+
         SilenceDeviceManagerHandler(Looper looper) {
             super(looper);
         }
@@ -123,26 +115,24 @@ public class SilenceDeviceManager {
         public void handleMessage(Message msg) {
             Log.d(TAG, "handleMessage: " + msg.what);
             switch (msg.what) {
-                case MSG_SILENCE_DEVICE_STATE_CHANGED:
-                    {
-                        BluetoothDevice device = (BluetoothDevice) msg.obj;
-                        boolean state = (msg.arg1 == ENABLE_SILENCE);
-                        handleSilenceDeviceStateChanged(device, state);
-                    }
-                    break;
+                case MSG_SILENCE_DEVICE_STATE_CHANGED -> {
+                    BluetoothDevice device = (BluetoothDevice) msg.obj;
+                    boolean state = (msg.arg1 == ENABLE_SILENCE);
+                    handleSilenceDeviceStateChanged(device, state);
+                }
 
-                case MSG_A2DP_CONNECTION_STATE_CHANGED:
+                case MSG_A2DP_CONNECTION_STATE_CHANGED -> {
                     BluetoothDevice device = (BluetoothDevice) msg.obj;
                     int prevState = msg.arg1;
                     int nextState = msg.arg2;
 
-                    if (nextState == BluetoothProfile.STATE_CONNECTED) {
+                    if (nextState == STATE_CONNECTED) {
                         // enter connected state
                         addConnectedDevice(device, BluetoothProfile.A2DP);
                         if (!mSilenceDevices.containsKey(device)) {
                             mSilenceDevices.put(device, false);
                         }
-                    } else if (prevState == BluetoothProfile.STATE_CONNECTED) {
+                    } else if (prevState == STATE_CONNECTED) {
                         // exiting from connected state
                         removeConnectedDevice(device, BluetoothProfile.A2DP);
                         if (!isBluetoothAudioConnected(device)) {
@@ -150,20 +140,20 @@ public class SilenceDeviceManager {
                             mSilenceDevices.remove(device);
                         }
                     }
-                    break;
+                }
 
-                case MSG_HFP_CONNECTION_STATE_CHANGED:
+                case MSG_HFP_CONNECTION_STATE_CHANGED -> {
                     BluetoothDevice bluetoothDevice = (BluetoothDevice) msg.obj;
                     int prev = msg.arg1;
                     int next = msg.arg2;
 
-                    if (next == BluetoothProfile.STATE_CONNECTED) {
+                    if (next == STATE_CONNECTED) {
                         // enter connected state
                         addConnectedDevice(bluetoothDevice, BluetoothProfile.HEADSET);
                         if (!mSilenceDevices.containsKey(bluetoothDevice)) {
                             mSilenceDevices.put(bluetoothDevice, false);
                         }
-                    } else if (prev == BluetoothProfile.STATE_CONNECTED) {
+                    } else if (prev == STATE_CONNECTED) {
                         // exiting from connected state
                         removeConnectedDevice(bluetoothDevice, BluetoothProfile.HEADSET);
                         if (!isBluetoothAudioConnected(bluetoothDevice)) {
@@ -171,65 +161,50 @@ public class SilenceDeviceManager {
                             mSilenceDevices.remove(bluetoothDevice);
                         }
                     }
-                    break;
+                }
 
-                case MSG_A2DP_ACTIVE_DEVICE_CHANGED:
+                case MSG_A2DP_ACTIVE_DEVICE_CHANGED -> {
                     BluetoothDevice a2dpActiveDevice = (BluetoothDevice) msg.obj;
                     if (getSilenceMode(a2dpActiveDevice)) {
                         // Resume the device from silence mode.
                         setSilenceMode(a2dpActiveDevice, false);
                     }
-                    break;
+                }
 
-                case MSG_HFP_ACTIVE_DEVICE_CHANGED:
+                case MSG_HFP_ACTIVE_DEVICE_CHANGED -> {
                     BluetoothDevice hfpActiveDevice = (BluetoothDevice) msg.obj;
                     if (getSilenceMode(hfpActiveDevice)) {
                         // Resume the device from silence mode.
                         setSilenceMode(hfpActiveDevice, false);
                     }
-                    break;
+                }
 
-                default:
-                    Log.e(TAG, "Unknown message: " + msg.what);
-                    break;
+                default -> Log.e(TAG, "Unknown message: " + msg.what);
             }
         }
     }
 
-    SilenceDeviceManager(AdapterService service, ServiceFactory factory, Looper looper) {
+    SilenceDeviceManager(AdapterService service, Looper looper) {
         mAdapterService = service;
-        mFactory = factory;
-        mLooper = looper;
-    }
-
-    void start() {
-        Log.v(TAG, "start()");
-        mHandler = new SilenceDeviceManagerHandler(mLooper);
+        mHandler = new SilenceDeviceManagerHandler(looper);
     }
 
     void cleanup() {
-        Log.v(TAG, "cleanup()");
+        Log.i(TAG, "cleanup()");
         mSilenceDevices.clear();
     }
 
-    @VisibleForTesting
     boolean setSilenceMode(BluetoothDevice device, boolean silence) {
-        if (mHandler == null) {
-            Log.e(TAG, "setSilenceMode() mHandler is null!");
-            return false;
-        }
         Log.d(TAG, "setSilenceMode: " + device + ", " + silence);
-        Message message =
-                mHandler.obtainMessage(
+        mHandler.obtainMessage(
                         MSG_SILENCE_DEVICE_STATE_CHANGED,
                         silence ? ENABLE_SILENCE : DISABLE_SILENCE,
                         0,
-                        device);
-        mHandler.sendMessage(message);
+                        device)
+                .sendToTarget();
         return true;
     }
 
-    @RequiresPermission(android.Manifest.permission.MODIFY_PHONE_STATE)
     void handleSilenceDeviceStateChanged(BluetoothDevice device, boolean state) {
         boolean oldState = getSilenceMode(device);
         if (oldState == state) {
@@ -240,35 +215,34 @@ public class SilenceDeviceManager {
                 // Device is disconnected, resume all silenced profiles.
                 state = false;
             } else {
-                Log.d(TAG, "Deivce is not connected to any Bluetooth audio.");
+                Log.d(TAG, "Device is not connected to any Bluetooth audio.");
                 return;
             }
         }
-        mSilenceDevices.replace(device, state);
+        final var stateFinal = state;
+        mSilenceDevices.replace(device, stateFinal);
 
-        A2dpService a2dpService = mFactory.getA2dpService();
-        if (a2dpService != null) {
-            a2dpService.setSilenceMode(device, state);
-        }
-        HeadsetService headsetService = mFactory.getHeadsetService();
-        if (headsetService != null) {
-            headsetService.setSilenceMode(device, state);
-        }
-        Log.i(TAG, "Silence mode change " + device + ": " + oldState + " -> " + state);
-        broadcastSilenceStateChange(device, state);
+        mAdapterService.getA2dpService().ifPresent(a2dp -> a2dp.setSilenceMode(device, stateFinal));
+        mAdapterService
+                .getHeadsetService()
+                .ifPresent(headset -> headset.setSilenceMode(device, stateFinal));
+
+        Log.i(TAG, "Silence mode change " + device + ": " + oldState + " -> " + stateFinal);
+        broadcastSilenceStateChange(device);
     }
 
-    void broadcastSilenceStateChange(BluetoothDevice device, boolean state) {
+    private void broadcastSilenceStateChange(BluetoothDevice device) {
         Intent intent = new Intent(BluetoothDevice.ACTION_SILENCE_MODE_CHANGED);
         intent.putExtra(BluetoothDevice.EXTRA_DEVICE, device);
-        mAdapterService.sendBroadcastAsUser(
-                intent,
-                UserHandle.ALL,
-                BLUETOOTH_CONNECT,
-                Utils.getTempBroadcastOptions().toBundle());
+        if (Flags.onlyBroadcastToLocalUser()) {
+            mAdapterService.sendBroadcast(
+                    intent, BLUETOOTH_CONNECT, Utils.getTempBroadcastBundle());
+        } else {
+            mAdapterService.sendBroadcastAsUser(
+                    intent, UserHandle.ALL, BLUETOOTH_CONNECT, Utils.getTempBroadcastBundle());
+        }
     }
 
-    @VisibleForTesting
     boolean getSilenceMode(BluetoothDevice device) {
         boolean state = false;
         if (mSilenceDevices.containsKey(device)) {
@@ -277,7 +251,7 @@ public class SilenceDeviceManager {
         return state;
     }
 
-    void addConnectedDevice(BluetoothDevice device, int profile) {
+    private void addConnectedDevice(BluetoothDevice device, int profile) {
         Log.d(
                 TAG,
                 "addConnectedDevice: "
@@ -285,20 +259,21 @@ public class SilenceDeviceManager {
                         + ", profile:"
                         + BluetoothProfile.getProfileName(profile));
         switch (profile) {
-            case BluetoothProfile.A2DP:
+            case BluetoothProfile.A2DP -> {
                 if (!mA2dpConnectedDevices.contains(device)) {
                     mA2dpConnectedDevices.add(device);
                 }
-                break;
-            case BluetoothProfile.HEADSET:
+            }
+            case BluetoothProfile.HEADSET -> {
                 if (!mHfpConnectedDevices.contains(device)) {
                     mHfpConnectedDevices.add(device);
                 }
-                break;
+            }
+            default -> {} // Nothing to do
         }
     }
 
-    void removeConnectedDevice(BluetoothDevice device, int profile) {
+    private void removeConnectedDevice(BluetoothDevice device, int profile) {
         Log.d(
                 TAG,
                 "removeConnectedDevice: "
@@ -306,28 +281,33 @@ public class SilenceDeviceManager {
                         + ", profile:"
                         + BluetoothProfile.getProfileName(profile));
         switch (profile) {
-            case BluetoothProfile.A2DP:
+            case BluetoothProfile.A2DP -> {
                 if (mA2dpConnectedDevices.contains(device)) {
                     mA2dpConnectedDevices.remove(device);
                 }
-                break;
-            case BluetoothProfile.HEADSET:
+            }
+            case BluetoothProfile.HEADSET -> {
                 if (mHfpConnectedDevices.contains(device)) {
                     mHfpConnectedDevices.remove(device);
                 }
-                break;
+            }
+            default -> {} // Nothing to do
         }
     }
 
-    boolean isBluetoothAudioConnected(BluetoothDevice device) {
+    private boolean isBluetoothAudioConnected(BluetoothDevice device) {
         return (mA2dpConnectedDevices.contains(device) || mHfpConnectedDevices.contains(device));
     }
 
-    protected void dump(FileDescriptor fd, PrintWriter writer, String[] args) {
-        writer.println("\nSilenceDeviceManager:");
-        writer.println("  Address            | Is silenced?");
+    protected void dump(StringBuilder sb) {
+        sb.append("SilenceDeviceManager:\n");
+        sb.append("  Address            | Is silenced?\n");
         for (BluetoothDevice device : mSilenceDevices.keySet()) {
-            writer.println("  " + device + "  | " + getSilenceMode(device));
+            sb.append("  ")
+                    .append(device)
+                    .append("  | ")
+                    .append(getSilenceMode(device))
+                    .append("\n");
         }
     }
 }

@@ -19,8 +19,9 @@
 #ifndef BTIF_HH_H
 #define BTIF_HH_H
 
-#include <base/strings/stringprintf.h>
 #include <bluetooth/log.h>
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/ble_address_with_type.h>
 #include <hardware/bluetooth.h>
 #include <hardware/bt_hh.h>
 #ifndef _WIN32
@@ -30,12 +31,12 @@
 #endif
 #include <stdint.h>
 
+#include <list>
+
 #include "bta/include/bta_hh_api.h"
 #include "macros.h"
 #include "osi/include/alarm.h"
 #include "osi/include/fixed_queue.h"
-#include "types/ble_address_with_type.h"
-#include "types/raw_address.h"
 
 /*******************************************************************************
  *  Constants & Macros
@@ -68,10 +69,6 @@ typedef enum : unsigned {
   BTIF_HH_DISABLED = 0,
   BTIF_HH_ENABLED,
   BTIF_HH_DISABLING,
-  BTIF_HH_DEV_UNKNOWN,
-  BTIF_HH_DEV_CONNECTING,
-  BTIF_HH_DEV_CONNECTED,
-  BTIF_HH_DEV_DISCONNECTED
 } BTIF_HH_STATUS;
 
 inline std::string btif_hh_status_text(const BTIF_HH_STATUS& status) {
@@ -79,27 +76,27 @@ inline std::string btif_hh_status_text(const BTIF_HH_STATUS& status) {
     CASE_RETURN_TEXT(BTIF_HH_DISABLED);
     CASE_RETURN_TEXT(BTIF_HH_ENABLED);
     CASE_RETURN_TEXT(BTIF_HH_DISABLING);
-    CASE_RETURN_TEXT(BTIF_HH_DEV_UNKNOWN);
-    CASE_RETURN_TEXT(BTIF_HH_DEV_CONNECTING);
-    CASE_RETURN_TEXT(BTIF_HH_DEV_CONNECTED);
-    CASE_RETURN_TEXT(BTIF_HH_DEV_DISCONNECTED);
     default:
-      return base::StringPrintf("UNKNOWN[%u]", status);
+      return std::format("UNKNOWN[{}]", static_cast<unsigned>(status));
   }
 }
 
-/* Supposedly is exclusive to uhid thread, but now is still accessed by btif. */
-/* TODO: remove btif_hh_uhid_t from btif_hh_device_t. */
+/* Uhid thread has exclusive access to this block. */
 typedef struct {
-  int fd;
+  int fd;                // for interfacing with uhid
+  int internal_recv_fd;  // for receiving internal events in uhid thread
+  int internal_send_fd;  // for passing to other threads so they can send
+                         // internal events
   uint8_t dev_handle;
   tAclLinkSpec link_spec;
-  uint8_t hh_keep_polling;
   bool ready_for_data;
   fixed_queue_t* get_rpt_id_queue;
 #if ENABLE_UHID_SET_REPORT
   fixed_queue_t* set_rpt_id_queue;
 #endif  // ENABLE_UHID_SET_REPORT
+  fixed_queue_t* input_queue;  // to store the inputs before uhid is ready.
+  alarm_t* delayed_ready_timer;  // to delay marking a device as ready, give input chance to listen.
+  alarm_t* ready_disconn_timer;  // to disconnect device if still not ready after some time.
 } btif_hh_uhid_t;
 
 /* Control block to maintain properties of devices */
@@ -110,10 +107,10 @@ typedef struct {
   tBTA_HH_ATTR_MASK attr_mask;
   uint8_t sub_class;
   uint8_t app_id;
+  int internal_send_fd;  // for sending internal events from btif
   pthread_t hh_poll_thread_id;
   alarm_t* vup_timer;
   bool local_vup;  // Indicated locally initiated VUP
-  btif_hh_uhid_t uhid;
 } btif_hh_device_t;
 
 /* Control block to maintain properties of devices */
@@ -134,7 +131,11 @@ typedef struct {
   uint32_t device_num;
   btif_hh_added_device_t added_devices[BTIF_HH_MAX_ADDED_DEV];
   bool service_dereg_active;
-  tAclLinkSpec pending_link_spec;
+
+  std::list<tAclLinkSpec> new_connection_requests;
+
+  tBTA_HH_CONN pending_incoming_connection;  // Unexpected incoming connection request
+  alarm_t* incoming_connection_timer;        // Timer to handle unexpected incoming connection
 } btif_hh_cb_t;
 
 /*******************************************************************************
@@ -143,29 +144,46 @@ typedef struct {
 
 extern btif_hh_cb_t btif_hh_cb;
 
+const bthh_interface_t* btif_hh_get_interface();
+bt_status_t btif_hh_execute_service(bool b_enable);
 btif_hh_device_t* btif_hh_find_connected_dev_by_handle(uint8_t handle);
 btif_hh_device_t* btif_hh_find_dev_by_handle(uint8_t handle);
 btif_hh_device_t* btif_hh_find_empty_dev(void);
-bt_status_t btif_hh_connect(const tAclLinkSpec& link_spec);
 bt_status_t btif_hh_virtual_unplug(const tAclLinkSpec& link_spec);
+bt_status_t btif_hh_virtual_unplug_from_main(const tAclLinkSpec& link_spec);
+bt_status_t btif_hh_connect(const tAclLinkSpec& link_spec);
 void btif_hh_remove_device(const tAclLinkSpec& link_spec);
-void btif_hh_setreport(btif_hh_uhid_t* p_uhid, bthh_report_type_t r_type,
-                       uint16_t size, uint8_t* report);
+void btif_hh_setreport(btif_hh_uhid_t* p_uhid, bthh_report_type_t r_type, uint16_t size,
+                       uint8_t* report);
 void btif_hh_senddata(btif_hh_uhid_t* p_uhid, uint16_t size, uint8_t* report);
-void btif_hh_getreport(btif_hh_uhid_t* p_uhid, bthh_report_type_t r_type,
-                       uint8_t reportId, uint16_t bufferSize);
+void btif_hh_getreport(btif_hh_uhid_t* p_uhid, bthh_report_type_t r_type, uint8_t reportId,
+                       uint16_t bufferSize);
 void btif_hh_service_registration(bool enable);
 
-void btif_hh_load_bonded_dev(const tAclLinkSpec& link_spec,
-                             tBTA_HH_ATTR_MASK attr_mask, uint8_t sub_class,
-                             uint8_t app_id, tBTA_HH_DEV_DSCP_INFO dscp_info,
+void btif_hh_load_bonded_dev(const tAclLinkSpec& link_spec, tBTA_HH_ATTR_MASK attr_mask,
+                             uint8_t sub_class, uint8_t app_id, tBTA_HH_DEV_DSCP_INFO dscp_info,
                              bool reconnect_allowed);
+void btif_hh_acl_disconnected(const RawAddress& addr, tBT_TRANSPORT transport);
+
+#ifdef _MSC_VER
+int bta_hh_co_write( int fd, tAclLinkSpec* link_spec, uint8_t* rpt, uint16_t len );
+#else
+int bta_hh_co_write(int fd, uint8_t* rpt, uint16_t len);
+#endif
+void bta_hh_co_close(btif_hh_device_t* p_dev);
+void bta_hh_co_send_hid_info(btif_hh_device_t* p_dev, const char* dev_name, uint16_t vendor_id,
+                             uint16_t product_id, uint16_t version, uint8_t ctry_code,
+                             uint16_t dscp_len, uint8_t* p_dscp);
 
 void DumpsysHid(int fd);
 
-namespace fmt {
+namespace bluetooth::legacy::testing {
+void bte_hh_evt(tBTA_HH_EVT event, tBTA_HH* p_data);
+}  // namespace bluetooth::legacy::testing
+
+namespace std {
 template <>
 struct formatter<BTIF_HH_STATUS> : enum_formatter<BTIF_HH_STATUS> {};
-}  // namespace fmt
+}  // namespace std
 
 #endif

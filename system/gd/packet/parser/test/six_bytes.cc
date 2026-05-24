@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2019 The Android Open Source Project
+ *  Copyright (C) 2019 The Android Open Source Project
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -23,9 +23,7 @@ namespace packet {
 namespace parser {
 namespace test {
 
-SixBytes::SixBytes(const uint8_t (&six)[6]) {
-  std::copy(six, six + kLength, six_bytes);
-};
+SixBytes::SixBytes(const uint8_t (&six)[6]) { std::copy(six, six + kLength, six_bytes); }
 
 }  // namespace test
 }  // namespace parser

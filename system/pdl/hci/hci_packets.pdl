@@ -349,6 +349,7 @@ enum OpCode : 16 {
   LE_READ_LOCAL_RESOLVABLE_ADDRESS = 0x202C,
   LE_SET_ADDRESS_RESOLUTION_ENABLE = 0x202D,
   LE_SET_RESOLVABLE_PRIVATE_ADDRESS_TIMEOUT = 0x202E,
+  LE_SET_RESOLVABLE_PRIVATE_ADDRESS_TIMEOUT_V2 = 0x209E,
   LE_READ_MAXIMUM_DATA_LENGTH = 0x202F,
   LE_READ_PHY = 0x2030,
   LE_SET_DEFAULT_PHY = 0x2031,
@@ -460,6 +461,10 @@ enum OpCode : 16 {
   // MSFT_OPCODE_xxxx below are needed for the tests.
   MSFT_OPCODE_MEDIATEK = 0xFD30,
   MSFT_OPCODE_QUALCOMM = 0xFD70,
+
+  // Sniff offload
+  WRITE_SNIFF_OFFLOAD_ENABLE = 0xFF10,
+  WRITE_SNIFF_OFFLOAD_PARAMETERS = 0xFF11,
 }
 
 // For mapping Local Supported Commands command
@@ -783,6 +788,7 @@ enum OpCodeIndex : 16 {
   SET_MIN_ENCRYPTION_KEY_SIZE = 457,
   LE_SET_DEFAULT_SUBRATE = 460,
   LE_SUBRATE_REQUEST = 461,
+  LE_SET_RESOLVABLE_PRIVATE_ADDRESS_TIMEOUT_V2 = 482,
 }
 
 packet Command {
@@ -862,6 +868,7 @@ enum EventCode : 8 {
   LE_META_EVENT = 0x3e,
   NUMBER_OF_COMPLETED_DATA_BLOCKS = 0x48,
   AUTHENTICATED_PAYLOAD_TIMEOUT_EXPIRED = 0x57,
+  ENCRYPTION_CHANGE_V2 = 0x59,
   VENDOR_SPECIFIC = 0xFF,
 }
 
@@ -3807,6 +3814,15 @@ packet LeSetResolvablePrivateAddressTimeoutComplete : CommandComplete (command_o
   status : ErrorCode,
 }
 
+packet LeSetResolvablePrivateAddressTimeoutV2 : LeSecurityCommand (op_code = LE_SET_RESOLVABLE_PRIVATE_ADDRESS_TIMEOUT_V2) {
+  rpa_timeout_min : 16, // Minimum RPA_Timeout measured in seconds 0x0001 to 0x0E10 1s to 1 hour, default 0x01E0 (480 s or 8 minutes)
+  rpa_timeout_max : 16, // Maximum RPA_Timeout measured in seconds 0x0001 to 0x0E10 1s to 1 hour, default 0x0384 (900 s or 15 minutes)
+}
+
+packet LeSetResolvablePrivateAddressTimeoutV2Complete : CommandComplete (command_op_code = LE_SET_RESOLVABLE_PRIVATE_ADDRESS_TIMEOUT_V2) {
+  status : ErrorCode,
+}
+
 packet LeReadMaximumDataLength : Command (op_code = LE_READ_MAXIMUM_DATA_LENGTH) {
 }
 
@@ -4905,7 +4921,6 @@ packet LeSubrateRequestStatus : CommandStatus (command_op_code = LE_SUBRATE_REQU
 }
 
 packet LeCsReadLocalSupportedCapabilities : DistanceMeasurementCommand (op_code = LE_CS_READ_LOCAL_SUPPORTED_CAPABILITIES) {
-
 }
 
 struct CsRoleSupported {
@@ -4938,12 +4953,13 @@ struct CsOptionalNadmRandomCapability {
 
 struct CsOptionalCsSyncPhysSupported {
   le_2m_phy : 1,
-  _reserved_ : 7,
+  le_2m_2bt_phy : 1,
+  _reserved_ : 6,
 }
 
 struct CsOptionalSubfeaturesSupported {
-  companion_signal : 1,
-  frequency_actuation_error : 1,
+  _reserved_ : 1,
+  no_frequency_actuation_error : 1,
   channel_selection_algorithm : 1,
   phase_based_ranging : 1,
   _reserved_ : 12,
@@ -5011,6 +5027,7 @@ packet LeCsReadLocalSupportedCapabilitiesComplete : CommandComplete (command_op_
   optional_t_fcs_times_supported : CsOptionalTFcsTimesSupported,
   optional_t_pm_times_supported : CsOptionalTPmTimesSupported,
   t_sw_time_supported : 8,
+  optional_tx_snr_capability : 8,
 }
 
 packet LeCsReadRemoteSupportedCapabilities : DistanceMeasurementCommand (op_code = LE_CS_READ_REMOTE_SUPPORTED_CAPABILITIES) {
@@ -5043,6 +5060,7 @@ packet LeCsWriteCachedRemoteSupportedCapabilities : DistanceMeasurementCommand (
   optional_t_fcs_times_supported : CsOptionalTFcsTimesSupported,
   optional_t_pm_times_supported : CsOptionalTPmTimesSupported,
   t_sw_time_supported : 8,
+  optional_tx_snr_capability: 8,
 }
 
 packet LeCsWriteCachedRemoteSupportedCapabilitiesComplete : CommandComplete (command_op_code = LE_CS_WRITE_CACHED_REMOTE_SUPPORTED_CAPABILITIES) {
@@ -5126,7 +5144,7 @@ enum CsRole : 8 {
 }
 
 enum CsConfigRttType : 8 {
-  RTT_AA_COARSE = 0x00,
+  RTT_AA_ONLY = 0x00,
   RTT_WITH_32_BIT_SOUNDING_SEQUENCE = 0x01,
   RTT_WITH_96_BIT_SOUNDING_SEQUENCE = 0x02,
   RTT_WITH_32_BIT_RANDOM_SEQUENCE = 0x03,
@@ -5138,6 +5156,7 @@ enum CsConfigRttType : 8 {
 enum CsSyncPhy : 8 {
   LE_1M_PHY = 0x01,
   LE_2M_PHY = 0x02,
+  LE_2M_2BT_PHY = 0x03,
 }
 
 enum CsChannelSelectionType : 8 {
@@ -5172,7 +5191,7 @@ packet LeCsCreateConfig : DistanceMeasurementCommand (op_code = LE_CS_CREATE_CON
   channel_selection_type : CsChannelSelectionType,
   ch3c_shape : CsCh3cShape,
   ch3c_jump : 8,
-  companion_signal_enable : Enable,
+  _reserved_ : 8,
 }
 
 packet LeCsCreateConfigStatus : CommandStatus (command_op_code = LE_CS_CREATE_CONFIG) {
@@ -5210,6 +5229,15 @@ struct CsPreferredPeerAntenna {
   _reserved_ : 4,
 }
 
+enum CsSnrControl : 8 {
+  ADJUST_18_DB = 0x00,
+  ADJUST_21_DB = 0x01,
+  ADJUST_24_DB = 0x02,
+  ADJUST_27_DB = 0x03,
+  ADJUST_30_DB = 0x04,
+  NOT_APPLIED = 0xFF,
+}
+
 packet LeCsSetProcedureParameters  : DistanceMeasurementCommand (op_code = LE_CS_SET_PROCEDURE_PARAMETERS) {
   connection_handle: 12,
   _reserved_ : 4,
@@ -5225,6 +5253,8 @@ packet LeCsSetProcedureParameters  : DistanceMeasurementCommand (op_code = LE_CS
   phy : CsPhy,
   tx_pwr_delta : 8,
   preferred_peer_antenna : CsPreferredPeerAntenna,
+  snr_control_initiator: CsSnrControl,
+  snr_control_reflector: CsSnrControl,
 }
 
 packet LeCsSetProcedureParametersComplete : CommandComplete (command_op_code = LE_CS_SET_PROCEDURE_PARAMETERS) {
@@ -5255,16 +5285,20 @@ packet LeCsTest : DistanceMeasurementCommand (op_code = LE_CS_TEST) {
   cs_sync_antenna_selection : 8,
   cs_subevent_length : 24,
   cs_subevent_interval : 16,
+  max_num_subevents : 8,
   transmit_power_level : 8,
   t_ip1_time : 8,
   t_ip2_time : 8,
   t_fcs_time : 8,
   t_pm_time : 8,
   t_sw_time : 8,
-  tone_antenna_config : 8,
-  companion_signal_enable : 8,
+  tone_antenna_config_selection : 8,
+  _reserved_ : 8,
+  snr_control_initiator: CsSnrControl,
+  snr_control_reflector: CsSnrControl,
   drbg_nonce : 16,
-  override_config : 8,
+  channel_map_repetition : 8,
+  override_config : 16,
   override_parameters_length : 8,
   override_parameters_data : 8[],
 }
@@ -5333,6 +5367,11 @@ test LeGetVendorCapabilitiesComplete103 {
 
 packet LeGetVendorCapabilitiesComplete104 : LeGetVendorCapabilitiesComplete103 {
   a2dp_offload_v2_support : 8,
+  _payload_,
+}
+
+packet LeGetVendorCapabilitiesComplete105 : LeGetVendorCapabilitiesComplete104 {
+  sniff_offload_support : 8,
   _payload_,
 }
 
@@ -6312,6 +6351,14 @@ packet AuthenticatedPayloadTimeoutExpired : Event (event_code = AUTHENTICATED_PA
   _reserved_ : 4,
 }
 
+packet EncryptionChangeV2 : Event (event_code = ENCRYPTION_CHANGE_V2) {
+  status : ErrorCode,
+  connection_handle : 12,
+  _reserved_ : 4,
+  encryption_enabled : EncryptionEnabled,
+  key_size : 8,
+}
+
 // LE Events
 packet LeConnectionComplete : LeMetaEvent (subevent_code = CONNECTION_COMPLETE) {
   status : ErrorCode,
@@ -6777,6 +6824,7 @@ packet LeCsReadRemoteSupportedCapabilitiesComplete : LeMetaEvent (subevent_code 
   optional_t_fcs_times_supported : CsOptionalTFcsTimesSupported,
   optional_t_pm_times_supported : CsOptionalTPmTimesSupported,
   t_sw_time_supported : 8,
+  optional_tx_snr_capability : 8,
 }
 
 packet LeCsReadRemoteFaeTableComplete : LeMetaEvent (subevent_code = LE_CS_READ_REMOTE_FAE_TABLE_COMPLETE) {
@@ -6830,7 +6878,7 @@ packet LeCsConfigComplete : LeMetaEvent (subevent_code = LE_CS_CONFIG_COMPLETE) 
   channel_selection_type : CsChannelSelectionType,
   ch3c_shape : CsCh3cShape,
   ch3c_jump : 8,
-  companion_signal_enable : Enable,
+  _reserved_ : 8,
   t_ip1_time : 8,
   t_ip2_time : 8,
   t_fcs_time : 8,
@@ -6852,9 +6900,10 @@ packet LeCsProcedureEnableComplete : LeMetaEvent (subevent_code = LE_CS_PROCEDUR
   event_interval : 16,
   procedure_interval : 16,
   procedure_count : 16,
+  max_procedure_len : 16,
 }
 
-struct LeCsMode0InitatorData {
+struct LeCsMode0InitiatorData {
   packet_quality : 8,
   packet_rssi : 8,
   packet_antenna : 8,
@@ -6868,6 +6917,59 @@ struct LeCsMode0ReflectorData {
   packet_antenna : 8,
 }
 
+enum CsPacketNadm : 8 {
+  ATTACK_IS_EXTREMELY_UNLIKELY = 0x00,
+  ATTACK_IS_VERY_UNLIKELY = 0x01,
+  ATTACK_IS_UNLIKELY = 0x02,
+  ATTACK_IS_POSSIBLE = 0x03,
+  ATTACK_IS_LIKELY = 0x04,
+  ATTACK_IS_VERY_LIKELY = 0x05,
+  ATTACK_IS_EXTREMELY_LIKELY = 0x06,
+  UNKNOWN_NADM = 0xFF,
+}
+
+struct LeCsPacketPct {
+  i_sample : 12,
+  q_sample : 12,
+  _reserved_ : 8,
+}
+
+struct LeCsMode1InitiatorData {
+  packet_quality : 8,
+  packet_nadm : CsPacketNadm,
+  packet_rssi : 8,
+  toa_tod_initiator : 16,
+  packet_antenna : 8,
+}
+
+struct LeCsMode1InitiatorDataWithPacketPct {
+  packet_quality : 8,
+  packet_nadm : CsPacketNadm,
+  packet_rssi : 8,
+  toa_tod_initiator : 16,
+  packet_antenna : 8,
+  packet_pct1 : LeCsPacketPct,
+  packet_pct2 : LeCsPacketPct,
+}
+
+struct LeCsMode1ReflectorData {
+  packet_quality : 8,
+  packet_nadm : CsPacketNadm,
+  packet_rssi : 8,
+  tod_toa_reflector : 16,
+  packet_antenna : 8,
+}
+
+struct LeCsMode1ReflectorDataWithPacketPct {
+  packet_quality : 8,
+  packet_nadm : CsPacketNadm,
+  packet_rssi : 8,
+  tod_toa_reflector : 16,
+  packet_antenna : 8,
+  packet_pct1 : LeCsPacketPct,
+  packet_pct2 : LeCsPacketPct,
+}
+
 struct LeCsToneDataWithQuality {
   i_sample : 12,
   q_sample : 12,
@@ -6876,6 +6978,54 @@ struct LeCsToneDataWithQuality {
 
 struct LeCsMode2Data {
   _count_(tone_data) : 8,
+  antenna_permutation_index : 8,
+  tone_data : LeCsToneDataWithQuality[],
+}
+
+struct LeCsMode3InitiatorData {
+  _count_(tone_data) : 8,
+  packet_quality : 8,
+  packet_nadm : CsPacketNadm,
+  packet_rssi : 8,
+  toa_tod_initiator : 16,
+  packet_antenna : 8,
+  antenna_permutation_index : 8,
+  tone_data : LeCsToneDataWithQuality[],
+}
+
+struct LeCsMode3InitiatorDataWithPacketPct {
+  _count_(tone_data) : 8,
+  packet_quality : 8,
+  packet_nadm : CsPacketNadm,
+  packet_rssi : 8,
+  toa_tod_initiator : 16,
+  packet_antenna : 8,
+  packet_pct1 : LeCsPacketPct,
+  packet_pct2 : LeCsPacketPct,
+  antenna_permutation_index : 8,
+  tone_data : LeCsToneDataWithQuality[],
+}
+
+struct LeCsMode3ReflectorData {
+  _count_(tone_data) : 8,
+  packet_quality : 8,
+  packet_nadm : CsPacketNadm,
+  packet_rssi : 8,
+  tod_toa_reflector : 16,
+  packet_antenna : 8,
+  antenna_permutation_index : 8,
+  tone_data : LeCsToneDataWithQuality[],
+}
+
+struct LeCsMode3ReflectorDataWithPacketPct {
+  _count_(tone_data) : 8,
+  packet_quality : 8,
+  packet_nadm : CsPacketNadm,
+  packet_rssi : 8,
+  tod_toa_reflector : 16,
+  packet_antenna : 8,
+  packet_pct1 : LeCsPacketPct,
+  packet_pct2 : LeCsPacketPct,
   antenna_permutation_index : 8,
   tone_data : LeCsToneDataWithQuality[],
 }
@@ -7355,4 +7505,35 @@ packet MsftLeMonitorDeviceEventPayload : MsftEventPayload (msft_event_code = MSF
 test MsftLeMonitorDeviceEventPayload {
   "\x02\x01\x00\x01\x02\x03\x04\x05\x10\x00",
   "\x02\x02\xf0\xf1\xf2\xf3\xf4\xf5\xaa\x02",
+}
+
+packet WriteSniffOffloadEnable : VendorCommand (op_code = WRITE_SNIFF_OFFLOAD_ENABLE) {
+  enable_sniff_offload : 8,
+  subrate_max_latency : 16,
+  subrate_min_remote_timeout : 16,
+  subrate_min_local_timeout : 16,
+  suppress_mode_change_event : 8,
+  suppress_sniff_subrating_event : 8,
+}
+
+packet WriteSniffOffloadEnableComplete : CommandComplete (command_op_code = WRITE_SNIFF_OFFLOAD_ENABLE) {
+  status : ErrorCode,
+}
+
+packet WriteSniffOffloadParameters : VendorCommand (op_code = WRITE_SNIFF_OFFLOAD_PARAMETERS) {
+  connection_handle : 16,
+  sniff_max_interval : 16,
+  sniff_min_interval : 16,
+  sniff_attempt : 16,
+  sniff_timeout : 16,
+  link_idle_timeout : 16,
+  max_latency : 16,
+  min_remote_timeout : 16,
+  min_local_timeout : 16,
+  allow_exit_sniff_on_rx : 8,
+  allow_exit_sniff_on_tx : 8,
+}
+
+packet WriteSniffOffloadParametersComplete : CommandComplete (command_op_code = WRITE_SNIFF_OFFLOAD_PARAMETERS) {
+  status : ErrorCode,
 }

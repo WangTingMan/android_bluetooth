@@ -13,71 +13,98 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.le_scan;
 
+import static com.android.bluetooth.Utils.getSystemClock;
+import static com.android.bluetooth.util.AttributionSourceUtils.getLastAttributionTag;
+
 import android.annotation.Nullable;
+import android.app.PendingIntent;
 import android.bluetooth.le.IScannerCallback;
-import android.content.Context;
-import android.os.Binder;
-import android.os.IBinder;
-import android.os.IInterface;
+import android.bluetooth.le.ScanSettings;
+import android.content.AttributionSource;
 import android.os.RemoteException;
 import android.os.UserHandle;
 import android.os.WorkSource;
 import android.util.Log;
 
+import com.android.bluetooth.btservice.AdapterService;
+
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 
 /** List of our registered scanners. */
-public class ScannerMap {
-    private static final String TAG = "ScannerMap";
+class ScannerMap {
+    private static final String TAG = ScannerMap.class.getSimpleName();
 
     /** Internal map to keep track of logging information by app name */
     private final HashMap<Integer, AppScanStats> mAppScanStatsMap = new HashMap<>();
 
     private final ConcurrentLinkedQueue<ScannerApp> mApps = new ConcurrentLinkedQueue<>();
 
-    /** Add an entry to the application context list with a callback. */
-    ScannerApp add(
+    ScannerApp addWithCallback(
             UUID uuid,
+            AttributionSource source,
             WorkSource workSource,
+            int uid,
             IScannerCallback callback,
-            Context context,
-            TransitionalScanHelper scanHelper) {
-        return add(uuid, workSource, callback, null, context, scanHelper);
+            AdapterService adapterService,
+            ScanController scanController) {
+        return add(
+                uuid,
+                null,
+                source,
+                workSource,
+                uid,
+                callback,
+                null,
+                adapterService,
+                scanController);
     }
 
-    /** Add an entry to the application context list with a pending intent. */
-    ScannerApp add(
+    ScannerApp addWithPendingIntent(
             UUID uuid,
-            TransitionalScanHelper.PendingIntentInfo piInfo,
-            Context context,
-            TransitionalScanHelper scanHelper) {
-        return add(uuid, null, null, piInfo, context, scanHelper);
+            UserHandle userHandle,
+            AttributionSource source,
+            ScanController.PendingIntentInfo pendingIntentInfo,
+            AdapterService adapterService,
+            ScanController scanController) {
+        return add(
+                uuid,
+                userHandle,
+                source,
+                null,
+                0, // uid is not considered from here as the pendingIntentInfo is set
+                null,
+                pendingIntentInfo,
+                adapterService,
+                scanController);
     }
 
     private ScannerApp add(
             UUID uuid,
+            @Nullable UserHandle userHandle,
+            AttributionSource source,
             @Nullable WorkSource workSource,
+            int uid,
             @Nullable IScannerCallback callback,
-            @Nullable TransitionalScanHelper.PendingIntentInfo piInfo,
-            Context context,
-            TransitionalScanHelper scanHelper) {
+            @Nullable ScanController.PendingIntentInfo piInfo,
+            AdapterService adapterService,
+            ScanController scanController) {
         int appUid;
-        String appName = null;
+        String appName;
         if (piInfo != null) {
-            appUid = piInfo.callingUid;
-            appName = piInfo.callingPackage;
+            appUid = piInfo.callingUid();
+            appName = piInfo.callingPackage();
         } else {
-            appUid = Binder.getCallingUid();
-            appName = context.getPackageManager().getNameForUid(appUid);
+            appUid = uid;
+            appName = adapterService.getPackageManager().getNameForUid(appUid);
         }
         if (appName == null) {
             // Assign an app name if one isn't found
@@ -85,30 +112,54 @@ public class ScannerMap {
         }
         AppScanStats appScanStats = mAppScanStatsMap.get(appUid);
         if (appScanStats == null) {
-            appScanStats = new AppScanStats(appName, workSource, this, context, scanHelper);
+            appScanStats =
+                    new AppScanStats(
+                            appName,
+                            workSource,
+                            appUid,
+                            adapterService,
+                            scanController,
+                            getSystemClock());
             mAppScanStatsMap.put(appUid, appScanStats);
         }
-        ScannerApp app = new ScannerApp(uuid, callback, piInfo, appName, appScanStats);
+        ScannerApp app =
+                new ScannerApp(
+                        uuid,
+                        userHandle,
+                        getLastAttributionTag(source),
+                        callback,
+                        piInfo,
+                        appName,
+                        appScanStats);
         mApps.add(app);
-        appScanStats.isRegistered = true;
+        appScanStats.mIsRegistered = true;
         return app;
     }
 
     /** Remove the context for a given application ID. */
     void remove(int id) {
-        Iterator<ScannerApp> i = mApps.iterator();
-        while (i.hasNext()) {
-            ScannerApp entry = i.next();
-            if (entry.mId == id) {
-                entry.cleanup();
-                i.remove();
+        removeByPredicate(app -> app.mId == id);
+    }
+
+    /** Remove the context for a given UUID */
+    void remove(UUID uuid) {
+        Log.d(TAG, "remove() - uuid: " + uuid);
+        removeByPredicate(app -> app.mUuid.equals(uuid));
+    }
+
+    private void removeByPredicate(Predicate<ScannerApp> predicate) {
+        for (var iterator = mApps.iterator(); iterator.hasNext(); ) {
+            var scannerApp = iterator.next();
+            if (predicate.test(scannerApp)) {
+                scannerApp.cleanup();
+                iterator.remove();
                 break;
             }
         }
     }
 
     /** Erases all application context entries. */
-    public void clear() {
+    void clear() {
         for (ScannerApp entry : mApps) {
             entry.cleanup();
         }
@@ -147,21 +198,18 @@ public class ScannerMap {
         return app;
     }
 
-    /** Get an application context by the calling Apps name. */
-    ScannerApp getByName(String name) {
-        ScannerApp app = getAppByPredicate(entry -> entry.mName.equals(name));
-        if (app == null) {
-            Log.e(TAG, "Context not found for name " + name);
-        }
-        return app;
+    /** Get application contexts by the calling app's name. */
+    List<ScannerApp> getByName(String name) {
+        return mApps.stream().filter(app -> app.mName.equals(name)).toList();
     }
 
-    /** Get an application context by the pending intent info object. */
-    ScannerApp getByPendingIntentInfo(TransitionalScanHelper.PendingIntentInfo info) {
+    /** Get an application context by the pending intent info object's intent. */
+    ScannerApp getByPendingIntentInfo(PendingIntent intent) {
         ScannerApp app =
-                getAppByPredicate(entry -> entry.mInfo != null && entry.mInfo.equals(info));
+                getAppByPredicate(
+                        entry -> entry.mInfo != null && entry.mInfo.intent().equals(intent));
         if (app == null) {
-            Log.e(TAG, "Context not found for info " + info);
+            Log.e(TAG, "Context not found for intent " + intent);
         }
         return app;
     }
@@ -176,105 +224,98 @@ public class ScannerMap {
         return null;
     }
 
-    /** Logs debug information. */
-    public void dump(StringBuilder sb) {
-        sb.append("  Entries: " + mAppScanStatsMap.size() + "\n\n");
-        for (AppScanStats appScanStats : mAppScanStatsMap.values()) {
-            appScanStats.dumpToString(sb);
-        }
-    }
-
-    /** Logs all apps for debugging. */
-    public void dumpApps(StringBuilder sb, BiConsumer<StringBuilder, String> bf) {
+    /** Logs debug information for registered apps and their scan statistics. */
+    void dump(StringBuilder sb, Map<Integer, ScanSettings> settingsMap) {
+        sb.append("LE Scanner:\n");
         for (ScannerApp entry : mApps) {
-            bf.accept(sb, "    app_if: " + entry.mId + ", appName: " + entry.mName);
+            StringBuilder line = new StringBuilder();
+            line.append("  app_if: ").append(entry.mId).append(", appName: ").append(entry.mName);
+
+            if (entry.mAttributionTag != null) {
+                line.append(", tag: ").append(entry.mAttributionTag);
+            }
+
+            final var settings = settingsMap.get(entry.mId);
+            if (settings != null) {
+                long reportDelayMillis = settings.getReportDelayMillis();
+                if (reportDelayMillis > 0) {
+                    line.append(", reportDelayMillis: ").append(reportDelayMillis);
+                }
+            }
+            sb.append(line).append("\n");
+        }
+
+        sb.append("\nLE Scanner Map:\n");
+        sb.append("  Entries: ").append(mAppScanStatsMap.size()).append("\n\n");
+        for (AppScanStats appScanStats : mAppScanStatsMap.values()) {
+            var scannerApps = getByName(appScanStats.mAppName);
+            appScanStats.dump(sb, scannerApps);
         }
     }
 
-    public static class ScannerApp {
-        /** Context information */
-        @Nullable TransitionalScanHelper.PendingIntentInfo mInfo;
-
-        /** Statistics for this app */
-        AppScanStats mAppScanStats;
-
-        /** The UUID of the application */
+    static class ScannerApp {
         final UUID mUuid;
+        @Nullable final UserHandle mUserHandle; // The user handle of the app that started the scan
 
-        /** The package name of the application */
-        final String mName;
+        /** The last attribution tag in the attribution source chain */
+        @Nullable final String mAttributionTag;
 
-        /** Application callbacks */
         @Nullable IScannerCallback mCallback;
+        final String mName; // The package name of the application
 
-        /** The id of the application */
+        @Nullable ScanController.PendingIntentInfo mInfo; // Context information
+        AppScanStats mAppScanStats;
         int mId;
-
-        /** Whether the calling app has location permission */
         boolean mHasLocationPermission;
-
-        /** The user handle of the app that started the scan */
-        @Nullable UserHandle mUserHandle;
-
-        /** Whether the calling app has the network settings permission */
         boolean mHasNetworkSettingsPermission;
-
-        /** Whether the calling app has the network setup wizard permission */
         boolean mHasNetworkSetupWizardPermission;
-
-        /** Whether the calling app has the network setup wizard permission */
         boolean mHasScanWithoutLocationPermission;
-
-        /** Whether the calling app has disavowed the use of bluetooth for location */
         boolean mHasDisavowedLocation;
-
         boolean mEligibleForSanitizedExposureNotification;
-
         @Nullable List<String> mAssociatedDevices;
+        @Nullable private ScanController.ScannerDeathRecipient mDeathRecipient;
 
-        /** Death recipient */
-        @Nullable private IBinder.DeathRecipient mDeathRecipient;
-
-        /** Creates a new app context. */
         ScannerApp(
                 UUID uuid,
+                @Nullable UserHandle userHandle,
+                @Nullable String attributionTag,
                 @Nullable IScannerCallback callback,
-                @Nullable TransitionalScanHelper.PendingIntentInfo info,
+                @Nullable ScanController.PendingIntentInfo info,
                 String name,
                 AppScanStats appScanStats) {
-            this.mUuid = uuid;
-            this.mCallback = callback;
-            this.mName = name;
-            this.mInfo = info;
-            this.mAppScanStats = appScanStats;
+            mUuid = uuid;
+            mUserHandle = userHandle;
+            mAttributionTag = attributionTag;
+            mCallback = callback;
+            mName = name;
+            mInfo = info;
+            mAppScanStats = appScanStats;
         }
 
-        /** Link death recipient */
-        void linkToDeath(IBinder.DeathRecipient deathRecipient) {
+        void linkToDeath(ScanController.ScannerDeathRecipient deathRecipient) {
             // It might not be a binder object
             if (mCallback == null) {
                 return;
             }
             try {
-                IBinder binder = ((IInterface) mCallback).asBinder();
-                binder.linkToDeath(deathRecipient, 0);
+                mCallback.asBinder().linkToDeath(deathRecipient, 0);
                 mDeathRecipient = deathRecipient;
             } catch (RemoteException e) {
                 Log.e(TAG, "Unable to link deathRecipient for app id " + mId);
+                cleanup();
             }
         }
 
         /** Unlink death recipient */
         void cleanup() {
-            if (mDeathRecipient != null) {
+            if (mDeathRecipient != null && mCallback != null) {
                 try {
-                    IBinder binder = ((IInterface) mCallback).asBinder();
-                    binder.unlinkToDeath(mDeathRecipient, 0);
+                    mCallback.asBinder().unlinkToDeath(mDeathRecipient, 0);
                 } catch (NoSuchElementException e) {
                     Log.e(TAG, "Unable to unlink deathRecipient for app id " + mId);
                 }
             }
-            mAppScanStats.isRegistered = false;
+            mAppScanStats.mIsRegistered = false;
         }
     }
 }

@@ -13,7 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.hfpclient;
+
+import static java.util.Objects.requireNonNull;
 
 import android.bluetooth.BluetoothDevice;
 import android.net.Uri;
@@ -55,13 +58,13 @@ public class HfpClientConnection extends Connection {
         mDevice = device;
         mConnServ = connServ;
         mServiceInterface = serviceInterface;
-        mCurrentCall = Objects.requireNonNull(call);
+        mCurrentCall = requireNonNull(call);
 
         handleCallChanged();
         finishInitializing();
     }
 
-    // Constructor to be used when a call is intiated on the HF. The call handle is obtained by
+    // Constructor to be used when a call is initiated on the HF. The call handle is obtained by
     // using the dial() command.
     public HfpClientConnection(
             BluetoothDevice device,
@@ -139,28 +142,24 @@ public class HfpClientConnection extends Connection {
 
         debug("Got call state change to " + state);
         switch (state) {
-            case HfpClientCall.CALL_STATE_ACTIVE:
+            case HfpClientCall.CALL_STATE_ACTIVE -> {
                 setActive();
                 if (conference != null) {
                     conference.setActive();
                 }
-                break;
-            case HfpClientCall.CALL_STATE_HELD_BY_RESPONSE_AND_HOLD:
-            case HfpClientCall.CALL_STATE_HELD:
+            }
+            case HfpClientCall.CALL_STATE_HELD_BY_RESPONSE_AND_HOLD,
+                    HfpClientCall.CALL_STATE_HELD -> {
                 setOnHold();
                 if (conference != null) {
                     conference.setOnHold();
                 }
-                break;
-            case HfpClientCall.CALL_STATE_DIALING:
-            case HfpClientCall.CALL_STATE_ALERTING:
-                setDialing();
-                break;
-            case HfpClientCall.CALL_STATE_INCOMING:
-            case HfpClientCall.CALL_STATE_WAITING:
-                setRinging();
-                break;
-            case HfpClientCall.CALL_STATE_TERMINATED:
+            }
+            case HfpClientCall.CALL_STATE_DIALING, HfpClientCall.CALL_STATE_ALERTING ->
+                    setDialing();
+            case HfpClientCall.CALL_STATE_INCOMING, HfpClientCall.CALL_STATE_WAITING ->
+                    setRinging();
+            case HfpClientCall.CALL_STATE_TERMINATED -> {
                 if (mPreviousCallState == HfpClientCall.CALL_STATE_INCOMING
                         || mPreviousCallState == HfpClientCall.CALL_STATE_WAITING) {
                     close(DisconnectCause.MISSED);
@@ -169,9 +168,8 @@ public class HfpClientConnection extends Connection {
                 } else {
                     close(DisconnectCause.REMOTE);
                 }
-                break;
-            default:
-                Log.wtf(TAG, "[" + mDevice + "]Unexpected phone state " + state);
+            }
+            default -> Log.wtf(TAG, "[" + mDevice + "]Unexpected phone state " + state);
         }
         mPreviousCallState = state;
     }
@@ -266,22 +264,24 @@ public class HfpClientConnection extends Connection {
             return;
         }
         switch (event) {
-            case EVENT_SCO_CONNECT:
-                mServiceInterface.connectAudio(mDevice);
-                break;
-            case EVENT_SCO_DISCONNECT:
-                mServiceInterface.disconnectAudio(mDevice);
-                break;
+            case EVENT_SCO_CONNECT -> mServiceInterface.connectAudio(mDevice);
+            case EVENT_SCO_DISCONNECT -> mServiceInterface.disconnectAudio(mDevice);
+            default -> {} // Nothing to do
         }
     }
 
     @Override
     public boolean equals(Object o) {
-        if (!(o instanceof HfpClientConnection)) {
+        if (!(o instanceof HfpClientConnection h)) {
             return false;
         }
-        Uri otherAddr = ((HfpClientConnection) o).getAddress();
-        return getAddress() == otherAddr || otherAddr != null && otherAddr.equals(getAddress());
+
+        return Objects.equals(h.getAddress(), getAddress());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getAddress());
     }
 
     @Override

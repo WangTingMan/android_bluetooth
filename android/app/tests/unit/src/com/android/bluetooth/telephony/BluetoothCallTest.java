@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,8 @@ import static org.junit.Assert.assertThrows;
 
 import android.telecom.Call;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.SmallTest;
-import androidx.test.runner.AndroidJUnit4;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -33,9 +33,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+/** Test cases for {@link BluetoothCall}. */
 @SmallTest
 @RunWith(AndroidJUnit4.class)
 public class BluetoothCallTest {
+
     private BluetoothCall mBluetoothCall;
 
     @Before
@@ -63,7 +65,6 @@ public class BluetoothCallTest {
     @Test
     public void constructor_withUuid() {
         UUID uuid = UUID.randomUUID();
-
         BluetoothCall bluetoothCall = new BluetoothCall(null, uuid);
 
         assertThat(bluetoothCall.getTbsCallId()).isEqualTo(uuid);
@@ -72,7 +73,6 @@ public class BluetoothCallTest {
     @Test
     public void setTbsCallId() {
         UUID uuid = UUID.randomUUID();
-
         mBluetoothCall.setTbsCallId(uuid);
 
         assertThat(mBluetoothCall.getTbsCallId()).isEqualTo(uuid);
@@ -380,7 +380,6 @@ public class BluetoothCallTest {
     @Test
     public void getIds_withEmptyList() {
         List<Call> calls = new ArrayList<>();
-
         List<Integer> result = BluetoothCall.getIds(calls);
 
         assertThat(result).isEmpty();

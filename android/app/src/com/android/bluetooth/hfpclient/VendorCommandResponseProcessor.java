@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,10 @@
  */
 
 /*
- * Defines utility inteface that is used by state machine/service to either send vendor specific AT
+ * Defines utility interface that is used by state machine/service to either send vendor specific AT
  * command or receive vendor specific response from the native stack.
  */
+
 package com.android.bluetooth.hfpclient;
 
 import static android.Manifest.permission.BLUETOOTH_CONNECT;
@@ -35,11 +36,7 @@ import java.util.Map;
 import java.util.Objects;
 
 class VendorCommandResponseProcessor {
-
     private static final String TAG = VendorCommandResponseProcessor.class.getSimpleName();
-
-    private final HeadsetClientService mService;
-    private final NativeInterface mNativeInterface;
 
     // Keys are AT commands (without payload), and values are the company IDs.
     private static final Map<String, Integer> SUPPORTED_VENDOR_AT_COMMANDS;
@@ -49,7 +46,7 @@ class VendorCommandResponseProcessor {
         SUPPORTED_VENDOR_AT_COMMANDS.put("+XAPL=", BluetoothAssignedNumbers.APPLE);
         SUPPORTED_VENDOR_AT_COMMANDS.put("+IPHONEACCEV=", BluetoothAssignedNumbers.APPLE);
         SUPPORTED_VENDOR_AT_COMMANDS.put("+APLSIRI?", BluetoothAssignedNumbers.APPLE);
-        SUPPORTED_VENDOR_AT_COMMANDS.put("+APLEFM", BluetoothAssignedNumbers.APPLE);
+        SUPPORTED_VENDOR_AT_COMMANDS.put("+APLEFM=", BluetoothAssignedNumbers.APPLE);
     }
 
     // Keys are AT events (without payload), and values are the company IDs.
@@ -62,12 +59,16 @@ class VendorCommandResponseProcessor {
         SUPPORTED_VENDOR_EVENTS.put("+ANDROID:", BluetoothAssignedNumbers.GOOGLE);
     }
 
-    VendorCommandResponseProcessor(HeadsetClientService context, NativeInterface nativeInterface) {
+    private final HeadsetClientService mService;
+    private final HeadsetClientNativeInterface mNativeInterface;
+
+    VendorCommandResponseProcessor(
+            HeadsetClientService context, HeadsetClientNativeInterface nativeInterface) {
         mService = context;
         mNativeInterface = nativeInterface;
     }
 
-    public boolean sendCommand(int vendorId, String atCommand, BluetoothDevice device) {
+    boolean sendCommand(int vendorId, String atCommand, BluetoothDevice device) {
         if (device == null) {
             Log.w(TAG, "processVendorCommand device is null");
             return false;
@@ -114,7 +115,7 @@ class VendorCommandResponseProcessor {
         return true;
     }
 
-    private String getVendorIdFromAtCommand(String atString) {
+    private static String getVendorIdFromAtCommand(String atString) {
         // Get event code
         int indexOfEqual = atString.indexOf('=');
         int indexOfColon = atString.indexOf(':');
@@ -133,7 +134,7 @@ class VendorCommandResponseProcessor {
         return eventCode;
     }
 
-    public boolean isAndroidAtCommand(String atString) {
+    boolean isAndroidAtCommand(String atString) {
         String eventCode = getVendorIdFromAtCommand(atString);
         Integer vendorId = SUPPORTED_VENDOR_EVENTS.get(eventCode);
         if (vendorId == null) {
@@ -142,7 +143,7 @@ class VendorCommandResponseProcessor {
         return vendorId == BluetoothAssignedNumbers.GOOGLE;
     }
 
-    public boolean processEvent(String atString, BluetoothDevice device) {
+    boolean processEvent(String atString, BluetoothDevice device) {
         if (device == null) {
             Log.w(TAG, "processVendorEvent device is null");
             return false;
@@ -178,7 +179,6 @@ class VendorCommandResponseProcessor {
         intent.putExtra(BluetoothHeadsetClient.EXTRA_VENDOR_EVENT_CODE, vendorEventCode);
         intent.putExtra(BluetoothHeadsetClient.EXTRA_VENDOR_EVENT_FULL_ARGS, vendorResponse);
         intent.putExtra(BluetoothDevice.EXTRA_DEVICE, device);
-        mService.sendBroadcast(
-                intent, BLUETOOTH_CONNECT, Utils.getTempBroadcastOptions().toBundle());
+        mService.sendBroadcast(intent, BLUETOOTH_CONNECT, Utils.getTempBroadcastBundle());
     }
 }

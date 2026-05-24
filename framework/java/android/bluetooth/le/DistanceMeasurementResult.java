@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,17 @@
 
 package android.bluetooth.le;
 
-import android.annotation.FlaggedApi;
 import android.annotation.FloatRange;
 import android.annotation.IntDef;
 import android.annotation.NonNull;
+import android.annotation.RequiresNoPermission;
 import android.annotation.SystemApi;
 import android.os.Parcel;
 import android.os.Parcelable;
 
-import com.android.bluetooth.flags.Flags;
-
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.util.List;
 
 /**
  * Result of distance measurement.
@@ -63,72 +62,56 @@ public final class DistanceMeasurementResult implements Parcelable {
      *
      * @hide
      */
-    @FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
-    @SystemApi
-    public static final int NADM_ATTACK_IS_EXTREMELY_UNLIKELY = 0;
+    @SystemApi public static final int NADM_ATTACK_IS_EXTREMELY_UNLIKELY = 0;
 
     /**
      * Attack is very unlikely.
      *
      * @hide
      */
-    @FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
-    @SystemApi
-    public static final int NADM_ATTACK_IS_VERY_UNLIKELY = 1;
+    @SystemApi public static final int NADM_ATTACK_IS_VERY_UNLIKELY = 1;
 
     /**
      * Attack is unlikely.
      *
      * @hide
      */
-    @FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
-    @SystemApi
-    public static final int NADM_ATTACK_IS_UNLIKELY = 2;
+    @SystemApi public static final int NADM_ATTACK_IS_UNLIKELY = 2;
 
     /**
      * Attack is possible.
      *
      * @hide
      */
-    @FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
-    @SystemApi
-    public static final int NADM_ATTACK_IS_POSSIBLE = 3;
+    @SystemApi public static final int NADM_ATTACK_IS_POSSIBLE = 3;
 
     /**
      * Attack is likely.
      *
      * @hide
      */
-    @FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
-    @SystemApi
-    public static final int NADM_ATTACK_IS_LIKELY = 4;
+    @SystemApi public static final int NADM_ATTACK_IS_LIKELY = 4;
 
     /**
      * Attack is very likely.
      *
      * @hide
      */
-    @FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
-    @SystemApi
-    public static final int NADM_ATTACK_IS_VERY_LIKELY = 5;
+    @SystemApi public static final int NADM_ATTACK_IS_VERY_LIKELY = 5;
 
     /**
      * Attack is extremely likely.
      *
      * @hide
      */
-    @FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
-    @SystemApi
-    public static final int NADM_ATTACK_IS_EXTREMELY_LIKELY = 6;
+    @SystemApi public static final int NADM_ATTACK_IS_EXTREMELY_LIKELY = 6;
 
     /**
      * Unknown NADM, if a device is unable to determine a NADM value, then it shall report this.
      *
      * @hide
      */
-    @FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
-    @SystemApi
-    public static final int NADM_UNKNOWN = 0xFF;
+    @SystemApi public static final int NADM_UNKNOWN = 0xFF;
 
     private final double mMeters;
     private final double mErrorMeters;
@@ -140,6 +123,7 @@ public final class DistanceMeasurementResult implements Parcelable {
     private final double mConfidenceLevel;
     private final int mDetectedAttackLevel;
     private final double mVelocityMetersPerSecond;
+    private final long mMeasurementTimestampNanos;
 
     private DistanceMeasurementResult(
             double meters,
@@ -151,7 +135,8 @@ public final class DistanceMeasurementResult implements Parcelable {
             double delaySpreadMeters,
             double confidenceLevel,
             @Nadm int detectedAttackLevel,
-            double velocityMetersPerSecond) {
+            double velocityMetersPerSecond,
+            long measurementTimestampNanos) {
         mMeters = meters;
         mErrorMeters = errorMeters;
         mAzimuthAngle = azimuthAngle;
@@ -162,6 +147,7 @@ public final class DistanceMeasurementResult implements Parcelable {
         mConfidenceLevel = confidenceLevel;
         mDetectedAttackLevel = detectedAttackLevel;
         mVelocityMetersPerSecond = velocityMetersPerSecond;
+        mMeasurementTimestampNanos = measurementTimestampNanos;
     }
 
     /**
@@ -171,6 +157,7 @@ public final class DistanceMeasurementResult implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public double getResultMeters() {
         return mMeters;
     }
@@ -184,8 +171,8 @@ public final class DistanceMeasurementResult implements Parcelable {
      * @hide
      */
     @SystemApi
-    @FloatRange(from = 0.0)
-    public double getErrorMeters() {
+    @RequiresNoPermission
+    public @FloatRange(from = 0.0) double getErrorMeters() {
         return mErrorMeters;
     }
 
@@ -209,8 +196,8 @@ public final class DistanceMeasurementResult implements Parcelable {
      * @hide
      */
     @SystemApi
-    @FloatRange(from = 0.0, to = 360.0)
-    public double getAzimuthAngle() {
+    @RequiresNoPermission
+    public @FloatRange(from = 0.0, to = 360.0) double getAzimuthAngle() {
         return mAzimuthAngle;
     }
 
@@ -223,6 +210,7 @@ public final class DistanceMeasurementResult implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public double getErrorAzimuthAngle() {
         return mErrorAzimuthAngle;
     }
@@ -240,8 +228,8 @@ public final class DistanceMeasurementResult implements Parcelable {
      * @hide
      */
     @SystemApi
-    @FloatRange(from = -90.0, to = 90.0)
-    public double getAltitudeAngle() {
+    @RequiresNoPermission
+    public @FloatRange(from = -90.0, to = 90.0) double getAltitudeAngle() {
         return mAltitudeAngle;
     }
 
@@ -254,6 +242,7 @@ public final class DistanceMeasurementResult implements Parcelable {
      * @hide
      */
     @SystemApi
+    @RequiresNoPermission
     public double getErrorAltitudeAngle() {
         return mErrorAltitudeAngle;
     }
@@ -265,8 +254,8 @@ public final class DistanceMeasurementResult implements Parcelable {
      * @return delay spread in meters in degrees or Double.NaN if not available
      * @hide
      */
-    @FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
     @SystemApi
+    @RequiresNoPermission
     public double getDelaySpreadMeters() {
         return mDelaySpreadMeters;
     }
@@ -278,10 +267,9 @@ public final class DistanceMeasurementResult implements Parcelable {
      * @return confidence of estimated distance or Double.NaN if not available
      * @hide
      */
-    @FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
     @SystemApi
-    @FloatRange(from = 0.0, to = 1.0)
-    public double getConfidenceLevel() {
+    @RequiresNoPermission
+    public @FloatRange(from = 0.0, to = 1.0) double getConfidenceLevel() {
         return mConfidenceLevel;
     }
 
@@ -291,10 +279,9 @@ public final class DistanceMeasurementResult implements Parcelable {
      * @return Nadm that represents the chance of being attacked for the measurement.
      * @hide
      */
-    @FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
     @SystemApi
-    @Nadm
-    public int getDetectedAttackLevel() {
+    @RequiresNoPermission
+    public @Nadm int getDetectedAttackLevel() {
         return mDetectedAttackLevel;
     }
 
@@ -306,10 +293,23 @@ public final class DistanceMeasurementResult implements Parcelable {
      *     object in meters/sec.
      * @hide
      */
-    @FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
     @SystemApi
+    @RequiresNoPermission
     public double getVelocityMetersPerSecond() {
         return mVelocityMetersPerSecond;
+    }
+
+    /**
+     * Timestamp of this distance measurement in time since boot nanos in the same namespace as
+     * {@link SystemClock#elapsedRealtimeNanos()}
+     *
+     * @return timestamp of ranging measurement in nanoseconds
+     * @hide
+     */
+    @SystemApi
+    @RequiresNoPermission
+    public long getMeasurementTimestampNanos() {
+        return mMeasurementTimestampNanos;
     }
 
     /**
@@ -339,6 +339,7 @@ public final class DistanceMeasurementResult implements Parcelable {
         out.writeDouble(mConfidenceLevel);
         out.writeInt(mDetectedAttackLevel);
         out.writeDouble(mVelocityMetersPerSecond);
+        out.writeLong(mMeasurementTimestampNanos);
     }
 
     /**
@@ -367,6 +368,8 @@ public final class DistanceMeasurementResult implements Parcelable {
                 + mDetectedAttackLevel
                 + ", velocityMetersPerSecond: "
                 + mVelocityMetersPerSecond
+                + ", elapsedRealtimeNanos"
+                + mMeasurementTimestampNanos
                 + "]";
     }
 
@@ -384,6 +387,7 @@ public final class DistanceMeasurementResult implements Parcelable {
                             .setConfidenceLevel(in.readDouble())
                             .setDetectedAttackLevel(in.readInt())
                             .setVelocityMetersPerSecond(in.readDouble())
+                            .setMeasurementTimestampNanos(in.readLong())
                             .build();
                 }
 
@@ -410,6 +414,7 @@ public final class DistanceMeasurementResult implements Parcelable {
         private double mConfidenceLevel = Double.NaN;
         private int mDetectedAttackLevel = NADM_UNKNOWN;
         private double mVelocityMetersPerSecond = Double.NaN;
+        private long mMeasurementTimestampNanos = -1L;
 
         /**
          * Constructor of the Builder.
@@ -439,8 +444,8 @@ public final class DistanceMeasurementResult implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setAzimuthAngle(@FloatRange(from = 0.0, to = 360.0) double angle) {
+        @RequiresNoPermission
+        public @NonNull Builder setAzimuthAngle(@FloatRange(from = 0.0, to = 360.0) double angle) {
             if (angle > 360.0 || angle < 0.0) {
                 throw new IllegalArgumentException(
                         "angle must be in the range from 0.0 to 360.0 : " + angle);
@@ -457,8 +462,9 @@ public final class DistanceMeasurementResult implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setErrorAzimuthAngle(@FloatRange(from = 0.0, to = 360.0) double angle) {
+        @RequiresNoPermission
+        public @NonNull Builder setErrorAzimuthAngle(
+                @FloatRange(from = 0.0, to = 360.0) double angle) {
             if (angle > 360.0 || angle < 0.0) {
                 throw new IllegalArgumentException(
                         "error angle must be in the range from 0.0 to 360.0 : " + angle);
@@ -475,8 +481,9 @@ public final class DistanceMeasurementResult implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setAltitudeAngle(@FloatRange(from = -90.0, to = 90.0) double angle) {
+        @RequiresNoPermission
+        public @NonNull Builder setAltitudeAngle(
+                @FloatRange(from = -90.0, to = 90.0) double angle) {
             if (angle > 90.0 || angle < -90.0) {
                 throw new IllegalArgumentException(
                         "angle must be in the range from -90.0 to 90.0 : " + angle);
@@ -493,8 +500,9 @@ public final class DistanceMeasurementResult implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public Builder setErrorAltitudeAngle(@FloatRange(from = 0.0, to = 180.0) double angle) {
+        @RequiresNoPermission
+        public @NonNull Builder setErrorAltitudeAngle(
+                @FloatRange(from = 0.0, to = 180.0) double angle) {
             if (angle > 180.0 || angle < 0.0) {
                 throw new IllegalArgumentException(
                         "error angle must be in the range from 0.0 to 180.0 : " + angle);
@@ -510,10 +518,9 @@ public final class DistanceMeasurementResult implements Parcelable {
          * @throws IllegalArgumentException if value is invalid
          * @hide
          */
-        @FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
         @SystemApi
-        @NonNull
-        public Builder setDelaySpreadMeters(double delaySpreadMeters) {
+        @RequiresNoPermission
+        public @NonNull Builder setDelaySpreadMeters(double delaySpreadMeters) {
             if (delaySpreadMeters < 0.0) {
                 throw new IllegalArgumentException("delaySpreadMeters must be > 0.0");
             }
@@ -529,10 +536,9 @@ public final class DistanceMeasurementResult implements Parcelable {
          * @throws IllegalArgumentException if value is invalid
          * @hide
          */
-        @FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
         @SystemApi
-        @NonNull
-        public Builder setConfidenceLevel(
+        @RequiresNoPermission
+        public @NonNull Builder setConfidenceLevel(
                 @FloatRange(from = 0.0, to = 1.0) double confidenceLevel) {
             if (confidenceLevel > 1.0 || confidenceLevel < 0.0) {
                 throw new IllegalArgumentException(
@@ -551,24 +557,23 @@ public final class DistanceMeasurementResult implements Parcelable {
          * @throws IllegalArgumentException if value is invalid
          * @hide
          */
-        @FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
         @SystemApi
-        @NonNull
-        public Builder setDetectedAttackLevel(@Nadm int detectedAttackLevel) {
-            switch (detectedAttackLevel) {
-                case NADM_ATTACK_IS_EXTREMELY_UNLIKELY:
-                case NADM_ATTACK_IS_VERY_UNLIKELY:
-                case NADM_ATTACK_IS_UNLIKELY:
-                case NADM_ATTACK_IS_POSSIBLE:
-                case NADM_ATTACK_IS_LIKELY:
-                case NADM_ATTACK_IS_VERY_LIKELY:
-                case NADM_ATTACK_IS_EXTREMELY_LIKELY:
-                case NADM_UNKNOWN:
-                    mDetectedAttackLevel = detectedAttackLevel;
-                    break;
-                default:
-                    throw new IllegalArgumentException("Invalid value " + detectedAttackLevel);
+        @RequiresNoPermission
+        public @NonNull Builder setDetectedAttackLevel(@Nadm int detectedAttackLevel) {
+            if (!List.of(
+                            NADM_ATTACK_IS_EXTREMELY_UNLIKELY,
+                            NADM_ATTACK_IS_VERY_UNLIKELY,
+                            NADM_ATTACK_IS_UNLIKELY,
+                            NADM_ATTACK_IS_POSSIBLE,
+                            NADM_ATTACK_IS_LIKELY,
+                            NADM_ATTACK_IS_VERY_LIKELY,
+                            NADM_ATTACK_IS_EXTREMELY_LIKELY,
+                            NADM_UNKNOWN)
+                    .contains(detectedAttackLevel)) {
+                throw new IllegalArgumentException("Invalid value " + detectedAttackLevel);
             }
+
+            mDetectedAttackLevel = detectedAttackLevel;
             return this;
         }
 
@@ -579,11 +584,23 @@ public final class DistanceMeasurementResult implements Parcelable {
          * @param velocityMetersPerSecond estimated velocity in meters/sec.
          * @hide
          */
-        @FlaggedApi(Flags.FLAG_CHANNEL_SOUNDING)
         @SystemApi
-        @NonNull
-        public Builder setVelocityMetersPerSecond(double velocityMetersPerSecond) {
+        @RequiresNoPermission
+        public @NonNull Builder setVelocityMetersPerSecond(double velocityMetersPerSecond) {
             mVelocityMetersPerSecond = velocityMetersPerSecond;
+            return this;
+        }
+
+        /**
+         * Set the elapsed realtime in nanoseconds when the distance measurement occurred
+         *
+         * @param measurementTimestampNanos time the distance measurement occurred
+         * @hide
+         */
+        @SystemApi
+        @RequiresNoPermission
+        public @NonNull Builder setMeasurementTimestampNanos(long measurementTimestampNanos) {
+            mMeasurementTimestampNanos = measurementTimestampNanos;
             return this;
         }
 
@@ -594,8 +611,8 @@ public final class DistanceMeasurementResult implements Parcelable {
          * @hide
          */
         @SystemApi
-        @NonNull
-        public DistanceMeasurementResult build() {
+        @RequiresNoPermission
+        public @NonNull DistanceMeasurementResult build() {
             return new DistanceMeasurementResult(
                     mMeters,
                     mErrorMeters,
@@ -606,7 +623,8 @@ public final class DistanceMeasurementResult implements Parcelable {
                     mDelaySpreadMeters,
                     mConfidenceLevel,
                     mDetectedAttackLevel,
-                    mVelocityMetersPerSecond);
+                    mVelocityMetersPerSecond,
+                    mMeasurementTimestampNanos);
         }
     }
 }

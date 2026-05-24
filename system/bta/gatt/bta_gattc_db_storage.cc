@@ -21,10 +21,10 @@
 #include <base/strings/string_number_conversions.h>
 #include <bluetooth/log.h>
 #if __has_include(<dirent.h>)
-#include <dirent.h>
 #else
 #include <utils/direct.h>
 #endif
+#include <bluetooth/types/uuid.h>
 #include <sys/stat.h>
 
 #include <string>
@@ -32,9 +32,7 @@
 
 #include "bta/gatt/bta_gattc_int.h"
 #include "gatt/database.h"
-#include "os/log.h"
 #include "stack/include/gattdefs.h"
-#include "types/bluetooth/uuid.h"
 
 using namespace bluetooth;
 
@@ -67,9 +65,8 @@ static void bta_gattc_hash_remove_least_recently_used_if_possible();
 
 static void bta_gattc_generate_cache_file_name(char* buffer, size_t buffer_len,
                                                const RawAddress& bda) {
-  snprintf(buffer, buffer_len, "%s%02x%02x%02x%02x%02x%02x", GATT_CACHE_PREFIX,
-           bda.address[0], bda.address[1], bda.address[2], bda.address[3],
-           bda.address[4], bda.address[5]);
+  snprintf(buffer, buffer_len, "%s%02x%02x%02x%02x%02x%02x", GATT_CACHE_PREFIX, bda.address[0],
+           bda.address[1], bda.address[2], bda.address[3], bda.address[4], bda.address[5]);
 }
 
 static void bta_gattc_generate_hash_file_name(char* buffer, size_t buffer_len,
@@ -95,8 +92,7 @@ static gatt::Database EMPTY_DB;
 static gatt::Database bta_gattc_load_db(const char* fname) {
   FILE* fd = fopen(fname, "rb");
   if (!fd) {
-    log::error("can't open GATT cache file {} for reading, error: {}", fname,
-               strerror(errno));
+    log::error("can't open GATT cache file {} for reading, error: {}", fname, strerror(errno));
     return EMPTY_DB;
   }
 
@@ -222,8 +218,7 @@ void StoredAttribute::SerializeStoredAttribute(const StoredAttribute& attr,
     }
   }
   // padding
-  for (size_t i = bytes.size() - original_size;
-       i < StoredAttribute::kSizeOnDisk; i++) {
+  for (size_t i = bytes.size() - original_size; i < StoredAttribute::kSizeOnDisk; i++) {
     bytes.push_back(0);
   }
 }
@@ -240,8 +235,7 @@ void StoredAttribute::SerializeStoredAttribute(const StoredAttribute& attr,
  * Returns          true on success, false otherwise
  *
  ******************************************************************************/
-static bool bta_gattc_store_db(const char* fname,
-                               const std::vector<StoredAttribute>& attr) {
+static bool bta_gattc_store_db(const char* fname, const std::vector<StoredAttribute>& attr) {
   FILE* fd = fopen(fname, "wb");
   if (!fd) {
     log::error("can't open GATT cache file for writing: {}", fname);
@@ -268,8 +262,7 @@ static bool bta_gattc_store_db(const char* fname,
     StoredAttribute::SerializeStoredAttribute(attribute, db_bytes);
   }
 
-  if (fwrite(db_bytes.data(), sizeof(uint8_t), db_bytes.size(), fd) !=
-      db_bytes.size()) {
+  if (fwrite(db_bytes.data(), sizeof(uint8_t), db_bytes.size(), fd) != db_bytes.size()) {
     log::error("can't write GATT cache attributes: {}", fname);
     fclose(fd);
     return false;
@@ -293,8 +286,7 @@ static bool bta_gattc_store_db(const char* fname,
  * Returns
  *
  ******************************************************************************/
-void bta_gattc_cache_write(const RawAddress& server_bda,
-                           const gatt::Database& database) {
+void bta_gattc_cache_write(const RawAddress& server_bda, const gatt::Database& database) {
   char addr_file[255] = {0};
   char hash_file[255] = {0};
   Octet16 hash = database.Hash();
@@ -327,11 +319,9 @@ void bta_gattc_cache_link(const RawAddress& server_bda, const Octet16& hash) {
   bta_gattc_generate_hash_file_name(hash_file, sizeof(hash_file), hash);
 
   unlink(addr_file);  // remove addr file first if the file exists
-#ifndef _MSC_VER
   if (link(hash_file, addr_file) == -1) {
     log::error("link {} to {}, errno={}", addr_file, hash_file, errno);
   }
-#endif
 }
 
 /*******************************************************************************
@@ -386,8 +376,7 @@ void bta_gattc_cache_reset(const RawAddress& server_bda) {
  *
  ******************************************************************************/
 static void bta_gattc_hash_remove_least_recently_used_if_possible() {
-  std::unique_ptr<DIR, decltype(&closedir)> dirp(opendir(GATT_HASH_PATH),
-                                                 &closedir);
+  std::unique_ptr<DIR, decltype(&closedir)> dirp(opendir(GATT_HASH_PATH), &closedir);
   if (dirp == nullptr) {
     log::error("open dir error, dir={}", GATT_HASH_PATH);
     return;
@@ -428,8 +417,8 @@ static void bta_gattc_hash_remove_least_recently_used_if_possible() {
 
     struct stat buf;
     int result = lstat(tmp, &buf);
-    log::debug("name={}, result={}, linknum={}, mtime={}", dp->d_name, result,
-               (unsigned long)buf.st_nlink, (unsigned long)buf.st_mtime);
+    log::debug("name={}, result={}, linknum={}, mtime={}", dp->d_name, result, buf.st_nlink,
+               buf.st_mtime);
 
     // if hard link count of the file is 1, it means no trusted device links to
     // the inode. It is safe to be a candidate to be removed
@@ -448,7 +437,7 @@ static void bta_gattc_hash_remove_least_recently_used_if_possible() {
   }
   log::debug("<-----------End Local Hash Cache------------>");
 
-  // if the number of hash files exceeds the limit, remove the cadidate item.
+  // if the number of hash files exceeds the limit, remove the candidate item.
   if (count > GATT_HASH_MAX_SIZE && !candidate_item.empty()) {
     unlink(candidate_item.c_str());
     log::debug("delete hash file (size), name={}", candidate_item);

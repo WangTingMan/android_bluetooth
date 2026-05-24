@@ -25,18 +25,20 @@
  *
  ******************************************************************************/
 
+#include "osi/include/compat.h"
+
+#ifndef _MSC_VER
 #include <features.h>
 #include <string.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
+#endif
 
-#include "osi/include/compat.h"
 #include "osi/include/osi.h"
 
 #if __GLIBC__
 pid_t gettid(void) throw() { return syscall(SYS_gettid); }
-#endif
 
 /* These functions from bionic
  *
@@ -54,14 +56,14 @@ pid_t gettid(void) throw() { return syscall(SYS_gettid); }
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
+#endif /* __GLIBC__ */
 
-#if __GLIBC__
 /*
  * Copy src to string dst of size siz.  At most siz-1 characters
  * will be copied.  Always NUL terminates (unless siz == 0).
  * Returns strlen(src); if retval >= siz, truncation occurred.
  */
-size_t strlcpy(char* dst, const char* src, size_t siz) {
+size_t osi_strlcpy(char* dst, const char* src, size_t siz) {
   char* d = dst;
   const char* s = src;
   size_t n = siz;
@@ -69,17 +71,20 @@ size_t strlcpy(char* dst, const char* src, size_t siz) {
   /* Copy as many bytes as will fit */
   if (n != 0) {
     while (--n != 0) {
-      if ((*d++ = *s++) == '\0') break;
+      if ((*d++ = *s++) == '\0') {
+        break;
+      }
     }
   }
 
   /* Not enough room in dst, add NUL and traverse rest of src */
   if (n == 0) {
-    if (siz != 0) *d = '\0'; /* NUL-terminate dst */
+    if (siz != 0) {
+      *d = '\0'; /* NUL-terminate dst */
+    }
     while (*s++)
       ;
   }
 
-  return (s - src - 1); /* count does not include NUL */
+  return s - src - 1; /* count does not include NUL */
 }
-#endif

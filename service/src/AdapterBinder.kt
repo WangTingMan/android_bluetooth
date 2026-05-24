@@ -13,80 +13,61 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.server.bluetooth
 
-import android.bluetooth.IBluetooth
+import android.bluetooth.IAdapter
 import android.bluetooth.IBluetoothCallback
-import android.content.AttributionSource
 import android.os.IBinder
 import android.os.RemoteException
-import com.android.server.bluetooth.BluetoothManagerService.timeToLog
+
+private const val TAG = "AdapterBinder"
 
 class AdapterBinder(rawBinder: IBinder) {
-    private val TAG = "AdapterBinder"
-    val adapterBinder: IBluetooth = IBluetooth.Stub.asInterface(rawBinder)
+    val adapterBinder: IAdapter = IAdapter.Stub.asInterface(rawBinder)
+    var adapterServiceBinder: IBinder? = null
     private val createdAt = System.currentTimeMillis()
 
     override fun toString(): String =
-        "[Binder=" + adapterBinder.hashCode() + ", createdAt=" + timeToLog(createdAt) + "]"
+        "[Binder=" +
+            adapterBinder.hashCode() +
+            ", createdAt=" +
+            Log.timeToStringWithZone(createdAt) +
+            "]"
 
     @Throws(RemoteException::class)
-    fun disable(source: AttributionSource) {
-        adapterBinder.disable(source)
+    fun onToBleOn() {
+        adapterBinder.onToBleOn()
     }
 
     @Throws(RemoteException::class)
-    fun enable(quietMode: Boolean, source: AttributionSource) {
-        adapterBinder.enable(quietMode, source)
+    fun offToBleOn(quietMode: Boolean, hciInstanceName: String) {
+        adapterBinder.offToBleOn(quietMode, hciInstanceName)
     }
 
     @Throws(RemoteException::class)
-    fun getAddress(source: AttributionSource): String? {
-        return adapterBinder.getAddress(source)
+    fun bleOnToOff() {
+        adapterBinder.bleOnToOff()
     }
 
     @Throws(RemoteException::class)
-    fun getName(source: AttributionSource): String? {
-        return adapterBinder.getName(source)
+    fun bleOnToOn() {
+        adapterBinder.bleOnToOn()
     }
 
     @Throws(RemoteException::class)
-    fun stopBle(source: AttributionSource) {
-        adapterBinder.stopBle(source)
+    fun registerCallback(callback: IBluetoothCallback) {
+        adapterBinder.registerCallback(callback)
     }
 
     @Throws(RemoteException::class)
-    fun startBrEdr(source: AttributionSource) {
-        adapterBinder.startBrEdr(source)
+    fun unregisterCallback(callback: IBluetoothCallback) {
+        adapterBinder.unregisterCallback(callback)
     }
 
     @Throws(RemoteException::class)
-    fun registerCallback(callback: IBluetoothCallback, source: AttributionSource) {
-        adapterBinder.registerCallback(callback, source)
-    }
-
-    @Throws(RemoteException::class)
-    fun unregisterCallback(callback: IBluetoothCallback, source: AttributionSource) {
-        adapterBinder.unregisterCallback(callback, source)
-    }
-
-    @Throws(RemoteException::class)
-    fun setForegroundUserId(userId: Int, source: AttributionSource) {
-        adapterBinder.setForegroundUserId(userId, source)
-    }
-
-    @Throws(RemoteException::class)
-    fun unregAllGattClient(source: AttributionSource) {
-        adapterBinder.unregAllGattClient(source)
-    }
-
-    fun isMediaProfileConnected(source: AttributionSource): Boolean {
-        try {
-            return adapterBinder.isMediaProfileConnected(source)
-        } catch (ex: RemoteException) {
-            Log.e(TAG, "Error when calling isMediaProfileConnected", ex)
-        }
-        return false
+    fun unregAllGattClient() {
+        adapterBinder.unregAllGattClient()
     }
 
     @Throws(RemoteException::class)

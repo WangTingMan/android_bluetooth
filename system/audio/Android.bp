@@ -37,14 +37,12 @@ cc_library_static {
         "libbase",
         "libbluetooth_hci_pdl",
         "libbluetooth_log",
-        "libbt_shim_bridge",
+        "libbluetooth_types",
         "libflatbuffers-cpp",
     ],
     host_supported: true,
-    min_sdk_version: "33",
-    apex_available: [
-        "com.android.btservices",
-    ],
+    min_sdk_version: "36",
+    apex_available: ["com.android.bt"],
 }
 
 cc_library_host_shared {
@@ -72,12 +70,13 @@ cc_library_host_shared {
         "server_configurable_flags",
     ],
     static_libs: [
-        "bluetooth_flags_c_lib",
+        "bluetooth_flags_c_lib_for_test",
         "libbase",
+        "libbluetooth_gd_os",
         "libbluetooth_hci_pdl",
         "libbluetooth_log",
+        "libbluetooth_types",
         "libbt-common",
-        "libbt_shim_bridge",
         "libchrome",
         "libevent",
         "libflatbuffers-cpp",
@@ -85,9 +84,6 @@ cc_library_host_shared {
         "liblog",
     ],
     stl: "libc++_static",
-    generated_headers: [
-        "BluetoothGeneratedDumpsysDataSchema_h",
-    ],
 }
 
 python_test_host {

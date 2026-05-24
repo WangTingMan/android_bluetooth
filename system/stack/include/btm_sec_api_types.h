@@ -18,8 +18,9 @@
 
 #pragma once
 
-#include <base/strings/stringprintf.h>
 #include <bluetooth/log.h>
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/bt_transport.h>
 
 #include <cstdint>
 #include <string>
@@ -31,8 +32,6 @@
 #include "stack/include/hcidefs.h"
 #include "stack/include/smp_api_types.h"
 #include "stack/include/smp_status.h"
-#include "types/bt_transport.h"
-#include "types/raw_address.h"
 
 typedef enum : uint8_t {
   BTM_BLE_SEC_NONE = 0,
@@ -64,7 +63,7 @@ inline std::string security_mode_text(const tSECURITY_MODE& security_mode) {
     case BTM_SEC_MODE_SC:
       return std::string("secure connections only");
     default:
-      return base::StringPrintf("UNKNOWN[%hhu]", security_mode);
+      return std::format("UNKNOWN[{}]", static_cast<uint8_t>(security_mode));
   }
 }
 
@@ -99,7 +98,7 @@ enum : uint16_t {
 };
 
 /* Security Flags [bit mask] (BTM_GetSecurityFlags)
-*/
+ */
 #define BTM_SEC_FLAG_AUTHENTICATED 0x02
 #define BTM_SEC_FLAG_ENCRYPTED 0x04
 #define BTM_SEC_FLAG_LKEY_KNOWN 0x10
@@ -107,7 +106,7 @@ enum : uint16_t {
 
 /* Link Key types used to generate the new link key.
  * returned in link key notification callback function
-*/
+ */
 #define BTM_LKEY_TYPE_COMBINATION HCI_LKEY_TYPE_COMBINATION
 #define BTM_LKEY_TYPE_REMOTE_UNIT HCI_LKEY_TYPE_REMOTE_UNIT
 #define BTM_LKEY_TYPE_DEBUG_COMB HCI_LKEY_TYPE_DEBUG_COMB
@@ -137,7 +136,7 @@ inline std::string linkkey_type_text(const int linkkey_type) {
     case BTM_LKEY_TYPE_AUTH_COMB_P_256:
       return std::string("AUTH_COMB_P_256");
     default:
-      return base::StringPrintf("UNKNOWN[0x%02x]", linkkey_type);
+      return std::format("UNKNOWN[0x{:02x}]", linkkey_type);
   }
 }
 
@@ -196,7 +195,7 @@ inline std::string sp_evt_to_text(const tBTM_SP_EVT evt) {
     CASE_RETURN_TEXT(BTM_SP_RMT_OOB_EVT);
   }
 
-  return base::StringPrintf("UNKNOWN[%hhu]", evt);
+  return std::format("UNKNOWN[{}]", static_cast<uint8_t>(evt));
 }
 
 enum : uint8_t {
@@ -223,7 +222,7 @@ inline std::string io_capabilities_text(const tBTM_IO_CAP& io_caps) {
     case BTM_IO_CAP_KBDISP:
       return std::string("Keyboard-Display");
     default:
-      return base::StringPrintf("UNKNOWN[%hhu]", io_caps);
+      return std::format("UNKNOWN[{}]", io_caps);
   }
 }
 
@@ -300,21 +299,20 @@ typedef struct {
 
 /* data type for BTM_SP_IO_RSP_EVT */
 typedef struct {
-  RawAddress bd_addr; /* peer address */
-  tBTM_IO_CAP io_cap; /* peer IO capabilities */
-  tBTM_OOB_DATA
-      oob_data; /* OOB data present at peer device for the local device */
+  RawAddress bd_addr;     /* peer address */
+  tBTM_IO_CAP io_cap;     /* peer IO capabilities */
+  tBTM_OOB_DATA oob_data; /* OOB data present at peer device for the local device */
   tBTM_AUTH_REQ auth_req; /* Authentication required for peer device */
 } tBTM_SP_IO_RSP;
 
 /* data type for BTM_SP_CFM_REQ_EVT */
 typedef struct {
-  RawAddress bd_addr;   /* peer address */
-  DEV_CLASS dev_class;  /* peer CoD */
-  BD_NAME bd_name;      /* peer device name */
-  uint32_t num_val; /* the numeric value for comparison. If just_works, do not
-                       show this number to UI */
-  bool just_works;  /* true, if "Just Works" association model */
+  RawAddress bd_addr;         /* peer address */
+  DEV_CLASS dev_class;        /* peer CoD */
+  BD_NAME bd_name;            /* peer device name */
+  uint32_t num_val;           /* the numeric value for comparison. If just_works, do not
+                                 show this number to UI */
+  bool just_works;            /* true, if "Just Works" association model */
   tBTM_AUTH_REQ loc_auth_req; /* Authentication required for local device */
   tBTM_AUTH_REQ rmt_auth_req; /* Authentication required for peer device */
   tBTM_IO_CAP loc_io_caps;    /* IO Capabilities of the local device */
@@ -323,17 +321,17 @@ typedef struct {
 
 /* data type for BTM_SP_KEY_REQ_EVT */
 typedef struct {
-  RawAddress bd_addr;   /* peer address */
-  DEV_CLASS dev_class;  /* peer CoD */
-  BD_NAME bd_name;      /* peer device name */
+  RawAddress bd_addr;  /* peer address */
+  DEV_CLASS dev_class; /* peer CoD */
+  BD_NAME bd_name;     /* peer device name */
 } tBTM_SP_KEY_REQ;
 
 /* data type for BTM_SP_KEY_NOTIF_EVT */
 typedef struct {
-  RawAddress bd_addr;   /* peer address */
-  DEV_CLASS dev_class;  /* peer CoD */
-  BD_NAME bd_name;      /* peer device name */
-  uint32_t passkey;     /* passkey */
+  RawAddress bd_addr;  /* peer address */
+  DEV_CLASS dev_class; /* peer CoD */
+  BD_NAME bd_name;     /* peer device name */
+  uint32_t passkey;    /* passkey */
 } tBTM_SP_KEY_NOTIF;
 
 /* data type for BTM_SP_LOC_OOB_EVT */
@@ -347,9 +345,9 @@ typedef struct {
 
 /* data type for BTM_SP_RMT_OOB_EVT */
 typedef struct {
-  RawAddress bd_addr;   /* peer address */
-  DEV_CLASS dev_class;  /* peer CoD */
-  BD_NAME bd_name;      /* peer device name */
+  RawAddress bd_addr;  /* peer address */
+  DEV_CLASS dev_class; /* peer CoD */
+  BD_NAME bd_name;     /* peer device name */
 } tBTM_SP_RMT_OOB;
 
 typedef union {
@@ -364,12 +362,10 @@ typedef union {
 
 /* Simple Pairing Events.  Called by the stack when Simple Pairing related
  * events occur.
-*/
-typedef tBTM_STATUS(tBTM_SP_CALLBACK)(tBTM_SP_EVT event,
-                                      tBTM_SP_EVT_DATA* p_data);
+ */
+typedef tBTM_STATUS(tBTM_SP_CALLBACK)(tBTM_SP_EVT event, tBTM_SP_EVT_DATA* p_data);
 
-typedef void(tBTM_MKEY_CALLBACK)(const RawAddress& bd_addr, uint8_t status,
-                                 uint8_t key_flag);
+typedef void(tBTM_MKEY_CALLBACK)(const RawAddress& bd_addr, uint8_t status, uint8_t key_flag);
 
 /* Encryption enabled/disabled complete: Optionally passed with
  * BTM_SetEncryption.
@@ -377,15 +373,15 @@ typedef void(tBTM_MKEY_CALLBACK)(const RawAddress& bd_addr, uint8_t status,
  *              BD Address of remote
  *              optional data passed in by BTM_SetEncryption
  *              tBTM_STATUS - result of the operation
-*/
-typedef void(tBTM_SEC_CALLBACK)(RawAddress bd_addr, tBT_TRANSPORT transport,
-                                void* p_ref_data, tBTM_STATUS result);
+ */
+typedef void(tBTM_SEC_CALLBACK)(RawAddress bd_addr, tBT_TRANSPORT transport, void* p_ref_data,
+                                tBTM_STATUS result);
 typedef tBTM_SEC_CALLBACK tBTM_SEC_CALLBACK;
 
 /* Bond Cancel complete. Parameters are
  *              Result of the cancel operation
  *
-*/
+ */
 typedef void(tBTM_BOND_CANCEL_CMPL_CALLBACK)(tBTM_STATUS result);
 
 typedef enum : uint8_t {
@@ -445,7 +441,7 @@ inline std::string ble_evt_to_text(const tBTM_LE_EVT evt) {
     CASE_RETURN_TEXT(BTM_LE_ADDR_ASSOC_EVT);
   }
 
-  return base::StringPrintf("UNKNOWN[%hhu]", evt);
+  return std::format("UNKNOWN[{}]", static_cast<uint8_t>(evt));
 }
 
 enum : uint8_t {
@@ -524,13 +520,13 @@ inline std::string bond_type_text(const tBTM_BOND_TYPE& bond_type) {
     CASE_RETURN_TEXT(BOND_TYPE_PERSISTENT);
     CASE_RETURN_TEXT(BOND_TYPE_TEMPORARY);
     default:
-      return base::StringPrintf("UNKNOWN[%hhu]", bond_type);
+      return std::format("UNKNOWN[{}]", static_cast<uint8_t>(bond_type));
   }
 }
 
-namespace fmt {
+namespace std {
 template <>
 struct formatter<tBTM_BLE_SEC_ACT> : enum_formatter<tBTM_BLE_SEC_ACT> {};
 template <>
 struct formatter<tBTM_BOND_TYPE> : enum_formatter<tBTM_BOND_TYPE> {};
-}  // namespace fmt
+}  // namespace std

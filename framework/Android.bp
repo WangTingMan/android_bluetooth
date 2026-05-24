@@ -10,6 +10,18 @@ filegroup {
         "java/**/*.java",
     ],
     path: "java",
+    visibility: ["//packages/modules/Bluetooth/framework/tests/unit"],
+}
+
+// Allow to share the SystemServiceMessenger class between system and Fwk
+filegroup {
+    name: "bluetooth-system-server-messenger",
+    srcs: [
+        "java/android/bluetooth/SystemServiceMessenger.java",
+        "java/android/bluetooth/annotations/RequiresBluetoothConnectPermission.java",
+    ],
+    path: "java",
+    visibility: ["//packages/modules/Bluetooth/service:__subpackages__"],
 }
 
 // defaults shared between `framework-bluetooth` & `framework-bluetooth-pre-jarjar`
@@ -17,10 +29,15 @@ filegroup {
 // `framework-bluetooth-pre-jarjar`
 java_defaults {
     name: "framework-bluetooth-defaults",
+    defaults: [
+        "bluetooth_errorprone_rules",
+        "bluetooth_lint_rules",
+    ],
     static_libs: [
         "PlatformProperties",
+        "bluetooth_constants-java",
         "bluetooth_flags_java_lib",
-        "modules-utils-expresslog",
+        "modules-utils-build",
         "service-bluetooth-binder-aidl",
     ],
     libs: [
@@ -37,7 +54,7 @@ java_defaults {
         ":Bluetooth-binder-aidl",
         ":framework-bluetooth-sources",
     ],
-    min_sdk_version: "Tiramisu",
+    min_sdk_version: "36",
 }
 
 // bluetooth-service needs pre-jarjared version of framework-bluetooth so it can reference copied utility
@@ -48,12 +65,14 @@ java_library {
     sdk_version: "module_current",
     libs: ["framework-annotations-lib"],
     installable: false,
+    visibility: ["//packages/modules/Bluetooth:__subpackages__"],
 }
 
 // post-jarjar version of framework-bluetooth
 java_sdk_library {
     name: "framework-bluetooth",
     defaults: [
+        "bluetooth_framework_errorprone_rules",
         "framework-bluetooth-defaults",
         "framework-module-defaults",
     ],
@@ -67,55 +86,62 @@ java_sdk_library {
 
     impl_library_visibility: [
         "//external/sl4a/Common",
-        "//frameworks/opt/wear",
-        "//packages/modules/Bluetooth/android/app/tests/unit",
+        "//packages/modules/Bluetooth/android/app:__subpackages__",
         "//packages/modules/Bluetooth/android/pandora/server",
         "//packages/modules/Bluetooth/framework/tests/bumble",
         "//packages/modules/Bluetooth/service",
         "//packages/services/Car/car-builtin-lib",
         // TODO(240720385)
-        "//packages/services/Car/tests/carservice_unit_test",
+        "//packages/services/Car/tests/CarBuiltinLibUnitTest",
         ":__subpackages__",
     ],
 
-    apex_available: [
-        "com.android.btservices",
-    ],
+    apex_available: ["com.android.bt"],
 
     permitted_packages: [
         "android.bluetooth",
-        "com.android.bluetooth.flags",
         "com.android.bluetooth.jarjar",
     ],
-    errorprone: {
-        javacflags: [
-            "-Xep:InlineMeSuggester:OFF", // The @InlineMe annotation is not available
-
-            "-Xep:BadImport:ERROR",
-            "-Xep:CatchFail:ERROR",
-            "-Xep:ClassCanBeStatic:ERROR",
-            "-Xep:EmptyBlockTag:ERROR",
-            "-Xep:EmptyCatch:ERROR",
-            "-Xep:FutureReturnValueIgnored:ERROR",
-            "-Xep:InlineMeInliner:ERROR",
-            "-Xep:InvalidBlockTag:ERROR",
-            "-Xep:InvalidInlineTag:ERROR",
-            "-Xep:InvalidParam:ERROR",
-            "-Xep:MockNotUsedInProduction:ERROR",
-            "-Xep:NonApiType:ERROR",
-            "-Xep:NonCanonicalType:ERROR",
-            "-Xep:NotJavadoc:ERROR",
-            "-Xep:ReturnAtTheEndOfVoidFunction:ERROR",
-            "-Xep:StringCaseLocaleUsage:ERROR",
-            "-Xep:StringCharset:ERROR",
-            "-Xep:UnnecessaryAssignment:ERROR",
-            "-Xep:UnnecessaryAsync:ERROR",
-
-            "-XepExcludedPaths:.*/srcjars/.*", // Exclude generated files
-        ],
-        enabled: true,
-    },
+    aconfig_declarations: [
+        "bluetooth_aconfig_flags",
+    ],
     lint: {
+        error_checks: [
+            "Autofill",
+            "DefaultLocale",
+            "DuplicateDefinition",
+            "ExtraText",
+            "ExtraTranslation",
+            "FlaggedApi",
+            "GestureBackNavigation",
+            "GuardedLogInvocation",
+            "HandlerLeak",
+            "InflateParams",
+            "LabelFor",
+            "MissingClass",
+            "MonochromeLauncherIcon",
+            "NewApi",
+            "ObsoleteSdkInt",
+            "Recycle",
+            "RtlHardcoded",
+            "RtlSymmetry",
+            "ScrollViewSize",
+            "SetTextI18n",
+            "SimpleDateFormat",
+            "StaticFieldLeak",
+            "StringFormatCount",
+            "StringFormatInvalid",
+            "SupportAnnotationUsage",
+            "TextFields",
+            "TypographyEllipsis",
+            "UseSparseArrays",
+            "UseValueOf",
+            "VectorPath",
+            "VisibleForTests",
+            "Wakelock",
+            "WakelockTimeout",
+            "WrongConstant",
+        ],
         strict_updatability_linting: true,
         baseline_filename: "lint-baseline.xml",
     },
@@ -124,6 +150,7 @@ java_sdk_library {
 // defaults for tests that need to build against framework-bluetooths's @hide APIs
 java_defaults {
     name: "framework-bluetooth-tests-defaults",
+    defaults: ["bluetooth_errorprone_rules"],
     sdk_version: "core_platform",
     libs: [
         // order matters: classes in framework-bluetooth are resolved before framework, meaning
@@ -134,12 +161,19 @@ java_defaults {
         // if sdk_version="" this gets automatically included, but here we need to add manually.
         "framework-res",
     ],
-    defaults_visibility: ["//visibility:public"],
+    defaults_visibility: ["//packages/modules/Bluetooth:__subpackages__"],
 }
 
 filegroup {
     name: "bluetooth-jarjar-rules",
     srcs: ["jarjar-rules.txt"],
+}
+
+// Test is using a different jarjar to enforce that there is no class conflict
+// with the currently installed apex
+filegroup {
+    name: "bluetooth-jarjar-rules-tests",
+    srcs: ["jarjar-rules-tests.txt"],
 }
 
 platform_compat_config {

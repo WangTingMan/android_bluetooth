@@ -18,12 +18,13 @@ package com.android.bluetooth.map;
 
 import static com.google.common.truth.Truth.assertThat;
 
-import androidx.test.runner.AndroidJUnit4;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+/** Test cases for {@link BluetoothMapFolderElement}. */
 @RunWith(AndroidJUnit4.class)
 public class BluetoothMapFolderElementTest {
     private static final boolean TEST_HAS_SMS_MMS_CONTENT = true;

@@ -19,6 +19,7 @@
  */
 
 #include "btif/include/core_callbacks.h"
+#include "btif/include/stack_manager_t.h"
 #include "osi/include/future.h"
 #include "test/common/core_interface.h"
 
@@ -32,6 +33,4 @@ auto interfaceToProfiles = MockCoreInterface{};
 
 }  // namespace
 
-bluetooth::core::CoreInterface* GetInterfaceToProfiles() {
-  return &interfaceToProfiles;
-}
+bluetooth::core::CoreInterface* GetInterfaceToProfiles() { return &interfaceToProfiles; }

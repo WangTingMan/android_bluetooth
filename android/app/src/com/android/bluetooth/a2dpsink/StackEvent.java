@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.a2dpsink;
 
 import android.bluetooth.BluetoothDevice;
@@ -23,12 +24,6 @@ final class StackEvent {
     static final int EVENT_TYPE_CONNECTION_STATE_CHANGED = 1;
     static final int EVENT_TYPE_AUDIO_STATE_CHANGED = 2;
     static final int EVENT_TYPE_AUDIO_CONFIG_CHANGED = 3;
-
-    // match up with btav_connection_state_t enum of bt_av.h
-    static final int CONNECTION_STATE_DISCONNECTED = 0;
-    static final int CONNECTION_STATE_CONNECTING = 1;
-    static final int CONNECTION_STATE_CONNECTED = 2;
-    static final int CONNECTION_STATE_DISCONNECTING = 3;
 
     // match up with btav_audio_state_t enum of bt_av.h
     static final int AUDIO_STATE_REMOTE_SUSPEND = 0;
@@ -47,27 +42,22 @@ final class StackEvent {
 
     @Override
     public String toString() {
-        String s = "StackEvent<device=" + mDevice + ", type =";
+        StringBuilder sb = new StringBuilder("StackEvent<device=" + mDevice + ", type =");
         switch (mType) {
-            case EVENT_TYPE_CONNECTION_STATE_CHANGED:
-                s += "EVENT_TYPE_CONNECTION_STATE_CHANGED, state=" + mState;
-                break;
-            case EVENT_TYPE_AUDIO_STATE_CHANGED:
-                s += "EVENT_TYPE_AUDIO_STATE_CHANGED, state=" + mState;
-                break;
-            case EVENT_TYPE_AUDIO_CONFIG_CHANGED:
-                s +=
-                        "EVENT_TYPE_AUDIO_CONFIG_CHANGED, sampleRate="
-                                + mSampleRate
-                                + ", channelCount="
-                                + mChannelCount;
-                break;
-            default:
-                s += "Unknown";
-                break;
+            case EVENT_TYPE_CONNECTION_STATE_CHANGED ->
+                    sb.append("EVENT_TYPE_CONNECTION_STATE_CHANGED, state=").append(mState);
+            case EVENT_TYPE_AUDIO_STATE_CHANGED ->
+                    sb.append("EVENT_TYPE_AUDIO_STATE_CHANGED, state=").append(mState);
+            case EVENT_TYPE_AUDIO_CONFIG_CHANGED -> {
+                sb.append("EVENT_TYPE_AUDIO_CONFIG_CHANGED, sampleRate=")
+                        .append(mSampleRate)
+                        .append(", channelCount=")
+                        .append(mChannelCount);
+            }
+            default -> sb.append("Unknown");
         }
-        s += ">";
-        return s;
+        sb.append(">");
+        return sb.toString();
     }
 
     static StackEvent connectionStateChanged(BluetoothDevice device, int state) {

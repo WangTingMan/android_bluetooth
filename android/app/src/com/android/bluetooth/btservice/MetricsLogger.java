@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,31 +13,82 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.btservice;
 
+import static android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE;
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTING;
+
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__BOND;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_A2DP;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_A2DP_SINK;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_BATTERY;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_CSIP_SET_COORDINATOR;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_HAP_CLIENT;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_HEADSET;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_HEADSET_CLIENT;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_HEARING_AID;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_HID_HOST;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_LE_AUDIO;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_LE_AUDIO_BROADCAST_ASSISTANT;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_MAP_CLIENT;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_PAN;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_PBAP_CLIENT;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_VOLUME_CONTROL;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__STATE__STATE_BONDED;
+import static com.android.bluetooth.BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__STATE__STATE_NONE;
+import static com.android.bluetooth.BluetoothStatsLog.CHANNEL_SOUNDING_TYPES_SUPPORTED;
+import static com.android.bluetooth.BluetoothStatsLog.HEARING_DEVICE_ACTIVE_EVENT_REPORTED__DEVICE_TYPE__ASHA_DUAL;
+import static com.android.bluetooth.BluetoothStatsLog.HEARING_DEVICE_ACTIVE_EVENT_REPORTED__DEVICE_TYPE__ASHA_ONLY;
+import static com.android.bluetooth.BluetoothStatsLog.HEARING_DEVICE_ACTIVE_EVENT_REPORTED__DEVICE_TYPE__CLASSIC;
+import static com.android.bluetooth.BluetoothStatsLog.HEARING_DEVICE_ACTIVE_EVENT_REPORTED__DEVICE_TYPE__LE_AUDIO_DUAL;
+import static com.android.bluetooth.BluetoothStatsLog.HEARING_DEVICE_ACTIVE_EVENT_REPORTED__DEVICE_TYPE__LE_AUDIO_ONLY;
+import static com.android.bluetooth.BluetoothStatsLog.HEARING_DEVICE_ACTIVE_EVENT_REPORTED__TIME_PERIOD__DAY;
+import static com.android.bluetooth.BluetoothStatsLog.HEARING_DEVICE_ACTIVE_EVENT_REPORTED__TIME_PERIOD__MONTH;
+import static com.android.bluetooth.BluetoothStatsLog.HEARING_DEVICE_ACTIVE_EVENT_REPORTED__TIME_PERIOD__WEEK;
 import static com.android.bluetooth.BtRestrictedStatsLog.RESTRICTED_BLUETOOTH_DEVICE_NAME_REPORTED;
 
 import android.app.AlarmManager;
+import android.bluetooth.BluetoothA2dp;
+import android.bluetooth.BluetoothA2dpSink;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothAvrcpController;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothHapClient;
+import android.bluetooth.BluetoothHeadset;
+import android.bluetooth.BluetoothHeadsetClient;
+import android.bluetooth.BluetoothHearingAid;
+import android.bluetooth.BluetoothHidDevice;
+import android.bluetooth.BluetoothHidHost;
+import android.bluetooth.BluetoothLeAudio;
+import android.bluetooth.BluetoothMap;
+import android.bluetooth.BluetoothMapClient;
+import android.bluetooth.BluetoothPan;
+import android.bluetooth.BluetoothPbap;
+import android.bluetooth.BluetoothPbapClient;
+import android.bluetooth.BluetoothProfile;
+import android.bluetooth.BluetoothProtoEnums;
+import android.bluetooth.BluetoothSap;
+import android.bluetooth.BluetoothUuid;
+import android.content.BroadcastReceiver;
+import android.content.ContentResolver;
 import android.content.Context;
-import android.os.Build;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.ParcelUuid;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.Log;
 import android.util.proto.ProtoOutputStream;
 
-import androidx.annotation.RequiresApi;
-
-import com.android.bluetooth.BluetoothMetricsProto.BluetoothLog;
 import com.android.bluetooth.BluetoothMetricsProto.BluetoothRemoteDeviceInformation;
-import com.android.bluetooth.BluetoothMetricsProto.ProfileConnectionStats;
-import com.android.bluetooth.BluetoothMetricsProto.ProfileId;
 import com.android.bluetooth.BluetoothStatsLog;
 import com.android.bluetooth.BtRestrictedStatsLog;
 import com.android.bluetooth.Utils;
-import com.android.modules.utils.build.SdkLevel;
+import com.android.bluetooth.bass_client.BassConstants;
+import com.android.internal.annotations.VisibleForTesting;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Ascii;
 import com.google.common.hash.BloomFilter;
 import com.google.common.hash.Funnels;
 
@@ -48,40 +99,49 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.function.BiPredicate;
 
 /** Class of Bluetooth Metrics */
 public class MetricsLogger {
-    private static final String TAG = "BluetoothMetricsLogger";
+    private static final String TAG = Utils.BT_PREFIX + MetricsLogger.class.getSimpleName();
+
     private static final String BLOOMFILTER_PATH = "/data/misc/bluetooth";
     private static final String BLOOMFILTER_FILE = "/devices_for_metrics_v3";
+    private static final String MEDICAL_DEVICE_BLOOMFILTER_FILE = "/medical_devices_for_metrics_v1";
     public static final String BLOOMFILTER_FULL_PATH = BLOOMFILTER_PATH + BLOOMFILTER_FILE;
+    public static final String MEDICAL_DEVICE_BLOOMFILTER_FULL_PATH =
+            BLOOMFILTER_PATH + MEDICAL_DEVICE_BLOOMFILTER_FILE;
 
     // 6 hours timeout for counter metrics
     private static final long BLUETOOTH_COUNTER_METRICS_ACTION_DURATION_MILLIS = 6L * 3600L * 1000L;
     private static final int MAX_WORDS_ALLOWED_IN_DEVICE_NAME = 7;
 
-    private static final HashMap<ProfileId, Integer> sProfileConnectionCounts = new HashMap<>();
-
     HashMap<Integer, Long> mCounters = new HashMap<>();
     private static volatile MetricsLogger sInstance = null;
-    private Context mContext = null;
+    private AdapterService mAdapterService = null;
+    private RemoteDevices mRemoteDevices = null;
     private AlarmManager mAlarmManager = null;
     private boolean mInitialized = false;
     private static final Object sLock = new Object();
     private BloomFilter<byte[]> mBloomFilter = null;
     protected boolean mBloomFilterInitialized = false;
 
-    private AlarmManager.OnAlarmListener mOnAlarmListener =
-            new AlarmManager.OnAlarmListener() {
-                @Override
-                public void onAlarm() {
-                    drainBufferedCounters();
-                    scheduleDrains();
-                }
+    private BloomFilter<byte[]> mMedicalDeviceBloomFilter = null;
+
+    protected boolean mMedicalDeviceBloomFilterInitialized = false;
+
+    private final AlarmManager.OnAlarmListener mOnAlarmListener =
+            () -> {
+                drainBufferedCounters();
+                scheduleDrains();
             };
 
     public static MetricsLogger getInstance() {
@@ -109,7 +169,8 @@ public class MetricsLogger {
         }
     }
 
-    public boolean isInitialized() {
+    @VisibleForTesting
+    boolean isInitialized() {
         return mInitialized;
     }
 
@@ -145,16 +206,55 @@ public class MetricsLogger {
         return true;
     }
 
+    /** Initialize medical device bloom filter */
+    public boolean initMedicalDeviceBloomFilter(String path) {
+        try {
+            File medicalDeviceFile = new File(path);
+            if (!medicalDeviceFile.exists()) {
+                Log.w(TAG, "MetricsLogger is creating a new medical device Bloomfilter file");
+                MedicalDeviceBloomfilterGenerator.generateDefaultBloomfilter(path);
+            }
+
+            FileInputStream inputStream = new FileInputStream(new File(path));
+            mMedicalDeviceBloomFilter =
+                    BloomFilter.readFrom(inputStream, Funnels.byteArrayFunnel());
+            mMedicalDeviceBloomFilterInitialized = true;
+        } catch (IOException e1) {
+            Log.w(TAG, "MetricsLogger can't read the medical device BloomFilter file.");
+            byte[] bloomfilterData =
+                    MedicalDeviceBloomfilterGenerator.hexStringToByteArray(
+                            MedicalDeviceBloomfilterGenerator.BLOOM_FILTER_DEFAULT);
+            try {
+                mMedicalDeviceBloomFilter =
+                        BloomFilter.readFrom(
+                                new ByteArrayInputStream(bloomfilterData),
+                                Funnels.byteArrayFunnel());
+                mMedicalDeviceBloomFilterInitialized = true;
+                Log.i(TAG, "The medical device bloomfilter is used");
+                return true;
+            } catch (IOException e2) {
+                Log.w(TAG, "The medical device bloomfilter can't be used.");
+            }
+            return false;
+        }
+        return true;
+    }
+
     protected void setBloomfilter(BloomFilter bloomfilter) {
         mBloomFilter = bloomfilter;
     }
 
-    public boolean init(Context context) {
+    protected void setMedicalDeviceBloomfilter(BloomFilter bloomfilter) {
+        mMedicalDeviceBloomFilter = bloomfilter;
+    }
+
+    void init(AdapterService adapterService, RemoteDevices remoteDevices) {
         if (mInitialized) {
-            return false;
+            return;
         }
         mInitialized = true;
-        mContext = context;
+        mAdapterService = adapterService;
+        mRemoteDevices = remoteDevices;
         scheduleDrains();
         if (!initBloomFilter(BLOOMFILTER_FULL_PATH)) {
             Log.w(TAG, "MetricsLogger can't initialize the bloomfilter");
@@ -162,7 +262,132 @@ public class MetricsLogger {
             // We still want to use this class even if the bloomfilter isn't initialized
             // so still return true here.
         }
-        return true;
+        if (!initMedicalDeviceBloomFilter(MEDICAL_DEVICE_BLOOMFILTER_FULL_PATH)) {
+            Log.w(TAG, "MetricsLogger can't initialize the medical device bloomfilter");
+            // The class is for multiple metrics tasks.
+            // We still want to use this class even if the bloomfilter isn't initialized
+            // so still return true here.
+        }
+        IntentFilter filter = new IntentFilter();
+        filter.setPriority(IntentFilter.SYSTEM_HIGH_PRIORITY);
+        filter.addAction(BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED);
+        filter.addAction(BluetoothA2dpSink.ACTION_CONNECTION_STATE_CHANGED);
+        filter.addAction(BluetoothAvrcpController.ACTION_CONNECTION_STATE_CHANGED);
+        filter.addAction(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED);
+        filter.addAction(BluetoothHeadsetClient.ACTION_CONNECTION_STATE_CHANGED);
+        filter.addAction(BluetoothHearingAid.ACTION_CONNECTION_STATE_CHANGED);
+        filter.addAction(BluetoothHidDevice.ACTION_CONNECTION_STATE_CHANGED);
+        filter.addAction(BluetoothHidHost.ACTION_CONNECTION_STATE_CHANGED);
+        filter.addAction(BluetoothLeAudio.ACTION_LE_AUDIO_CONNECTION_STATE_CHANGED);
+        filter.addAction(BluetoothMap.ACTION_CONNECTION_STATE_CHANGED);
+        filter.addAction(BluetoothMapClient.ACTION_CONNECTION_STATE_CHANGED);
+        filter.addAction(BluetoothPan.ACTION_CONNECTION_STATE_CHANGED);
+        filter.addAction(BluetoothPbap.ACTION_CONNECTION_STATE_CHANGED);
+        filter.addAction(BluetoothPbapClient.ACTION_CONNECTION_STATE_CHANGED);
+        filter.addAction(BluetoothSap.ACTION_CONNECTION_STATE_CHANGED);
+        filter.addAction(BluetoothHapClient.ACTION_HAP_CONNECTION_STATE_CHANGED);
+        mAdapterService.registerReceiver(mReceiver, filter);
+    }
+
+    private final BroadcastReceiver mReceiver =
+            new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    String action = intent.getAction();
+                    if (action == null) {
+                        Log.w(TAG, "Received intent with null action");
+                        return;
+                    }
+                    BluetoothDevice device =
+                            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                    int state = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, -1);
+                    switch (action) {
+                        case BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED -> {
+                            logConnectionStateChanges(BluetoothProfile.A2DP, intent);
+                            if (state == BluetoothProfile.STATE_CONNECTED
+                                    && isMedicalDevice(device)) {
+                                updateHearingDeviceActiveTime(
+                                        device,
+                                        HEARING_DEVICE_ACTIVE_EVENT_REPORTED__DEVICE_TYPE__CLASSIC);
+                            }
+                        }
+                        case BluetoothA2dpSink.ACTION_CONNECTION_STATE_CHANGED ->
+                                logConnectionStateChanges(BluetoothProfile.A2DP_SINK, intent);
+                        case BluetoothAvrcpController.ACTION_CONNECTION_STATE_CHANGED ->
+                                logConnectionStateChanges(
+                                        BluetoothProfile.AVRCP_CONTROLLER, intent);
+                        case BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED -> {
+                            logConnectionStateChanges(BluetoothProfile.HEADSET, intent);
+                            if (state == BluetoothProfile.STATE_CONNECTED
+                                    && isMedicalDevice(device)) {
+                                updateHearingDeviceActiveTime(
+                                        device,
+                                        HEARING_DEVICE_ACTIVE_EVENT_REPORTED__DEVICE_TYPE__CLASSIC);
+                            }
+                        }
+                        case BluetoothHeadsetClient.ACTION_CONNECTION_STATE_CHANGED ->
+                                logConnectionStateChanges(BluetoothProfile.HEADSET_CLIENT, intent);
+                        case BluetoothHearingAid.ACTION_CONNECTION_STATE_CHANGED -> {
+                            logConnectionStateChanges(BluetoothProfile.HEARING_AID, intent);
+                            if (state == BluetoothProfile.STATE_CONNECTED) {
+                                updateHearingDeviceActiveTime(
+                                        device,
+                                        isDualModeHearingDevice(device)
+                                                ? HEARING_DEVICE_ACTIVE_EVENT_REPORTED__DEVICE_TYPE__ASHA_DUAL
+                                                : HEARING_DEVICE_ACTIVE_EVENT_REPORTED__DEVICE_TYPE__ASHA_ONLY);
+                            }
+                        }
+                        case BluetoothHidDevice.ACTION_CONNECTION_STATE_CHANGED ->
+                                logConnectionStateChanges(BluetoothProfile.HID_DEVICE, intent);
+                        case BluetoothHidHost.ACTION_CONNECTION_STATE_CHANGED ->
+                                logConnectionStateChanges(BluetoothProfile.HID_HOST, intent);
+                        case BluetoothLeAudio.ACTION_LE_AUDIO_CONNECTION_STATE_CHANGED ->
+                                logConnectionStateChanges(BluetoothProfile.LE_AUDIO, intent);
+                        case BluetoothMap.ACTION_CONNECTION_STATE_CHANGED ->
+                                logConnectionStateChanges(BluetoothProfile.MAP, intent);
+                        case BluetoothMapClient.ACTION_CONNECTION_STATE_CHANGED ->
+                                logConnectionStateChanges(BluetoothProfile.MAP_CLIENT, intent);
+                        case BluetoothPan.ACTION_CONNECTION_STATE_CHANGED ->
+                                logConnectionStateChanges(BluetoothProfile.PAN, intent);
+                        case BluetoothPbap.ACTION_CONNECTION_STATE_CHANGED ->
+                                logConnectionStateChanges(BluetoothProfile.PBAP, intent);
+                        case BluetoothPbapClient.ACTION_CONNECTION_STATE_CHANGED ->
+                                logConnectionStateChanges(BluetoothProfile.PBAP_CLIENT, intent);
+                        case BluetoothSap.ACTION_CONNECTION_STATE_CHANGED ->
+                                logConnectionStateChanges(BluetoothProfile.SAP, intent);
+                        case BluetoothHapClient.ACTION_HAP_CONNECTION_STATE_CHANGED -> {
+                            if (state == BluetoothProfile.STATE_CONNECTED) {
+                                updateHearingDeviceActiveTime(
+                                        device,
+                                        isDualModeHearingDevice(device)
+                                                ? HEARING_DEVICE_ACTIVE_EVENT_REPORTED__DEVICE_TYPE__LE_AUDIO_DUAL
+                                                : HEARING_DEVICE_ACTIVE_EVENT_REPORTED__DEVICE_TYPE__LE_AUDIO_ONLY);
+                            }
+                        }
+                        default -> Log.w(TAG, "Received unknown intent " + intent);
+                    }
+                }
+            };
+
+    private void logConnectionStateChanges(int profile, Intent connIntent) {
+        BluetoothDevice device = connIntent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+        int state = connIntent.getIntExtra(BluetoothProfile.EXTRA_STATE, -1);
+        int metricId = mAdapterService.getMetricId(device);
+        if (state == STATE_CONNECTING) {
+            String deviceName = mRemoteDevices.getName(device);
+            BluetoothStatsLog.write(
+                    BluetoothStatsLog.BLUETOOTH_DEVICE_NAME_REPORTED, metricId, deviceName);
+            logAllowlistedDeviceNameHash(metricId, deviceName);
+        }
+        BluetoothStatsLog.write(
+                BluetoothStatsLog.BLUETOOTH_CONNECTION_STATE_CHANGED,
+                state,
+                0 /* deprecated */,
+                profile,
+                mAdapterService.obfuscateAddress(device),
+                metricId,
+                0,
+                -1);
     }
 
     public boolean cacheCount(int key, long count) {
@@ -190,41 +415,10 @@ public class MetricsLogger {
         return true;
     }
 
-    /**
-     * Log profile connection event by incrementing an internal counter for that profile. This log
-     * persists over adapter enable/disable and only get cleared when metrics are dumped or when
-     * Bluetooth process is killed.
-     *
-     * @param profileId Bluetooth profile that is connected at this event
-     */
-    public static void logProfileConnectionEvent(ProfileId profileId) {
-        synchronized (sProfileConnectionCounts) {
-            sProfileConnectionCounts.merge(profileId, 1, Integer::sum);
-        }
-    }
-
-    /**
-     * Dump collected metrics into proto using a builder. Clean up internal data after the dump.
-     *
-     * @param metricsBuilder proto builder for {@link BluetoothLog}
-     */
-    public static void dumpProto(BluetoothLog.Builder metricsBuilder) {
-        synchronized (sProfileConnectionCounts) {
-            sProfileConnectionCounts.forEach(
-                    (key, value) ->
-                            metricsBuilder.addProfileConnectionStats(
-                                    ProfileConnectionStats.newBuilder()
-                                            .setProfileId(key)
-                                            .setNumTimesConnected(value)
-                                            .build()));
-            sProfileConnectionCounts.clear();
-        }
-    }
-
     protected void scheduleDrains() {
         Log.i(TAG, "setCounterMetricsAlarm()");
         if (mAlarmManager == null) {
-            mAlarmManager = mContext.getSystemService(AlarmManager.class);
+            mAlarmManager = mAdapterService.getSystemService(AlarmManager.class);
         }
         mAlarmManager.set(
                 AlarmManager.ELAPSED_REALTIME_WAKEUP,
@@ -258,25 +452,25 @@ public class MetricsLogger {
         }
     }
 
-    public boolean close() {
+    void close() {
         if (!mInitialized) {
-            return false;
+            return;
         }
         Log.d(TAG, "close()");
+        mAdapterService.unregisterReceiver(mReceiver);
         cancelPendingDrain();
         drainBufferedCounters();
         mAlarmManager = null;
-        mContext = null;
         mInitialized = false;
         mBloomFilterInitialized = false;
-        return true;
+        mMedicalDeviceBloomFilterInitialized = false;
     }
 
     protected void cancelPendingDrain() {
         mAlarmManager.cancel(mOnAlarmListener);
     }
 
-    private void writeFieldIfNotNull(
+    private static void writeFieldIfNotNull(
             ProtoOutputStream proto,
             long fieldType,
             long fieldCount,
@@ -299,12 +493,31 @@ public class MetricsLogger {
 
     /**
      * Retrieves a byte array containing serialized remote device information for the specified
-     * BluetoothDevice. This data can be used for remote device identification and logging.
+     * BluetoothDevice. This data can be used for remote device identification and logging. Does not
+     * include medical remote devices.
      *
      * @param device The BluetoothDevice for which to retrieve device information.
      * @return A byte array containing the serialized remote device information.
      */
     public byte[] getRemoteDeviceInfoProto(BluetoothDevice device) {
+        return mInitialized ? buildRemoteDeviceInfoProto(device, false) : null;
+    }
+
+    /**
+     * Retrieves a byte array containing serialized remote device information for the specified
+     * BluetoothDevice. This data can be used for remote device identification and logging.
+     *
+     * @param device The BluetoothDevice for which to retrieve device information.
+     * @param includeMedicalDevices Should be true only if logging as de-identified metric,
+     *     otherwise false.
+     * @return A byte array containing the serialized remote device information.
+     */
+    public byte[] getRemoteDeviceInfoProto(BluetoothDevice device, boolean includeMedicalDevices) {
+        return mInitialized ? buildRemoteDeviceInfoProto(device, includeMedicalDevices) : null;
+    }
+
+    private byte[] buildRemoteDeviceInfoProto(
+            BluetoothDevice device, boolean includeMedicalDevices) {
         ProtoOutputStream proto = new ProtoOutputStream();
 
         // write Allowlisted Device Name Hash
@@ -313,7 +526,8 @@ public class MetricsLogger {
                 ProtoOutputStream.FIELD_TYPE_STRING,
                 ProtoOutputStream.FIELD_COUNT_SINGLE,
                 BluetoothRemoteDeviceInformation.ALLOWLISTED_DEVICE_NAME_HASH_FIELD_NUMBER,
-                getAllowlistedDeviceNameHash(device.getName()));
+                getAllowlistedDeviceNameHash(
+                        mAdapterService.getRemoteName(device), includeMedicalDevices));
 
         // write COD
         writeFieldIfNotNull(
@@ -321,9 +535,7 @@ public class MetricsLogger {
                 ProtoOutputStream.FIELD_TYPE_INT32,
                 ProtoOutputStream.FIELD_COUNT_SINGLE,
                 BluetoothRemoteDeviceInformation.CLASS_OF_DEVICE_FIELD_NUMBER,
-                device.getBluetoothClass() != null
-                        ? device.getBluetoothClass().getClassOfDevice()
-                        : null);
+                mAdapterService.getRemoteClass(device));
 
         // write OUI
         writeFieldIfNotNull(
@@ -333,21 +545,54 @@ public class MetricsLogger {
                 BluetoothRemoteDeviceInformation.OUI_FIELD_NUMBER,
                 getOui(device));
 
+        // write deviceTypeMetaData
+        writeFieldIfNotNull(
+                proto,
+                ProtoOutputStream.FIELD_TYPE_INT32,
+                ProtoOutputStream.FIELD_COUNT_SINGLE,
+                BluetoothRemoteDeviceInformation.DEVICE_TYPE_METADATA_FIELD_NUMBER,
+                getDeviceTypeMetaData(device));
+
         return proto.getBytes();
     }
 
-    private int getOui(BluetoothDevice device) {
+    private int getDeviceTypeMetaData(BluetoothDevice device) {
+        byte[] deviceTypeMetaDataBytes =
+                mAdapterService.getMetadata(device, BluetoothDevice.METADATA_DEVICE_TYPE);
+
+        if (deviceTypeMetaDataBytes == null) {
+            return BluetoothProtoEnums.NOT_AVAILABLE;
+        }
+        String deviceTypeMetaData = new String(deviceTypeMetaDataBytes, StandardCharsets.UTF_8);
+
+        return switch (deviceTypeMetaData) {
+            case "Watch" -> BluetoothProtoEnums.WATCH;
+            case "Untethered Headset" -> BluetoothProtoEnums.UNTETHERED_HEADSET;
+            case "Stylus" -> BluetoothProtoEnums.STYLUS;
+            case "Speaker" -> BluetoothProtoEnums.SPEAKER;
+            case "Headset" -> BluetoothProtoEnums.HEADSET;
+            case "Carkit" -> BluetoothProtoEnums.CARKIT;
+            case "Default" -> BluetoothProtoEnums.DEFAULT;
+            default -> BluetoothProtoEnums.NOT_AVAILABLE;
+        };
+    }
+
+    private static int getOui(BluetoothDevice device) {
         return Integer.parseInt(device.getAddress().replace(":", "").substring(0, 6), 16);
     }
 
-    private List<String> getWordBreakdownList(String deviceName) {
+    protected List<String> getWordBreakdownList(String deviceName) {
         if (deviceName == null) {
             return Collections.emptyList();
         }
         // remove more than one spaces in a row
         deviceName = deviceName.trim().replaceAll(" +", " ");
         // remove non alphanumeric characters and spaces, and transform to lower cases.
-        String[] words = Ascii.toLowerCase(deviceName.replaceAll("[^a-zA-Z0-9 ]", "")).split(" ");
+        String[] words =
+                deviceName
+                        .replaceAll("[^a-zA-Z0-9 ]", "")
+                        .toLowerCase(Locale.ROOT)
+                        .split(" ", MAX_WORDS_ALLOWED_IN_DEVICE_NAME + 1);
 
         if (words.length > MAX_WORDS_ALLOWED_IN_DEVICE_NAME) {
             // Validity checking here to avoid excessively long sequences
@@ -364,17 +609,17 @@ public class MetricsLogger {
             }
         }
 
-        return wordBreakdownList;
+        // Prevent returning a mutable list
+        return Collections.unmodifiableList(wordBreakdownList);
     }
 
-    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-    private void uploadRestrictedBluetothDeviceName(List<String> wordBreakdownList) {
+    protected void uploadRestrictedBluetoothDeviceName(List<String> wordBreakdownList) {
         for (String word : wordBreakdownList) {
             BtRestrictedStatsLog.write(RESTRICTED_BLUETOOTH_DEVICE_NAME_REPORTED, word);
         }
     }
 
-    private String getMatchedString(List<String> wordBreakdownList) {
+    private String getMatchedString(List<String> wordBreakdownList, boolean includeMedicalDevices) {
         if (!mBloomFilterInitialized || wordBreakdownList.isEmpty()) {
             return "";
         }
@@ -386,7 +631,34 @@ public class MetricsLogger {
                 matchedString = word;
             }
         }
+
+        return (matchedString.equals("") && includeMedicalDevices)
+                ? getMatchedStringForMedicalDevice(wordBreakdownList)
+                : matchedString;
+    }
+
+    private String getMatchedStringForMedicalDevice(List<String> wordBreakdownList) {
+        String matchedString = "";
+        for (String word : wordBreakdownList) {
+            byte[] sha256 = getSha256(word);
+            if (mMedicalDeviceBloomFilter.mightContain(sha256)
+                    && word.length() > matchedString.length()) {
+                matchedString = word;
+            }
+        }
         return matchedString;
+    }
+
+    private static int convertAppImportance(int importance) {
+        if (importance < IMPORTANCE_FOREGROUND_SERVICE) {
+            return BluetoothStatsLog
+                    .LE_APP_SCAN_STATE_CHANGED__APP_IMPORTANCE__IMPORTANCE_HIGHER_THAN_FGS;
+        }
+        if (importance > IMPORTANCE_FOREGROUND_SERVICE) {
+            return BluetoothStatsLog
+                    .LE_APP_SCAN_STATE_CHANGED__APP_IMPORTANCE__IMPORTANCE_LOWER_THAN_FGS;
+        }
+        return BluetoothStatsLog.LE_APP_SCAN_STATE_CHANGED__APP_IMPORTANCE__IMPORTANCE_EQUAL_TO_FGS;
     }
 
     /** Logs the app scan stats with app attribution when the app scan state changed. */
@@ -403,7 +675,9 @@ public class MetricsLogger {
             long scanDurationMillis,
             int numOngoingScan,
             boolean isScreenOn,
-            boolean isAppDead) {
+            boolean isAppDead,
+            int appImportance,
+            String attributionTag) {
         BluetoothStatsLog.write(
                 BluetoothStatsLog.LE_APP_SCAN_STATE_CHANGED,
                 uids,
@@ -418,7 +692,9 @@ public class MetricsLogger {
                 scanDurationMillis,
                 numOngoingScan,
                 isScreenOn,
-                isAppDead);
+                isAppDead,
+                convertAppImportance(appImportance),
+                attributionTag);
     }
 
     /** Logs the radio scan stats with app attribution when the radio scan stopped. */
@@ -430,7 +706,9 @@ public class MetricsLogger {
             long scanIntervalMillis,
             long scanWindowMillis,
             boolean isScreenOn,
-            long scanDurationMillis) {
+            long scanDurationMillis,
+            int appImportance,
+            String attributionTag) {
         BluetoothStatsLog.write(
                 BluetoothStatsLog.LE_RADIO_SCAN_STOPPED,
                 uids,
@@ -440,7 +718,9 @@ public class MetricsLogger {
                 scanIntervalMillis,
                 scanWindowMillis,
                 isScreenOn,
-                scanDurationMillis);
+                scanDurationMillis,
+                convertAppImportance(appImportance),
+                attributionTag);
     }
 
     /** Logs the advertise stats with app attribution when the advertise state changed. */
@@ -455,7 +735,9 @@ public class MetricsLogger {
             boolean hasScanResponse,
             boolean isExtendedAdv,
             int instanceCount,
-            long advDurationMs) {
+            long advDurationMs,
+            int appImportance,
+            String attributionTag) {
         BluetoothStatsLog.write(
                 BluetoothStatsLog.LE_ADV_STATE_CHANGED,
                 uids,
@@ -468,25 +750,22 @@ public class MetricsLogger {
                 hasScanResponse,
                 isExtendedAdv,
                 instanceCount,
-                advDurationMs);
+                advDurationMs,
+                convertAppImportance(appImportance),
+                attributionTag);
     }
 
-    protected String getAllowlistedDeviceNameHash(String deviceName) {
+    protected String getAllowlistedDeviceNameHash(
+            String deviceName, boolean includeMedicalDevices) {
         List<String> wordBreakdownList = getWordBreakdownList(deviceName);
-        String matchedString = getMatchedString(wordBreakdownList);
+        String matchedString = getMatchedString(wordBreakdownList, includeMedicalDevices);
         return getSha256String(matchedString);
     }
 
-    protected String logAllowlistedDeviceNameHash(
-            int metricId, String deviceName, boolean logRestrictedNames) {
+    protected String logAllowlistedDeviceNameHash(int metricId, String deviceName) {
         List<String> wordBreakdownList = getWordBreakdownList(deviceName);
-        String matchedString = getMatchedString(wordBreakdownList);
-        if (logRestrictedNames) {
-            // Log the restricted bluetooth device name
-            if (SdkLevel.isAtLeastU()) {
-                uploadRestrictedBluetothDeviceName(wordBreakdownList);
-            }
-        }
+        boolean includeMedicalDevices = false;
+        String matchedString = getMatchedString(wordBreakdownList, includeMedicalDevices);
         if (!matchedString.isEmpty()) {
             statslogBluetoothDeviceNames(metricId, matchedString);
         }
@@ -500,6 +779,21 @@ public class MetricsLogger {
                 BluetoothStatsLog.BLUETOOTH_HASHED_DEVICE_NAME_REPORTED, metricId, sha256);
     }
 
+    public void logBluetoothEvent(BluetoothDevice device, int eventType, int state, int uid) {
+
+        if (!mInitialized || mAdapterService.getMetricId(device) == 0) {
+            return;
+        }
+
+        BluetoothStatsLog.write(
+                BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED,
+                eventType,
+                state,
+                uid,
+                mAdapterService.getMetricId(device),
+                getRemoteDeviceInfoProto(device, false));
+    }
+
     protected static String getSha256String(String name) {
         if (name.isEmpty()) {
             return "";
@@ -507,7 +801,7 @@ public class MetricsLogger {
         StringBuilder hexString = new StringBuilder();
         byte[] hashBytes = getSha256(name);
         for (byte b : hashBytes) {
-            hexString.append(String.format("%02x", b));
+            hexString.append(Utils.formatSimple("%02x", b));
         }
         return hexString.toString();
     }
@@ -521,5 +815,224 @@ public class MetricsLogger {
             return null;
         }
         return digest.digest(name.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static int getProfileEnumFromProfileId(int profile) {
+        return switch (profile) {
+            case BluetoothProfile.A2DP ->
+                    BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_A2DP;
+            case BluetoothProfile.A2DP_SINK ->
+                    BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_A2DP_SINK;
+            case BluetoothProfile.HEADSET ->
+                    BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_HEADSET;
+            case BluetoothProfile.HEADSET_CLIENT ->
+                    BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_HEADSET_CLIENT;
+            case BluetoothProfile.MAP_CLIENT ->
+                    BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_MAP_CLIENT;
+            case BluetoothProfile.HID_HOST ->
+                    BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_HID_HOST;
+            case BluetoothProfile.PAN ->
+                    BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_PAN;
+            case BluetoothProfile.PBAP_CLIENT ->
+                    BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_PBAP_CLIENT;
+            case BluetoothProfile.HEARING_AID ->
+                    BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_HEARING_AID;
+            case BluetoothProfile.HAP_CLIENT ->
+                    BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_HAP_CLIENT;
+            case BluetoothProfile.VOLUME_CONTROL ->
+                    BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_VOLUME_CONTROL;
+            case BluetoothProfile.CSIP_SET_COORDINATOR ->
+                    BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_CSIP_SET_COORDINATOR;
+            case BluetoothProfile.LE_AUDIO ->
+                    BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_LE_AUDIO;
+            case BluetoothProfile.LE_AUDIO_BROADCAST_ASSISTANT ->
+                    BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_LE_AUDIO_BROADCAST_ASSISTANT;
+            case BluetoothProfile.BATTERY ->
+                    BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION_BATTERY;
+            default -> BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__PROFILE_CONNECTION;
+        };
+    }
+
+    public void logProfileConnectionStateChange(
+            BluetoothDevice device, int profileId, int state, int prevState) {
+
+        switch (state) {
+            case BluetoothAdapter.STATE_CONNECTED -> {
+                logBluetoothEvent(
+                        device,
+                        getProfileEnumFromProfileId(profileId),
+                        BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__STATE__SUCCESS,
+                        0);
+            }
+            case BluetoothAdapter.STATE_DISCONNECTED -> {
+                if (prevState == BluetoothAdapter.STATE_CONNECTING) {
+                    logBluetoothEvent(
+                            device,
+                            getProfileEnumFromProfileId(profileId),
+                            BluetoothStatsLog.BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__STATE__FAIL,
+                            0);
+                }
+            }
+            default -> {} // Nothing to do
+        }
+    }
+
+    /** Logs LE Audio Broadcast audio session. */
+    public void logLeAudioBroadcastAudioSession(
+            int broadcastId,
+            int[] audioQuality,
+            int groupSize,
+            long sessionDurationMs,
+            long latencySessionConfiguredMs,
+            long latencySessionStreamingMs,
+            int sessionStatus) {
+        if (!mInitialized) {
+            return;
+        }
+
+        BluetoothStatsLog.write(
+                BluetoothStatsLog.BROADCAST_AUDIO_SESSION_REPORTED,
+                broadcastId,
+                audioQuality.length,
+                audioQuality,
+                groupSize,
+                sessionDurationMs,
+                latencySessionConfiguredMs,
+                latencySessionStreamingMs,
+                sessionStatus);
+    }
+
+    /** Logs Bond State Machine event */
+    public void logBondStateMachineEvent(BluetoothDevice device, int bondState) {
+        switch (bondState) {
+            case BluetoothDevice.BOND_NONE -> {
+                logBluetoothEvent(
+                        device,
+                        BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__BOND,
+                        BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__STATE__STATE_NONE,
+                        0);
+            }
+            case BluetoothDevice.BOND_BONDED -> {
+                logBluetoothEvent(
+                        device,
+                        BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__EVENT_TYPE__BOND,
+                        BLUETOOTH_CROSS_LAYER_EVENT_REPORTED__STATE__STATE_BONDED,
+                        0);
+            }
+            default -> {} // Nothing to do
+        }
+    }
+
+    /** Logs LE Audio Broadcast audio sync. */
+    public void logLeAudioBroadcastAudioSync(
+            BluetoothDevice device,
+            int broadcastId,
+            boolean isLocalBroadcast,
+            long syncDurationMs,
+            long latencyPaSyncMs,
+            long latencyBisSyncMs,
+            int syncStatus) {
+        if (!mInitialized) {
+            return;
+        }
+
+        BluetoothStatsLog.write(
+                BluetoothStatsLog.BROADCAST_AUDIO_SYNC_REPORTED,
+                isLocalBroadcast ? broadcastId : BassConstants.INVALID_BROADCAST_ID,
+                isLocalBroadcast,
+                syncDurationMs,
+                latencyPaSyncMs,
+                latencyBisSyncMs,
+                syncStatus,
+                getRemoteDeviceInfoProto(device, false));
+    }
+
+    void logHearingDeviceActiveEvent(BluetoothDevice device, int type, int timePeriod) {
+        BluetoothStatsLog.write(
+                BluetoothStatsLog.HEARING_DEVICE_ACTIVE_EVENT_REPORTED,
+                type,
+                timePeriod,
+                getRemoteDeviceInfoProto(device, true));
+    }
+
+    void updateHearingDeviceActiveTime(BluetoothDevice device, int deviceTypeProto) {
+        // Time comparison includes a +/- 1 hour tolerance to prevent data loss
+        updateLastActiveTime(
+                device,
+                deviceTypeProto,
+                HEARING_DEVICE_ACTIVE_EVENT_REPORTED__TIME_PERIOD__DAY,
+                "last_active_day",
+                (now, lastActive) -> now.isAfter(lastActive.plusDays(1).minusHours(1)));
+        updateLastActiveTime(
+                device,
+                deviceTypeProto,
+                HEARING_DEVICE_ACTIVE_EVENT_REPORTED__TIME_PERIOD__WEEK,
+                "last_active_week",
+                (now, lastActive) -> now.isAfter(lastActive.plusWeeks(1).minusHours(1)));
+        updateLastActiveTime(
+                device,
+                deviceTypeProto,
+                HEARING_DEVICE_ACTIVE_EVENT_REPORTED__TIME_PERIOD__MONTH,
+                "last_active_month",
+                (now, lastActive) -> now.isAfter(lastActive.plusMonths(1).minusHours(1)));
+    }
+
+    private void updateLastActiveTime(
+            BluetoothDevice device,
+            int deviceTypeProto,
+            int timePeriodProto,
+            String timePeriodSettingsKey,
+            BiPredicate<LocalDateTime, LocalDateTime> timeComparison) {
+        final ContentResolver contentResolver = mAdapterService.getContentResolver();
+        final String lastActive = Settings.Secure.getString(contentResolver, timePeriodSettingsKey);
+        final LocalDateTime now = LocalDateTime.now(ZoneId.systemDefault());
+        if (lastActive == null || timeComparison.test(now, LocalDateTime.parse(lastActive))) {
+            Settings.Secure.putString(contentResolver, timePeriodSettingsKey, now.toString());
+            logHearingDeviceActiveEvent(device, deviceTypeProto, timePeriodProto);
+        }
+    }
+
+    private boolean isDualModeHearingDevice(BluetoothDevice device) {
+        List<ParcelUuid> uuidList = Arrays.asList(mRemoteDevices.getUuids(device));
+        return uuidList.contains(BluetoothUuid.HEARING_AID)
+                && uuidList.contains(BluetoothUuid.LE_AUDIO);
+    }
+
+    private boolean isMedicalDevice(BluetoothDevice device) {
+        final String deviceName = mAdapterService.getRemoteName(device);
+        final List<String> wordBreakdownList = getWordBreakdownList(deviceName);
+        boolean isMedicalDevice = !getMatchedStringForMedicalDevice(wordBreakdownList).isEmpty();
+        return isMedicalDevice;
+    }
+
+    /** Log the channel sounding types supported. */
+    public void logChannelSoundingTypesSupported(int[] channelSoundingTypes) {
+        BluetoothStatsLog.write(CHANNEL_SOUNDING_TYPES_SUPPORTED, channelSoundingTypes);
+    }
+
+    /** Log calling app uid and files count and size for OPP launcher activity. */
+    public void logBluetoothOppLauncherCreated(int uid, int fileCount, int totalFileSize) {
+        BluetoothStatsLog.write(
+                BluetoothStatsLog.BLUETOOTH_OPP_LAUNCHER_CREATED, uid, fileCount, totalFileSize);
+    }
+
+    /** Log the status of a Bluetooth share. */
+    public void logBluetoothOppShareStatusCompleteReported(
+            int status,
+            int direction,
+            int duration,
+            int fileSize,
+            int transferSpeed,
+            int mimeType,
+            BluetoothDevice device) {
+        BluetoothStatsLog.write(
+                BluetoothStatsLog.BLUETOOTH_OPP_SHARE_STATUS_COMPLETE_REPORTED,
+                status,
+                direction,
+                duration,
+                fileSize,
+                transferSpeed,
+                mimeType,
+                getRemoteDeviceInfoProto(device, false));
     }
 }

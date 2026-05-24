@@ -32,15 +32,16 @@
 
 package com.android.bluetooth.opp;
 
+import static java.util.Objects.requireNonNull;
+
 import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothUtils;
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.content.SharedPreferences.Editor;
 import android.util.Log;
 
 import com.android.bluetooth.Utils;
-import com.android.bluetooth.flags.Flags;
+import com.android.bluetooth.btservice.AdapterService;
+import com.android.internal.annotations.VisibleForTesting;
 
 import java.util.HashMap;
 
@@ -49,64 +50,57 @@ import java.util.HashMap;
  * replaced by bluetooth_devices in SettingsProvider
  */
 public class BluetoothOppPreference {
-    private static final String TAG = "BluetoothOppPreference";
+    private static final String TAG = BluetoothOppPreference.class.getSimpleName();
 
     private static BluetoothOppPreference sInstance;
 
     /* Used when obtaining a reference to the singleton instance. */
     private static final Object INSTANCE_LOCK = new Object();
 
-    private boolean mInitialized;
+    private final AdapterService mAdapterService;
+    private final SharedPreferences mNamePreference;
+    private final SharedPreferences mChannelPreference;
+    private final HashMap<String, Integer> mChannels;
+    private final HashMap<String, String> mNames;
 
-    private Context mContext;
-
-    private SharedPreferences mNamePreference;
-
-    private SharedPreferences mChannelPreference;
-
-    private HashMap<String, Integer> mChannels = new HashMap<String, Integer>();
-
-    private HashMap<String, String> mNames = new HashMap<String, String>();
-
-    public static BluetoothOppPreference getInstance(Context context) {
+    public static BluetoothOppPreference getInstance(AdapterService adapterService) {
         synchronized (INSTANCE_LOCK) {
             if (sInstance == null) {
-                sInstance = new BluetoothOppPreference();
-            }
-            if (!sInstance.init(context)) {
-                return null;
+                sInstance = new BluetoothOppPreference(adapterService);
             }
             return sInstance;
         }
     }
 
-    private boolean init(Context context) {
-        if (mInitialized) {
-            return true;
+    @VisibleForTesting
+    static void setInstance(BluetoothOppPreference instance) {
+        synchronized (INSTANCE_LOCK) {
+            sInstance = instance;
         }
-        mInitialized = true;
+    }
 
-        mContext = context;
+    private BluetoothOppPreference(AdapterService adapterService) {
+        mAdapterService = requireNonNull(adapterService);
 
         mNamePreference =
-                mContext.getSharedPreferences(
+                mAdapterService.getSharedPreferences(
                         Constants.BLUETOOTHOPP_NAME_PREFERENCE, Context.MODE_PRIVATE);
         mChannelPreference =
-                mContext.getSharedPreferences(
+                mAdapterService.getSharedPreferences(
                         Constants.BLUETOOTHOPP_CHANNEL_PREFERENCE, Context.MODE_PRIVATE);
 
         mNames = (HashMap<String, String>) mNamePreference.getAll();
         mChannels = (HashMap<String, Integer>) mChannelPreference.getAll();
-
-        return true;
     }
 
     private String getChannelKey(BluetoothDevice remoteDevice, int uuid) {
-        return getBrEdrAddress(remoteDevice) + "_" + Integer.toHexString(uuid);
+        return Utils.getBrEdrAddress(remoteDevice, mAdapterService)
+                + "_"
+                + Integer.toHexString(uuid);
     }
 
     public String getName(BluetoothDevice remoteDevice) {
-        String identityAddress = getBrEdrAddress(remoteDevice);
+        String identityAddress = Utils.getBrEdrAddress(remoteDevice, mAdapterService);
         if (identityAddress != null && identityAddress.equals("FF:FF:FF:00:00:00")) {
             return "localhost";
         }
@@ -128,7 +122,7 @@ public class BluetoothOppPreference {
             Log.v(
                     TAG,
                     "getChannel for "
-                            + BluetoothUtils.toAnonymizedAddress(getBrEdrAddress(remoteDevice))
+                            + remoteDevice
                             + "_"
                             + Integer.toHexString(uuid)
                             + " as "
@@ -138,14 +132,10 @@ public class BluetoothOppPreference {
     }
 
     public void setName(BluetoothDevice remoteDevice, String name) {
-        String brEdrAddress = getBrEdrAddress(remoteDevice);
-        Log.v(
-                TAG,
-                "Setname for " + BluetoothUtils.toAnonymizedAddress(brEdrAddress) + " to " + name);
+        String brEdrAddress = Utils.getBrEdrAddress(remoteDevice, mAdapterService);
+        Log.v(TAG, "setName for " + remoteDevice + " to " + name);
         if (name != null && !name.equals(getName(remoteDevice))) {
-            Editor ed = mNamePreference.edit();
-            ed.putString(brEdrAddress, name);
-            ed.apply();
+            mNamePreference.edit().putString(brEdrAddress, name).apply();
             mNames.put(brEdrAddress, name);
         }
     }
@@ -153,34 +143,28 @@ public class BluetoothOppPreference {
     public void setChannel(BluetoothDevice remoteDevice, int uuid, int channel) {
         Log.v(
                 TAG,
-                "Setchannel for "
-                        + BluetoothUtils.toAnonymizedAddress(getBrEdrAddress(remoteDevice))
+                "setChannel for "
+                        + remoteDevice
                         + "_"
                         + Integer.toHexString(uuid)
                         + " to "
                         + channel);
         if (channel != getChannel(remoteDevice, uuid)) {
             String key = getChannelKey(remoteDevice, uuid);
-            Editor ed = mChannelPreference.edit();
-            ed.putInt(key, channel);
-            ed.apply();
+            mChannelPreference.edit().putInt(key, channel).apply();
             mChannels.put(key, channel);
         }
     }
 
     public void removeChannel(BluetoothDevice remoteDevice, int uuid) {
         String key = getChannelKey(remoteDevice, uuid);
-        Editor ed = mChannelPreference.edit();
-        ed.remove(key);
-        ed.apply();
+        mChannelPreference.edit().remove(key).apply();
         mChannels.remove(key);
     }
 
     public void removeName(BluetoothDevice remoteDevice) {
-        Editor ed = mNamePreference.edit();
-        String key = getBrEdrAddress(remoteDevice);
-        ed.remove(key);
-        ed.apply();
+        String key = Utils.getBrEdrAddress(remoteDevice, mAdapterService);
+        mNamePreference.edit().remove(key).apply();
         mNames.remove(key);
     }
 
@@ -189,12 +173,5 @@ public class BluetoothOppPreference {
         Log.d(TAG, mNames.toString());
         Log.d(TAG, "Dumping Channels:  ");
         Log.d(TAG, mChannels.toString());
-    }
-
-    private String getBrEdrAddress(BluetoothDevice device) {
-        if (Flags.identityAddressNullIfUnknown()) {
-            return Utils.getBrEdrAddress(device);
-        }
-        return device.getIdentityAddress();
     }
 }

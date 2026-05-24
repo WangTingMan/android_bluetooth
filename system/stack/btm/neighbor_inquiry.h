@@ -17,6 +17,8 @@
 #pragma once
 
 #include <bluetooth/log.h>
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/ble_address_with_type.h>
 
 #include <cstdint>
 
@@ -27,8 +29,6 @@
 #include "stack/include/bt_name.h"
 #include "stack/include/btm_api_types.h"
 #include "stack/include/hci_error_code.h"
-#include "types/ble_address_with_type.h"
-#include "types/raw_address.h"
 
 /* Discoverable modes */
 enum : uint16_t {
@@ -37,13 +37,6 @@ enum : uint16_t {
   BTM_GENERAL_DISCOVERABLE = (1 << 1),
   BTM_MAX_DISCOVERABLE = BTM_GENERAL_DISCOVERABLE,
   BTM_DISCOVERABLE_MASK = (BTM_LIMITED_DISCOVERABLE | BTM_GENERAL_DISCOVERABLE),
-  /* high byte for BLE Discoverable modes */
-  BTM_BLE_NON_DISCOVERABLE = 0x0000,
-  BTM_BLE_LIMITED_DISCOVERABLE = 0x0100,
-  BTM_BLE_GENERAL_DISCOVERABLE = 0x0200,
-  BTM_BLE_MAX_DISCOVERABLE = BTM_BLE_GENERAL_DISCOVERABLE,
-  BTM_BLE_DISCOVERABLE_MASK =
-      (BTM_BLE_LIMITED_DISCOVERABLE | BTM_BLE_GENERAL_DISCOVERABLE),
 };
 
 /* Connectable modes */
@@ -51,11 +44,7 @@ enum : uint16_t {
   BTM_NON_CONNECTABLE = 0,
   BTM_CONNECTABLE = (1 << 0),
   BTM_CONNECTABLE_MASK = (BTM_NON_CONNECTABLE | BTM_CONNECTABLE),
-  /* high byte for BLE Connectable modes */
-  BTM_BLE_NON_CONNECTABLE = BTM_NON_CONNECTABLE,
-  BTM_BLE_CONNECTABLE = 0x0100,
-  BTM_BLE_MAX_CONNECTABLE = BTM_BLE_CONNECTABLE,
-  BTM_BLE_CONNECTABLE_MASK = (BTM_BLE_NON_CONNECTABLE | BTM_BLE_CONNECTABLE),
+
 };
 
 /* Inquiry modes
@@ -101,6 +90,7 @@ typedef struct {
   bool eir_complete_list;
   tBT_DEVICE_TYPE device_type;
   uint8_t inq_result_type;
+  tBT_TRANSPORT last_inq_result_transport; /* Whether the last inquiry is from LE or BR/EDR */
   tBLE_ADDR_TYPE ble_addr_type;
   uint16_t ble_evt_type;
   uint8_t ble_primary_phy;
@@ -121,8 +111,8 @@ typedef struct {
 /* Callback function for notifications when the BTM gets inquiry response.
  * First param is inquiry results database, second is pointer of EIR.
  */
-typedef void(tBTM_INQ_RESULTS_CB)(tBTM_INQ_RESULTS* p_inq_results,
-                                  const uint8_t* p_eir, uint16_t eir_len);
+typedef void(tBTM_INQ_RESULTS_CB)(tBTM_INQ_RESULTS* p_inq_results, const uint8_t* p_eir,
+                                  uint16_t eir_len);
 
 typedef struct {
   uint32_t inq_count; /* Used for determining if a response has already been */
@@ -152,12 +142,11 @@ typedef struct {
 
 typedef struct {
   uint64_t time_of_resp;
-  uint32_t
-      inq_count; /* "timestamps" the entry with a particular inquiry count   */
-                 /* Used for determining if a response has already been      */
-                 /* received for the current inquiry operation. (We do not   */
-                 /* want to flood the caller with multiple responses from    */
-                 /* the same device.                                         */
+  uint32_t inq_count; /* "timestamps" the entry with a particular inquiry count   */
+                      /* Used for determining if a response has already been      */
+                      /* received for the current inquiry operation. (We do not   */
+                      /* want to flood the caller with multiple responses from    */
+                      /* the same device.                                         */
   tBTM_INQ_INFO inq_info;
   bool in_use;
   bool scan_rsp;
@@ -182,19 +171,17 @@ typedef struct {
   tHCI_STATUS hci_status;
   uint8_t num_resp; /* Number of results from the current inquiry */
   unsigned resp_type[kMaxNumberInquiryResults];
-  long long start_time_ms;
+  uint64_t start_time_ms;
 } tBTM_INQUIRY_CMPL;
 
-inline std::string btm_inquiry_cmpl_status_text(
-    const tBTM_INQUIRY_CMPL::STATUS& status) {
+inline std::string btm_inquiry_cmpl_status_text(const tBTM_INQUIRY_CMPL::STATUS& status) {
   switch (status) {
     CASE_RETURN_TEXT(tBTM_INQUIRY_CMPL::CANCELED);
     CASE_RETURN_TEXT(tBTM_INQUIRY_CMPL::TIMER_POPPED);
     CASE_RETURN_TEXT(tBTM_INQUIRY_CMPL::NOT_STARTED);
     CASE_RETURN_TEXT(tBTM_INQUIRY_CMPL::SSP_ACTIVE);
     default:
-      return std::string("UNKNOWN[") + std::to_string(status) +
-             std::string("]");
+      return std::string("UNKNOWN[") + std::to_string(status) + std::string("]");
   }
 }
 
@@ -215,9 +202,8 @@ struct tBTM_INQUIRY_VAR_ST {
   uint32_t inq_counter; /* Counter incremented each time an inquiry completes */
   /* Used for determining whether or not duplicate devices */
   /* have responded to the same inquiry */
-  tBTM_INQ_PARMS inqparms; /* Contains the parameters for the current inquiry */
-  tBTM_INQUIRY_CMPL
-      inq_cmpl_info; /* Status and number of responses from the last inquiry */
+  tBTM_INQ_PARMS inqparms;         /* Contains the parameters for the current inquiry */
+  tBTM_INQUIRY_CMPL inq_cmpl_info; /* Status and number of responses from the last inquiry */
 
   uint16_t per_min_delay; /* Current periodic minimum delay */
   uint16_t per_max_delay; /* Current periodic maximum delay */
@@ -226,50 +212,21 @@ struct tBTM_INQUIRY_VAR_ST {
                            Clear) */
 
 #define BTM_INQ_INACTIVE_STATE 0
-#define BTM_INQ_ACTIVE_STATE \
-  3 /* Actual inquiry or periodic inquiry is in progress */
+#define BTM_INQ_ACTIVE_STATE 3 /* Actual inquiry or periodic inquiry is in progress */
 
   uint8_t state;      /* Current state that the inquiry process is in */
   uint8_t inq_active; /* Bit Mask indicating type of inquiry is active */
 
   bool registered_for_hci_events;
 
-  void Init() {
-    alarm_free(classic_inquiry_timer);
-
-    classic_inquiry_timer = alarm_new("btm_inq.classic_inquiry_timer");
-
-    discoverable_mode = BTM_NON_DISCOVERABLE;
-    connectable_mode = BTM_NON_CONNECTABLE;
-
-    page_scan_window = HCI_DEF_PAGESCAN_WINDOW;
-    page_scan_period = HCI_DEF_PAGESCAN_INTERVAL;
-    inq_scan_window = HCI_DEF_INQUIRYSCAN_WINDOW;
-    inq_scan_period = HCI_DEF_INQUIRYSCAN_INTERVAL;
-    inq_scan_type = BTM_SCAN_TYPE_STANDARD;
-    page_scan_type = HCI_DEF_SCAN_TYPE;
-
-    p_inq_cmpl_cb = nullptr;
-    p_inq_results_cb = nullptr;
-
-    inq_counter = 0;
-    inqparms = {};
-    inq_cmpl_info = {};
-
-    per_min_delay = 0;
-    per_max_delay = 0;
-    state = BTM_INQ_INACTIVE_STATE;
-    inq_active = 0;
-    registered_for_hci_events = false;
-  }
-  void Free() { alarm_free(classic_inquiry_timer); }
+  void Init();
+  void Free();
 };
 
 bool btm_inq_find_bdaddr(const RawAddress& p_bda);
 tINQ_DB_ENT* btm_inq_db_find(const RawAddress& p_bda);
 
-namespace fmt {
+namespace std {
 template <>
-struct formatter<tBTM_INQUIRY_CMPL::STATUS>
-    : enum_formatter<tBTM_INQUIRY_CMPL::STATUS> {};
-}  // namespace fmt
+struct formatter<tBTM_INQUIRY_CMPL::STATUS> : enum_formatter<tBTM_INQUIRY_CMPL::STATUS> {};
+}  // namespace std

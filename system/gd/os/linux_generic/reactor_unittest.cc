@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@
 #include "common/bind.h"
 #include "common/callback.h"
 #include "gtest/gtest.h"
-#include "os/log.h"
 
 namespace bluetooth {
 namespace os {
@@ -39,7 +38,7 @@ using common::Bind;
 std::promise<int>* g_promise;
 
 class ReactorTest : public ::testing::Test {
- protected:
+protected:
   void SetUp() override {
     g_promise = new std::promise<int>;
     reactor_ = new Reactor;
@@ -56,14 +55,10 @@ class ReactorTest : public ::testing::Test {
 };
 
 class SampleReactable {
- public:
-  SampleReactable() : fd_(eventfd(0, EFD_NONBLOCK)) {
-    EXPECT_NE(fd_, -1);
-  }
+public:
+  SampleReactable() : fd_(eventfd(0, EFD_NONBLOCK)) { EXPECT_NE(fd_, -1); }
 
-  ~SampleReactable() {
-    close(fd_);
-  }
+  ~SampleReactable() { close(fd_); }
 
   void OnReadReady() {}
 
@@ -73,24 +68,18 @@ class SampleReactable {
 };
 
 class FakeReactable {
- public:
+public:
   enum EventFdValue {
     kSetPromise = 1,
     kRegisterSampleReactable,
     kUnregisterSampleReactable,
     kSampleOutputValue,
   };
-  FakeReactable() : fd_(eventfd(0, 0)), reactor_(nullptr) {
-    EXPECT_NE(fd_, -1);
-  }
+  FakeReactable() : fd_(eventfd(0, 0)), reactor_(nullptr) { EXPECT_NE(fd_, -1); }
 
-  FakeReactable(Reactor* reactor) : fd_(eventfd(0, 0)), reactor_(reactor) {
-    EXPECT_NE(fd_, -1);
-  }
+  FakeReactable(Reactor* reactor) : fd_(eventfd(0, 0)), reactor_(reactor) { EXPECT_NE(fd_, -1); }
 
-  ~FakeReactable() {
-    close(fd_);
-  }
+  ~FakeReactable() { close(fd_); }
 
   void OnReadReady() {
     log::info("");
@@ -103,9 +92,8 @@ class FakeReactable {
     }
     if (value == kRegisterSampleReactable) {
       reactable_ = reactor_->Register(
-          sample_reactable_.fd_,
-          Bind(&FakeReactable::OnReadReady, common::Unretained(this)),
-          Bind(&FakeReactable::OnWriteReadyNoOp, common::Unretained(this)));
+              sample_reactable_.fd_, Bind(&FakeReactable::OnReadReady, common::Unretained(this)),
+              Bind(&FakeReactable::OnWriteReadyNoOp, common::Unretained(this)));
       g_promise->set_value(kReadReadyValue);
     }
     if (value == kUnregisterSampleReactable) {
@@ -134,20 +122,16 @@ class FakeReactable {
   Reactor::Reactable* reactable_ = nullptr;
   int fd_;
 
- private:
+private:
   Reactor* reactor_;
   uint64_t output_data_ = kSampleOutputValue;
 };
 
 class FakeRunningReactable {
- public:
-  FakeRunningReactable() : fd_(eventfd(0, 0)) {
-    EXPECT_NE(fd_, -1);
-  }
+public:
+  FakeRunningReactable() : fd_(eventfd(0, 0)) { EXPECT_NE(fd_, -1); }
 
-  ~FakeRunningReactable() {
-    close(fd_);
-  }
+  ~FakeRunningReactable() { close(fd_); }
 
   void OnReadReady() {
     uint64_t value = 0;
@@ -189,16 +173,20 @@ TEST_F(ReactorTest, stop_multi_times) {
 
 TEST_F(ReactorTest, cold_register_only) {
   FakeReactable fake_reactable;
-  auto* reactable = reactor_->Register(
-      fake_reactable.fd_, Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable)), common::Closure());
+  auto* reactable =
+          reactor_->Register(fake_reactable.fd_,
+                             Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable)),
+                             common::Closure());
 
   reactor_->Unregister(reactable);
 }
 
 TEST_F(ReactorTest, cold_register) {
   FakeReactable fake_reactable;
-  auto* reactable = reactor_->Register(
-      fake_reactable.fd_, Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable)), common::Closure());
+  auto* reactable =
+          reactor_->Register(fake_reactable.fd_,
+                             Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable)),
+                             common::Closure());
   auto reactor_thread = std::thread(&Reactor::Run, reactor_);
   auto future = g_promise->get_future();
 
@@ -215,8 +203,10 @@ TEST_F(ReactorTest, hot_register_from_different_thread) {
   auto future = g_promise->get_future();
 
   FakeReactable fake_reactable;
-  auto* reactable = reactor_->Register(
-      fake_reactable.fd_, Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable)), common::Closure());
+  auto* reactable =
+          reactor_->Register(fake_reactable.fd_,
+                             Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable)),
+                             common::Closure());
   auto write_result = eventfd_write(fake_reactable.fd_, FakeReactable::kSetPromise);
   EXPECT_EQ(write_result, 0);
   EXPECT_EQ(future.get(), kReadReadyValue);
@@ -229,9 +219,9 @@ TEST_F(ReactorTest, hot_register_from_different_thread) {
 TEST_F(ReactorTest, unregister_from_different_thread_while_task_is_executing_) {
   FakeRunningReactable fake_reactable;
   auto* reactable = reactor_->Register(
-      fake_reactable.fd_,
-      Bind(&FakeRunningReactable::OnReadReady, common::Unretained(&fake_reactable)),
-      common::Closure());
+          fake_reactable.fd_,
+          Bind(&FakeRunningReactable::OnReadReady, common::Unretained(&fake_reactable)),
+          common::Closure());
   auto reactor_thread = std::thread(&Reactor::Run, reactor_);
   auto write_result = eventfd_write(fake_reactable.fd_, 1);
   ASSERT_EQ(write_result, 0);
@@ -247,9 +237,9 @@ TEST_F(ReactorTest, unregister_from_different_thread_while_task_is_executing_) {
 TEST_F(ReactorTest, unregister_from_different_thread_while_task_is_executing_wait_fails) {
   FakeRunningReactable fake_reactable;
   auto* reactable = reactor_->Register(
-      fake_reactable.fd_,
-      common::Bind(&FakeRunningReactable::OnReadReady, common::Unretained(&fake_reactable)),
-      common::Closure());
+          fake_reactable.fd_,
+          common::Bind(&FakeRunningReactable::OnReadReady, common::Unretained(&fake_reactable)),
+          common::Closure());
   auto reactor_thread = std::thread(&Reactor::Run, reactor_);
   auto write_result = eventfd_write(fake_reactable.fd_, 1);
   ASSERT_EQ(write_result, 0);
@@ -266,9 +256,9 @@ TEST_F(ReactorTest, unregister_from_different_thread_while_task_is_executing_wai
 TEST_F(ReactorTest, unregister_from_different_thread_while_task_is_executing_wait_succeeds) {
   FakeRunningReactable fake_reactable;
   auto* reactable = reactor_->Register(
-      fake_reactable.fd_,
-      common::Bind(&FakeRunningReactable::OnReadReady, common::Unretained(&fake_reactable)),
-      common::Closure());
+          fake_reactable.fd_,
+          common::Bind(&FakeRunningReactable::OnReadReady, common::Unretained(&fake_reactable)),
+          common::Closure());
   auto reactor_thread = std::thread(&Reactor::Run, reactor_);
   auto write_result = eventfd_write(fake_reactable.fd_, 1);
   ASSERT_EQ(write_result, 0);
@@ -284,8 +274,10 @@ TEST_F(ReactorTest, unregister_from_different_thread_while_task_is_executing_wai
 
 TEST_F(ReactorTest, hot_unregister_from_different_thread) {
   FakeReactable fake_reactable;
-  auto* reactable = reactor_->Register(
-      fake_reactable.fd_, Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable)), common::Closure());
+  auto* reactable =
+          reactor_->Register(fake_reactable.fd_,
+                             Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable)),
+                             common::Closure());
   auto reactor_thread = std::thread(&Reactor::Run, reactor_);
   reactor_->Unregister(reactable);
   auto future = g_promise->get_future();
@@ -304,8 +296,10 @@ TEST_F(ReactorTest, hot_register_from_same_thread) {
   auto future = g_promise->get_future();
 
   FakeReactable fake_reactable(reactor_);
-  auto* reactable = reactor_->Register(
-      fake_reactable.fd_, Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable)), common::Closure());
+  auto* reactable =
+          reactor_->Register(fake_reactable.fd_,
+                             Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable)),
+                             common::Closure());
   auto write_result = eventfd_write(fake_reactable.fd_, FakeReactable::kRegisterSampleReactable);
   EXPECT_EQ(write_result, 0);
   EXPECT_EQ(future.get(), kReadReadyValue);
@@ -325,8 +319,10 @@ TEST_F(ReactorTest, hot_unregister_from_same_thread) {
   auto future = g_promise->get_future();
 
   FakeReactable fake_reactable(reactor_);
-  auto* reactable = reactor_->Register(
-      fake_reactable.fd_, Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable)), common::Closure());
+  auto* reactable =
+          reactor_->Register(fake_reactable.fd_,
+                             Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable)),
+                             common::Closure());
   auto write_result = eventfd_write(fake_reactable.fd_, FakeReactable::kRegisterSampleReactable);
   EXPECT_EQ(write_result, 0);
   EXPECT_EQ(future.get(), kReadReadyValue);
@@ -349,13 +345,15 @@ TEST_F(ReactorTest, hot_unregister_from_callback) {
 
   FakeReactable fake_reactable1(reactor_);
   auto* reactable1 = reactor_->Register(
-      fake_reactable1.fd_, Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable1)), common::Closure());
+          fake_reactable1.fd_,
+          Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable1)),
+          common::Closure());
 
   FakeReactable fake_reactable2(reactor_);
   auto* reactable2 = reactor_->Register(
-      fake_reactable2.fd_,
-      Bind(&FakeReactable::UnregisterInCallback, common::Unretained(&fake_reactable2)),
-      common::Closure());
+          fake_reactable2.fd_,
+          Bind(&FakeReactable::UnregisterInCallback, common::Unretained(&fake_reactable2)),
+          common::Closure());
   fake_reactable2.reactable_ = reactable2;
   auto write_result = eventfd_write(fake_reactable2.fd_, 1);
   EXPECT_EQ(write_result, 0);
@@ -371,13 +369,15 @@ TEST_F(ReactorTest, hot_unregister_during_unregister_from_callback) {
 
   FakeReactable fake_reactable1(reactor_);
   auto* reactable1 = reactor_->Register(
-      fake_reactable1.fd_, Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable1)), common::Closure());
+          fake_reactable1.fd_,
+          Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable1)),
+          common::Closure());
 
   FakeReactable fake_reactable2(reactor_);
   auto* reactable2 = reactor_->Register(
-      fake_reactable2.fd_,
-      Bind(&FakeReactable::UnregisterInCallback, common::Unretained(&fake_reactable2)),
-      common::Closure());
+          fake_reactable2.fd_,
+          Bind(&FakeReactable::UnregisterInCallback, common::Unretained(&fake_reactable2)),
+          common::Closure());
   fake_reactable2.reactable_ = reactable2;
   auto write_result = eventfd_write(fake_reactable2.fd_, 1);
   EXPECT_EQ(write_result, 0);
@@ -402,7 +402,8 @@ TEST_F(ReactorTest, start_and_stop_multi_times) {
 TEST_F(ReactorTest, on_write_ready) {
   FakeReactable fake_reactable;
   auto* reactable = reactor_->Register(
-      fake_reactable.fd_, common::Closure(), Bind(&FakeReactable::OnWriteReady, common::Unretained(&fake_reactable)));
+          fake_reactable.fd_, common::Closure(),
+          Bind(&FakeReactable::OnWriteReady, common::Unretained(&fake_reactable)));
   auto reactor_thread = std::thread(&Reactor::Run, reactor_);
   uint64_t value = 0;
   auto read_result = eventfd_read(fake_reactable.fd_, &value);
@@ -418,9 +419,9 @@ TEST_F(ReactorTest, on_write_ready) {
 TEST_F(ReactorTest, modify_registration) {
   FakeReactable fake_reactable;
   auto* reactable = reactor_->Register(
-      fake_reactable.fd_,
-      Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable)),
-      Bind(&FakeReactable::OnWriteReady, common::Unretained(&fake_reactable)));
+          fake_reactable.fd_,
+          Bind(&FakeReactable::OnReadReady, common::Unretained(&fake_reactable)),
+          Bind(&FakeReactable::OnWriteReady, common::Unretained(&fake_reactable)));
 
   auto reactor_thread = std::thread(&Reactor::Run, reactor_);
 

@@ -13,48 +13,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.gatt;
 
+import android.bluetooth.BluetoothDevice;
+
+import com.google.protobuf.ByteString;
+
 /**
- * Helper class that keeps track of callback parameters for app callbacks. These are held during
- * congestion and reported when congestion clears.
+ * Keeps track of callback parameters for app callbacks.
+ *
+ * <p>These are held during congestion and reported when congestion clears.
  */
-public class CallbackInfo {
-    public String address;
-    public int status;
-    public int handle;
-    public byte[] value;
-
-    static class Builder {
-        private String mAddress;
-        private int mStatus;
-        private int mHandle;
-        private byte[] mValue;
-
-        Builder(String address, int status) {
-            mAddress = address;
-            mStatus = status;
-        }
-
-        Builder setHandle(int handle) {
-            mHandle = handle;
-            return this;
-        }
-
-        Builder setValue(byte[] value) {
-            mValue = value;
-            return this;
-        }
-
-        CallbackInfo build() {
-            return new CallbackInfo(mAddress, mStatus, mHandle, mValue);
-        }
+record CallbackInfo(BluetoothDevice device, int status, int handle, ByteString value) {
+    CallbackInfo(BluetoothDevice device, int status) {
+        this(device, status, 0, null);
     }
 
-    private CallbackInfo(String address, int status, int handle, byte[] value) {
-        this.address = address;
-        this.status = status;
-        this.handle = handle;
-        this.value = value;
+    byte[] valueByteArray() {
+        return value == null ? null : value.toByteArray();
     }
 }

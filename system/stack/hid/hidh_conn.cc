@@ -23,33 +23,43 @@
  ******************************************************************************/
 
 #include <base/functional/callback.h>
-#include <base/strings/stringprintf.h>
 #include <bluetooth/log.h>
+#include <bluetooth/metrics/os_metrics.h>
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/bt_transport.h>
+#include <com_android_bluetooth_flags.h>
 #include <frameworks/proto_logging/stats/enums/bluetooth/enums.pb.h>
 #include <string.h>
 
+#include <cstdint>
+
 #include "bta/include/bta_sec_api.h"
+#include "hci_error_code.h"
+#include "hid_conn.h"
 #include "hiddefs.h"
 #include "hidh_api.h"
 #include "hidh_int.h"
 #include "internal_include/bt_target.h"
-#include "l2c_api.h"
+#include "l2cap_types.h"
 #include "l2cdefs.h"
+#include "macros.h"
+#include "main/shim/dumpsys.h"
+#include "osi/include/alarm.h"
 #include "osi/include/allocator.h"
 #include "osi/include/osi.h"
 #include "stack/include/acl_api.h"
 #include "stack/include/bt_hdr.h"
 #include "stack/include/bt_psm_types.h"
+#include "stack/include/btm_client_interface.h"
 #include "stack/include/btm_log_history.h"
-#include "stack/include/stack_metrics_logging.h"
-#include "types/raw_address.h"
+#include "stack/include/l2cap_interface.h"
 
 using namespace bluetooth;
 
 namespace {
 constexpr char kBtmLogTag[] = "HIDH";
 constexpr uint8_t kHID_HOST_MAX_DEVICES = HID_HOST_MAX_DEVICES;
-}
+}  // namespace
 
 static uint8_t find_conn_by_cid(uint16_t cid);
 static void hidh_conn_retry(uint8_t dhandle);
@@ -57,33 +67,32 @@ static void hidh_conn_retry(uint8_t dhandle);
 /******************************************************************************/
 /*            L O C A L    F U N C T I O N     P R O T O T Y P E S            */
 /******************************************************************************/
-static void hidh_l2cif_connect_ind(const RawAddress& bd_addr,
-                                   uint16_t l2cap_cid, uint16_t psm,
+static void hidh_l2cif_connect_ind(const RawAddress& bd_addr, uint16_t l2cap_cid, uint16_t psm,
                                    uint8_t l2cap_id);
-static void hidh_l2cif_connect_cfm(uint16_t l2cap_cid, uint16_t result);
+static void hidh_l2cif_connect_cfm(uint16_t l2cap_cid, tL2CAP_CONN result);
 static void hidh_l2cif_config_ind(uint16_t l2cap_cid, tL2CAP_CFG_INFO* p_cfg);
-static void hidh_l2cif_config_cfm(uint16_t l2cap_cid, uint16_t result,
-                                  tL2CAP_CFG_INFO* p_cfg);
+static void hidh_l2cif_config_cfm(uint16_t l2cap_cid, uint16_t result, tL2CAP_CFG_INFO* p_cfg);
 static void hidh_l2cif_disconnect_ind(uint16_t l2cap_cid, bool ack_needed);
+static void hidh_l2cif_disconnect_cfm(uint16_t l2cap_cid, uint16_t result);
 static void hidh_l2cif_data_ind(uint16_t l2cap_cid, BT_HDR* p_msg);
-static void hidh_l2cif_disconnect(uint16_t l2cap_cid);
 static void hidh_l2cif_cong_ind(uint16_t l2cap_cid, bool congested);
 static void hidh_on_l2cap_error(uint16_t l2cap_cid, uint16_t result);
 
 static const tL2CAP_APPL_INFO hst_reg_info = {
-    .pL2CA_ConnectInd_Cb = hidh_l2cif_connect_ind,
-    .pL2CA_ConnectCfm_Cb = hidh_l2cif_connect_cfm,
-    .pL2CA_ConfigInd_Cb = hidh_l2cif_config_ind,
-    .pL2CA_ConfigCfm_Cb = hidh_l2cif_config_cfm,
-    .pL2CA_DisconnectInd_Cb = hidh_l2cif_disconnect_ind,
-    .pL2CA_DataInd_Cb = hidh_l2cif_data_ind,
-    .pL2CA_CongestionStatus_Cb = hidh_l2cif_cong_ind,
-    .pL2CA_TxComplete_Cb = nullptr,
-    .pL2CA_Error_Cb = hidh_on_l2cap_error,
-    .pL2CA_CreditBasedConnectInd_Cb = nullptr,
-    .pL2CA_CreditBasedConnectCfm_Cb = nullptr,
-    .pL2CA_CreditBasedReconfigCompleted_Cb = nullptr,
-    .pL2CA_CreditBasedCollisionInd_Cb = nullptr,
+        .pL2CA_ConnectInd_Cb = hidh_l2cif_connect_ind,
+        .pL2CA_ConnectCfm_Cb = hidh_l2cif_connect_cfm,
+        .pL2CA_ConfigInd_Cb = hidh_l2cif_config_ind,
+        .pL2CA_ConfigCfm_Cb = hidh_l2cif_config_cfm,
+        .pL2CA_DisconnectInd_Cb = hidh_l2cif_disconnect_ind,
+        .pL2CA_DisconnectCfm_Cb = hidh_l2cif_disconnect_cfm,
+        .pL2CA_DataInd_Cb = hidh_l2cif_data_ind,
+        .pL2CA_CongestionStatus_Cb = hidh_l2cif_cong_ind,
+        .pL2CA_TxComplete_Cb = nullptr,
+        .pL2CA_Error_Cb = hidh_on_l2cap_error,
+        .pL2CA_CreditBasedConnectInd_Cb = nullptr,
+        .pL2CA_CreditBasedConnectCfm_Cb = nullptr,
+        .pL2CA_CreditBasedReconfigCompleted_Cb = nullptr,
+        .pL2CA_CreditBasedCollisionInd_Cb = nullptr,
 };
 static void hidh_try_repage(uint8_t dhandle);
 
@@ -106,32 +115,34 @@ tHID_STATUS hidh_conn_reg(void) {
   hh_cb.l2cap_cfg.mtu = HID_HOST_MTU;
 
   /* Now, register with L2CAP */
-  if (!L2CA_RegisterWithSecurity(
-          HID_PSM_CONTROL, hst_reg_info, false /* enable_snoop */, nullptr,
-          HID_HOST_MTU, 0, BTA_SEC_AUTHENTICATE | BTA_SEC_ENCRYPT)) {
+  if (!stack::l2cap::get_interface().L2CA_RegisterWithSecurity(
+              HID_PSM_CONTROL, hst_reg_info, false /* enable_snoop */, nullptr, HID_HOST_MTU, 0,
+              BTA_SEC_AUTHENTICATE | BTA_SEC_ENCRYPT)) {
     log::error("HID-Host Control Registration failed");
-    log_counter_metrics(android::bluetooth::CodePathCounterKeyEnum::
-                            HIDH_ERR_L2CAP_FAILED_AT_REGISTER_CONTROL,
-                        1);
-    return (HID_ERR_L2CAP_FAILED);
+    bluetooth::metrics::Counter(
+            bluetooth::metrics::CounterKey::HIDH_ERR_L2CAP_FAILED_AT_REGISTER_CONTROL);
+    return HID_ERR_L2CAP_FAILED;
   }
-  if (!L2CA_RegisterWithSecurity(
-          HID_PSM_INTERRUPT, hst_reg_info, false /* enable_snoop */, nullptr,
-          HID_HOST_MTU, 0, BTA_SEC_AUTHENTICATE | BTA_SEC_ENCRYPT)) {
-    L2CA_Deregister(HID_PSM_CONTROL);
+  if (!stack::l2cap::get_interface().L2CA_RegisterWithSecurity(
+              HID_PSM_INTERRUPT, hst_reg_info, false /* enable_snoop */, nullptr, HID_HOST_MTU, 0,
+              BTA_SEC_AUTHENTICATE | BTA_SEC_ENCRYPT)) {
+    stack::l2cap::get_interface().L2CA_Deregister(HID_PSM_CONTROL);
     log::error("HID-Host Interrupt Registration failed");
-    log_counter_metrics(android::bluetooth::CodePathCounterKeyEnum::
-                            HIDH_ERR_L2CAP_FAILED_AT_REGISTER_INTERRUPT,
-                        1);
-    return (HID_ERR_L2CAP_FAILED);
+    bluetooth::metrics::Counter(
+            bluetooth::metrics::CounterKey::HIDH_ERR_L2CAP_FAILED_AT_REGISTER_INTERRUPT);
+    return HID_ERR_L2CAP_FAILED;
   }
 
   for (xx = 0; xx < kHID_HOST_MAX_DEVICES; xx++) {
-    hh_cb.devices[xx].in_use = false;
+    if (com_android_bluetooth_flags_wait_hid_disconnect_before_marking_unused()) {
+      hh_cb.devices[xx].state = HIDH_DEV_UNUSED;
+    } else {
+      hh_cb.devices[xx].in_use = false;
+    }
     hh_cb.devices[xx].conn.conn_state = HID_CONN_STATE_UNUSED;
   }
 
-  return (HID_SUCCESS);
+  return HID_SUCCESS;
 }
 
 /*******************************************************************************
@@ -140,10 +151,10 @@ tHID_STATUS hidh_conn_reg(void) {
  *
  * Description      This function disconnects a connection.
  *
- * Returns          true if disconnect started, false if already disconnected
+ * Returns          void
  *
  ******************************************************************************/
-tHID_STATUS hidh_conn_disconnect(uint8_t dhandle) {
+void hidh_conn_disconnect(uint8_t dhandle) {
   tHID_CONN* p_hcon = &hh_cb.devices[dhandle].conn;
 
   if ((p_hcon->ctrl_cid != 0) || (p_hcon->intr_cid != 0)) {
@@ -151,23 +162,48 @@ tHID_STATUS hidh_conn_disconnect(uint8_t dhandle) {
 
     /* Set l2cap idle timeout to 0 (so ACL link is disconnected
      * immediately after last channel is closed) */
-    if (!L2CA_SetIdleTimeoutByBdAddr(hh_cb.devices[dhandle].addr, 0,
-                                     BT_TRANSPORT_BR_EDR)) {
-      log::warn("Unable to set L2CAP idle timeout peer:{}",
-                hh_cb.devices[dhandle].addr);
+    if (!stack::l2cap::get_interface().L2CA_SetIdleTimeoutByBdAddr(hh_cb.devices[dhandle].addr, 0,
+                                                                   BT_TRANSPORT_BR_EDR)) {
+      log::warn("Unable to set L2CAP idle timeout peer:{}", hh_cb.devices[dhandle].addr);
     }
-    /* Disconnect both interrupt and control channels */
-    if (p_hcon->intr_cid)
-      hidh_l2cif_disconnect(p_hcon->intr_cid);
-    else if (p_hcon->ctrl_cid)
-      hidh_l2cif_disconnect(p_hcon->ctrl_cid);
+    /* Disconnect channels one by one */
+    uint16_t cid = (p_hcon->intr_cid != 0 ? p_hcon->intr_cid : p_hcon->ctrl_cid);
+    if (!stack::l2cap::get_interface().L2CA_DisconnectReq(cid)) {
+      // On failure, call the disconnection callback directly because l2cap won't call it.
+      log::warn("Unable to send L2CAP disconnect request cid:{}", cid);
+      hidh_l2cif_disconnect_cfm(cid, 0);
+    }
 
-    BTM_LogHistory(kBtmLogTag, hh_cb.devices[dhandle].addr, "Disconnecting",
-                   "local initiated");
+    BTM_LogHistory(kBtmLogTag, hh_cb.devices[dhandle].addr, "Disconnecting", "local initiated");
   } else {
     p_hcon->conn_state = HID_CONN_STATE_UNUSED;
   }
-  return HID_SUCCESS;
+}
+
+/*******************************************************************************
+ *
+ * Function         hidh_conn_force_disconnect
+ *
+ * Description      This function forcefully disconnects both HID channels
+ *                  without waiting. This is not a proper behavior, so only use
+ *                  this when gracefully disconnecting is not an option.
+ *
+ * Returns          void
+ *
+ ******************************************************************************/
+void hidh_conn_force_disconnect(uint8_t dhandle) {
+  tHID_CONN* p_hcon = &hh_cb.devices[dhandle].conn;
+
+  log::warn("Forcefully disconnect intr_cid:{}, ctrl_cid:{}", p_hcon->intr_cid, p_hcon->ctrl_cid);
+  if (p_hcon->intr_cid != 0) {
+    stack::l2cap::get_interface().L2CA_DisconnectReq(p_hcon->intr_cid);
+    p_hcon->intr_cid = 0;
+  }
+  if (p_hcon->ctrl_cid != 0) {
+    stack::l2cap::get_interface().L2CA_DisconnectReq(p_hcon->ctrl_cid);
+    p_hcon->ctrl_cid = 0;
+  }
+  p_hcon->conn_state = HID_CONN_STATE_UNUSED;
 }
 
 /*******************************************************************************
@@ -181,31 +217,26 @@ tHID_STATUS hidh_conn_disconnect(uint8_t dhandle) {
  * Returns          void
  *
  ******************************************************************************/
-static void hidh_l2cif_connect_ind(const RawAddress& bd_addr,
-                                   uint16_t l2cap_cid, uint16_t psm,
-                                   uint8_t l2cap_id) {
+static void hidh_l2cif_connect_ind(const RawAddress& bd_addr, uint16_t l2cap_cid, uint16_t psm,
+                                   uint8_t /* l2cap_id */) {
   bool bAccept = true;
   uint8_t i = kHID_HOST_MAX_DEVICES;
 
-  log::verbose("HID-Host Rcvd L2CAP conn ind, PSM: 0x{:04x}  CID 0x{:x}", psm,
-               l2cap_cid);
+  log::verbose("HID-Host Rcvd L2CAP conn ind, PSM: 0x{:04x}  CID 0x{:x}", psm, l2cap_cid);
 
   /* always add incoming connection device into HID database by default */
   if (HID_HostAddDev(bd_addr, HID_SEC_REQUIRED, &i) != HID_SUCCESS) {
-    if (!L2CA_DisconnectReq(l2cap_cid)) {
-      log::warn("Unable to send L2CAP disconnect request peer:{} cid:{}",
-                bd_addr, l2cap_cid);
+    if (!stack::l2cap::get_interface().L2CA_DisconnectReq(l2cap_cid)) {
+      log::warn("Unable to send L2CAP disconnect request peer:{} cid:{}", bd_addr, l2cap_cid);
     }
     return;
   }
 
   tHID_CONN* p_hcon = &hh_cb.devices[i].conn;
 
-  BTM_LogHistory(
-      kBtmLogTag, hh_cb.devices[i].addr, "Connect request",
-      base::StringPrintf("%s state:%s",
-                         (psm == HID_PSM_CONTROL) ? "control" : "interrupt",
-                         hid_conn::state_text(p_hcon->conn_state).c_str()));
+  BTM_LogHistory(kBtmLogTag, hh_cb.devices[i].addr, "Connect request",
+                 std::format("{} state:{}", (psm == HID_PSM_CONTROL) ? "control" : "interrupt",
+                             hid_conn::state_text(p_hcon->conn_state)));
 
   /* Check we are in the correct state for this */
   if (psm == HID_PSM_INTERRUPT) {
@@ -214,8 +245,7 @@ static void hidh_l2cif_connect_ind(const RawAddress& bd_addr,
       bAccept = false;
     }
     if (p_hcon->conn_state != HID_CONN_STATE_CONNECTING_INTR) {
-      log::warn("HID-Host Rcvd INTR L2CAP conn ind, wrong state: {}",
-                p_hcon->conn_state);
+      log::warn("HID-Host Rcvd INTR L2CAP conn ind, wrong state: {}", p_hcon->conn_state);
       bAccept = false;
     }
   } else /* CTRL channel */
@@ -225,17 +255,15 @@ static void hidh_l2cif_connect_ind(const RawAddress& bd_addr,
     p_hcon->conn_state = HID_CONN_STATE_UNUSED;
 #else
     if (p_hcon->conn_state != HID_CONN_STATE_UNUSED) {
-      log::warn("HID-Host - Rcvd CTL L2CAP conn ind, wrong state: {}",
-                p_hcon->conn_state);
+      log::warn("HID-Host - Rcvd CTL L2CAP conn ind, wrong state: {}", p_hcon->conn_state);
       bAccept = false;
     }
 #endif
   }
 
   if (!bAccept) {
-    if (!L2CA_DisconnectReq(l2cap_cid)) {
-      log::warn("Unable to send L2CAP disconnect request peer:{} cid:{}",
-                bd_addr, l2cap_cid);
+    if (!stack::l2cap::get_interface().L2CA_DisconnectReq(l2cap_cid)) {
+      log::warn("Unable to send L2CAP disconnect request peer:{} cid:{}", bd_addr, l2cap_cid);
     }
     return;
   }
@@ -243,9 +271,8 @@ static void hidh_l2cif_connect_ind(const RawAddress& bd_addr,
   if (psm == HID_PSM_CONTROL) {
     p_hcon->conn_flags = 0;
     p_hcon->ctrl_cid = l2cap_cid;
-    p_hcon->disc_reason = HID_SUCCESS; /* Authentication passed. Reset
-                                              disc_reason (from
-                                              HID_ERR_AUTH_FAILED) */
+    /* Authentication passed. Reset disc_reason (from HID_ERR_AUTH_FAILED) */
+    p_hcon->disc_reason = HID_SUCCESS;
     p_hcon->conn_state = HID_CONN_STATE_CONNECTING_INTR;
     BTM_LogHistory(kBtmLogTag, hh_cb.devices[i].addr, "Connecting",
                    "waiting for interrupt channel");
@@ -257,9 +284,9 @@ static void hidh_l2cif_connect_ind(const RawAddress& bd_addr,
   p_hcon->intr_cid = l2cap_cid;
 
   log::verbose(
-      "HID-Host Rcvd L2CAP conn ind, sent config req, PSM: 0x{:04x}  CID "
-      "0x{:x}",
-      psm, l2cap_cid);
+          "HID-Host Rcvd L2CAP conn ind, sent config req, PSM: 0x{:04x}  CID "
+          "0x{:x}",
+          psm, l2cap_cid);
 }
 
 static void hidh_process_repage_timer_timeout(void* data) {
@@ -284,23 +311,25 @@ static void hidh_try_repage(uint8_t dhandle) {
   device = &hh_cb.devices[dhandle];
   device->conn_tries++;
 
-  hh_cb.callback(dhandle, device->addr, HID_HDEV_EVT_RETRYING,
-                 device->conn_tries, NULL);
+  hh_cb.callback(dhandle, device->addr, HID_HDEV_EVT_RETRYING, device->conn_tries, NULL);
 }
 
 static void hidh_on_l2cap_error(uint16_t l2cap_cid, uint16_t result) {
   auto dhandle = find_conn_by_cid(l2cap_cid);
   if (dhandle == kHID_HOST_MAX_DEVICES) {
-    log::warn("Received error for unknown device cid:0x{:04x} reason:{}",
-              l2cap_cid, hci_reason_code_text(to_hci_reason_code(result)));
+    log::warn("Received error for unknown device cid:0x{:04x} reason:{}", l2cap_cid,
+              hci_reason_code_text(to_hci_reason_code(result)));
     return;
   }
 
+  log::warn("device:{} reason:{} retries:{}", hh_cb.devices[dhandle].addr,
+            hci_reason_code_text(to_hci_reason_code(result)), hh_cb.devices[dhandle].conn_tries);
+
   hidh_conn_disconnect(dhandle);
 
-  if (result != L2CAP_CFG_FAILED_NO_REASON) {
+  if (result != static_cast<uint16_t>(tL2CAP_CFG_RESULT::L2CAP_CFG_FAILED_NO_REASON)) {
 #if (HID_HOST_MAX_CONN_RETRY > 0)
-    if ((hh_cb.devices[dhandle].conn_tries <= HID_HOST_MAX_CONN_RETRY) &&
+    if (hh_cb.devices[dhandle].conn_tries <= HID_HOST_MAX_CONN_RETRY &&
         (result == HCI_ERR_CONNECTION_TOUT || result == HCI_ERR_UNSPECIFIED ||
          result == HCI_ERR_PAGE_TIMEOUT)) {
       hidh_conn_retry(dhandle);
@@ -308,13 +337,11 @@ static void hidh_on_l2cap_error(uint16_t l2cap_cid, uint16_t result) {
 #endif
     {
       uint32_t reason = HID_L2CAP_CONN_FAIL | (uint32_t)result;
-      hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE,
-                     reason, NULL);
+      hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE, reason, NULL);
     }
   } else {
     uint32_t reason = HID_L2CAP_CFG_FAIL | (uint32_t)result;
-    hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE,
-                   reason, NULL);
+    hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE, reason, NULL);
   }
 }
 
@@ -329,7 +356,7 @@ static void hidh_on_l2cap_error(uint16_t l2cap_cid, uint16_t result) {
  * Returns          void
  *
  ******************************************************************************/
-static void hidh_l2cif_connect_cfm(uint16_t l2cap_cid, uint16_t result) {
+static void hidh_l2cif_connect_cfm(uint16_t l2cap_cid, tL2CAP_CONN result) {
   uint8_t dhandle;
   tHID_CONN* p_hcon = NULL;
 
@@ -341,16 +368,14 @@ static void hidh_l2cif_connect_cfm(uint16_t l2cap_cid, uint16_t result) {
   }
 
   if ((p_hcon == NULL) || (!(p_hcon->conn_flags & HID_CONN_FLAGS_IS_ORIG)) ||
-      ((l2cap_cid == p_hcon->ctrl_cid) &&
-       (p_hcon->conn_state != HID_CONN_STATE_CONNECTING_CTRL)) ||
-      ((l2cap_cid == p_hcon->intr_cid) &&
-       (p_hcon->conn_state != HID_CONN_STATE_CONNECTING_INTR) &&
+      ((l2cap_cid == p_hcon->ctrl_cid) && (p_hcon->conn_state != HID_CONN_STATE_CONNECTING_CTRL)) ||
+      ((l2cap_cid == p_hcon->intr_cid) && (p_hcon->conn_state != HID_CONN_STATE_CONNECTING_INTR) &&
        (p_hcon->conn_state != HID_CONN_STATE_DISCONNECTING))) {
     log::warn("HID-Host Rcvd unexpected conn cnf, CID 0x{:x}", l2cap_cid);
     return;
   }
 
-  if (result != L2CAP_CONN_OK) {
+  if (result != tL2CAP_CONN::L2CAP_CONN_OK) {
     // TODO: We need to provide the real HCI status if we want to retry.
     log::error("invoked with non OK status");
     return;
@@ -358,20 +383,17 @@ static void hidh_l2cif_connect_cfm(uint16_t l2cap_cid, uint16_t result) {
   /* receive Control Channel connect confirmation */
   if (l2cap_cid == p_hcon->ctrl_cid) {
     /* check security requirement */
-    p_hcon->disc_reason = HID_SUCCESS; /* Authentication passed. Reset
-                                              disc_reason (from
-                                              HID_ERR_AUTH_FAILED) */
+    /* Authentication passed. Reset disc_reason (from HID_ERR_AUTH_FAILED) */
+    p_hcon->disc_reason = HID_SUCCESS;
 
     /* Transition to the next appropriate state, configuration */
     p_hcon->conn_state = HID_CONN_STATE_CONFIG;
   } else {
     p_hcon->conn_state = HID_CONN_STATE_CONFIG;
   }
-  BTM_LogHistory(
-      kBtmLogTag, hh_cb.devices[dhandle].addr, "Configuring",
-      base::StringPrintf("control:0x%04x interrupt:0x%04x state:%s",
-                         p_hcon->ctrl_cid, p_hcon->intr_cid,
-                         hid_conn::state_text(p_hcon->conn_state).c_str()));
+  BTM_LogHistory(kBtmLogTag, hh_cb.devices[dhandle].addr, "Configuring",
+                 std::format("control:0x{:04x} interrupt:0x{:04x} state:{}", p_hcon->ctrl_cid,
+                             p_hcon->intr_cid, hid_conn::state_text(p_hcon->conn_state)));
   return;
 }
 
@@ -403,10 +425,11 @@ static void hidh_l2cif_config_ind(uint16_t l2cap_cid, tL2CAP_CFG_INFO* p_cfg) {
   log::verbose("HID-Host Rcvd cfg ind, sent cfg cfm, CID: 0x{:x}", l2cap_cid);
 
   /* Remember the remote MTU size */
-  if ((!p_cfg->mtu_present) || (p_cfg->mtu > HID_HOST_MTU))
+  if ((!p_cfg->mtu_present) || (p_cfg->mtu > HID_HOST_MTU)) {
     p_hcon->rem_mtu_size = HID_HOST_MTU;
-  else
+  } else {
     p_hcon->rem_mtu_size = p_cfg->mtu;
+  }
 }
 
 /*******************************************************************************
@@ -419,7 +442,7 @@ static void hidh_l2cif_config_ind(uint16_t l2cap_cid, tL2CAP_CFG_INFO* p_cfg) {
  * Returns          void
  *
  ******************************************************************************/
-static void hidh_l2cif_config_cfm(uint16_t l2cap_cid, uint16_t initiator,
+static void hidh_l2cif_config_cfm(uint16_t l2cap_cid, uint16_t /* initiator */,
                                   tL2CAP_CFG_INFO* p_cfg) {
   hidh_l2cif_config_ind(l2cap_cid, p_cfg);
 
@@ -431,7 +454,9 @@ static void hidh_l2cif_config_cfm(uint16_t l2cap_cid, uint16_t initiator,
 
   /* Find CCB based on CID */
   dhandle = find_conn_by_cid(l2cap_cid);
-  if (dhandle < kHID_HOST_MAX_DEVICES) p_hcon = &hh_cb.devices[dhandle].conn;
+  if (dhandle < kHID_HOST_MAX_DEVICES) {
+    p_hcon = &hh_cb.devices[dhandle].conn;
+  }
 
   if (p_hcon == NULL) {
     log::warn("HID-Host Rcvd L2CAP cfg ind, unknown CID: 0x{:x}", l2cap_cid);
@@ -445,24 +470,22 @@ static void hidh_l2cif_config_cfm(uint16_t l2cap_cid, uint16_t initiator,
                                                     CLOSE_EVT: Connection
                                                     Attempt was made but failed
                                                     */
-      p_hcon->intr_cid = L2CA_ConnectReqWithSecurity(
-          HID_PSM_INTERRUPT, hh_cb.devices[dhandle].addr,
-          BTA_SEC_AUTHENTICATE | BTA_SEC_ENCRYPT);
+      p_hcon->intr_cid = stack::l2cap::get_interface().L2CA_ConnectReqWithSecurity(
+              HID_PSM_INTERRUPT, hh_cb.devices[dhandle].addr,
+              BTA_SEC_AUTHENTICATE | BTA_SEC_ENCRYPT);
       if (p_hcon->intr_cid == 0) {
         log::warn("HID-Host INTR Originate failed");
         reason = HID_L2CAP_REQ_FAIL;
         p_hcon->conn_state = HID_CONN_STATE_UNUSED;
         BTM_LogHistory(kBtmLogTag, hh_cb.devices[dhandle].addr, "Failed");
         hidh_conn_disconnect(dhandle);
-        hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE,
-                       reason, NULL);
+        hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE, reason, NULL);
         return;
       } else {
         /* Transition to the next appropriate state, waiting for connection
          * confirm on interrupt channel. */
         p_hcon->conn_state = HID_CONN_STATE_CONNECTING_INTR;
-        BTM_LogHistory(kBtmLogTag, hh_cb.devices[dhandle].addr, "Connecting",
-                       "interrupt channel");
+        BTM_LogHistory(kBtmLogTag, hh_cb.devices[dhandle].addr, "Connecting", "interrupt channel");
       }
     }
   }
@@ -474,14 +497,11 @@ static void hidh_l2cif_config_cfm(uint16_t l2cap_cid, uint16_t initiator,
     /* Reset disconnect reason to success, as connection successful */
     p_hcon->disc_reason = HID_SUCCESS;
 
-    hh_cb.devices[dhandle].state = HID_DEV_CONNECTED;
-    hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_OPEN, 0,
-                   NULL);
-    BTM_LogHistory(
-        kBtmLogTag, hh_cb.devices[dhandle].addr, "Connected",
-        base::StringPrintf("control:0x%04x interrupt:0x%04x state:%s",
-                           p_hcon->ctrl_cid, p_hcon->intr_cid,
-                           hid_conn::state_text(p_hcon->conn_state).c_str()));
+    hh_cb.devices[dhandle].state = HIDH_DEV_CONNECTED;
+    hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_OPEN, 0, NULL);
+    BTM_LogHistory(kBtmLogTag, hh_cb.devices[dhandle].addr, "Connected",
+                   std::format("control:0x{:04x} interrupt:0x{:04x} state:{}", p_hcon->ctrl_cid,
+                               p_hcon->intr_cid, hid_conn::state_text(p_hcon->conn_state)));
   }
 }
 
@@ -503,7 +523,9 @@ static void hidh_l2cif_disconnect_ind(uint16_t l2cap_cid, bool ack_needed) {
 
   /* Find CCB based on CID */
   dhandle = find_conn_by_cid(l2cap_cid);
-  if (dhandle < kHID_HOST_MAX_DEVICES) p_hcon = &hh_cb.devices[dhandle].conn;
+  if (dhandle < kHID_HOST_MAX_DEVICES) {
+    p_hcon = &hh_cb.devices[dhandle].conn;
+  }
 
   if (p_hcon == NULL) {
     log::warn("HID-Host Rcvd L2CAP disc, unknown CID: 0x{:x}", l2cap_cid);
@@ -514,34 +536,39 @@ static void hidh_l2cif_disconnect_ind(uint16_t l2cap_cid, bool ack_needed) {
 
   p_hcon->conn_state = HID_CONN_STATE_DISCONNECTING;
   BTM_LogHistory(
-      kBtmLogTag, hh_cb.devices[dhandle].addr, "Disconnecting",
-      base::StringPrintf("%s channel", (l2cap_cid == p_hcon->ctrl_cid)
-                                           ? "control"
-                                           : "interrupt"));
+          kBtmLogTag, hh_cb.devices[dhandle].addr, "Disconnecting",
+          std::format("{} channel", (l2cap_cid == p_hcon->ctrl_cid) ? "control" : "interrupt"));
 
-  if (l2cap_cid == p_hcon->ctrl_cid)
+  if (l2cap_cid == p_hcon->ctrl_cid) {
     p_hcon->ctrl_cid = 0;
-  else
+  } else {
     p_hcon->intr_cid = 0;
+  }
 
   if ((p_hcon->ctrl_cid == 0) && (p_hcon->intr_cid == 0)) {
-    hh_cb.devices[dhandle].state = HID_DEV_NO_CONN;
+    if (com_android_bluetooth_flags_wait_hid_disconnect_before_marking_unused() &&
+        hh_cb.devices[dhandle].state == HIDH_DEV_REMOVING) {
+      log::verbose("set handle {} state to UNUSED", dhandle);
+      hh_cb.devices[dhandle].state = HIDH_DEV_UNUSED;
+    } else {
+      log::verbose("set handle {} state to NO CONN", dhandle);
+      hh_cb.devices[dhandle].state = HIDH_DEV_NO_CONN;
+    }
     p_hcon->conn_state = HID_CONN_STATE_UNUSED;
 
-    if (!ack_needed) disc_res = btm_get_acl_disc_reason_code();
+    if (!ack_needed) {
+      disc_res = btm_get_acl_disc_reason_code();
+    }
 
 #if (HID_HOST_MAX_CONN_RETRY > 0)
-    if ((disc_res == HCI_ERR_CONNECTION_TOUT ||
-         disc_res == HCI_ERR_UNSPECIFIED) &&
+    if ((disc_res == HCI_ERR_CONNECTION_TOUT || disc_res == HCI_ERR_UNSPECIFIED) &&
         (!(hh_cb.devices[dhandle].attr_mask & HID_RECONN_INIT)) &&
         (hh_cb.devices[dhandle].attr_mask & HID_NORMALLY_CONNECTABLE)) {
       hh_cb.devices[dhandle].conn_tries = 0;
       uint64_t interval_ms = HID_HOST_REPAGE_WIN * 1000;
-      alarm_set_on_mloop(hh_cb.devices[dhandle].conn.process_repage_timer,
-                         interval_ms, hidh_process_repage_timer_timeout,
-                         UINT_TO_PTR(dhandle));
-      hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE,
-                     disc_res, NULL);
+      alarm_set_on_mloop(hh_cb.devices[dhandle].conn.process_repage_timer, interval_ms,
+                         hidh_process_repage_timer_timeout, UINT_TO_PTR(dhandle));
+      hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE, disc_res, NULL);
     } else
 #endif
     {
@@ -550,31 +577,34 @@ static void hidh_l2cif_disconnect_ind(uint16_t l2cap_cid, bool ack_needed) {
 
       /* If we got baseband sent HCI_DISCONNECT_COMPLETE_EVT due to security
        * failure, then set reason to HID_ERR_AUTH_FAILED */
-      if ((disc_res == HCI_ERR_AUTH_FAILURE) ||
-          (disc_res == HCI_ERR_KEY_MISSING) ||
-          (disc_res == HCI_ERR_HOST_REJECT_SECURITY) ||
-          (disc_res == HCI_ERR_PAIRING_NOT_ALLOWED) ||
+      if ((disc_res == HCI_ERR_AUTH_FAILURE) || (disc_res == HCI_ERR_KEY_MISSING) ||
+          (disc_res == HCI_ERR_HOST_REJECT_SECURITY) || (disc_res == HCI_ERR_PAIRING_NOT_ALLOWED) ||
           (disc_res == HCI_ERR_UNIT_KEY_USED) ||
           (disc_res == HCI_ERR_PAIRING_WITH_UNIT_KEY_NOT_SUPPORTED) ||
           (disc_res == HCI_ERR_ENCRY_MODE_NOT_ACCEPTABLE) ||
           (disc_res == HCI_ERR_REPEATED_ATTEMPTS)) {
-        log_counter_metrics(
-            android::bluetooth::CodePathCounterKeyEnum::HIDH_ERR_AUTH_FAILED,
-            1);
+        bluetooth::metrics::Counter(bluetooth::metrics::CounterKey::HIDH_ERR_AUTH_FAILED);
         hid_close_evt_reason = HID_ERR_AUTH_FAILED;
       }
 
-      hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE,
-                     hid_close_evt_reason, NULL);
+      hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE, hid_close_evt_reason,
+                     NULL);
     }
   }
 }
 
-static void hidh_l2cif_disconnect(uint16_t l2cap_cid) {
-  if (!L2CA_DisconnectReq(l2cap_cid)) {
-    log::warn("Unable to send L2CAP disconnect request cid:{}", l2cap_cid);
-  }
-
+/*******************************************************************************
+ *
+ * Function         hidh_l2cif_disconnect_cfm
+ *
+ * Description      This function handles a disconnect confirm from L2CAP. This
+ *                  means our disconnection request has been acknowledged, so we
+ *                  can disconnect the other channel, if required.
+ *
+ * Returns          void
+ *
+ ******************************************************************************/
+static void hidh_l2cif_disconnect_cfm(uint16_t l2cap_cid, uint16_t /* result */) {
   /* Find CCB based on CID */
   const uint8_t dhandle = find_conn_by_cid(l2cap_cid);
   if (dhandle == kHID_HOST_MAX_DEVICES) {
@@ -589,20 +619,26 @@ static void hidh_l2cif_disconnect(uint16_t l2cap_cid) {
     p_hcon->intr_cid = 0;
     if (p_hcon->ctrl_cid) {
       log::verbose("HID-Host Initiating L2CAP Ctrl disconnection");
-      if (!L2CA_DisconnectReq(p_hcon->ctrl_cid)) {
-        log::warn("Unable to send L2CAP disconnect request cid:{}",
-                  p_hcon->ctrl_cid);
+      if (!stack::l2cap::get_interface().L2CA_DisconnectReq(p_hcon->ctrl_cid)) {
+        log::warn("Unable to send L2CAP disconnect request cid:{}", p_hcon->ctrl_cid);
       }
       p_hcon->ctrl_cid = 0;
     }
   }
 
   if ((p_hcon->ctrl_cid == 0) && (p_hcon->intr_cid == 0)) {
-    hh_cb.devices[dhandle].state = HID_DEV_NO_CONN;
+    if (com_android_bluetooth_flags_wait_hid_disconnect_before_marking_unused() &&
+        hh_cb.devices[dhandle].state == HIDH_DEV_REMOVING) {
+      log::verbose("set handle {} state to UNUSED", dhandle);
+      hh_cb.devices[dhandle].state = HIDH_DEV_UNUSED;
+    } else {
+      log::verbose("set handle {} state to NO CONN", dhandle);
+      hh_cb.devices[dhandle].state = HIDH_DEV_NO_CONN;
+    }
     p_hcon->conn_state = HID_CONN_STATE_UNUSED;
     BTM_LogHistory(kBtmLogTag, hh_cb.devices[dhandle].addr, "Disconnected");
-    hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE,
-                   p_hcon->disc_reason, NULL);
+    hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE, p_hcon->disc_reason,
+                   NULL);
   }
 }
 
@@ -621,20 +657,21 @@ static void hidh_l2cif_cong_ind(uint16_t l2cap_cid, bool congested) {
 
   /* Find CCB based on CID */
   dhandle = find_conn_by_cid(l2cap_cid);
-  if (dhandle < kHID_HOST_MAX_DEVICES) p_hcon = &hh_cb.devices[dhandle].conn;
+  if (dhandle < kHID_HOST_MAX_DEVICES) {
+    p_hcon = &hh_cb.devices[dhandle].conn;
+  }
 
   if (p_hcon == NULL) {
-    log::warn("HID-Host Rcvd L2CAP congestion status, unknown CID: 0x{:x}",
-              l2cap_cid);
+    log::warn("HID-Host Rcvd L2CAP congestion status, unknown CID: 0x{:x}", l2cap_cid);
     return;
   }
 
-  log::verbose("HID-Host Rcvd L2CAP congestion status, CID: 0x{:x}  Cong: {}",
-               l2cap_cid, congested);
+  log::verbose("HID-Host Rcvd L2CAP congestion status, CID: 0x{:x}  Cong: {}", l2cap_cid,
+               congested);
 
-  if (congested)
+  if (congested) {
     p_hcon->conn_flags |= HID_CONN_FLAGS_CONGESTED;
-  else {
+  } else {
     p_hcon->conn_flags &= ~HID_CONN_FLAGS_CONGESTED;
   }
 }
@@ -665,7 +702,9 @@ static void hidh_l2cif_data_ind(uint16_t l2cap_cid, BT_HDR* p_msg) {
 
   /* Find CCB based on CID */
   dhandle = find_conn_by_cid(l2cap_cid);
-  if (dhandle < kHID_HOST_MAX_DEVICES) p_hcon = &hh_cb.devices[dhandle].conn;
+  if (dhandle < kHID_HOST_MAX_DEVICES) {
+    p_hcon = &hh_cb.devices[dhandle].conn;
+  }
 
   if (p_hcon == NULL) {
     log::warn("HID-Host Rcvd L2CAP data, unknown CID: 0x{:x}", l2cap_cid);
@@ -690,8 +729,7 @@ static void hidh_l2cif_data_ind(uint16_t l2cap_cid, BT_HDR* p_msg) {
 
   switch (ttype) {
     case HID_TRANS_HANDSHAKE:
-      hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr,
-                     HID_HDEV_EVT_HANDSHAKE, param, NULL);
+      hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_HANDSHAKE, param, NULL);
       osi_free(p_msg);
       break;
 
@@ -700,8 +738,7 @@ static void hidh_l2cif_data_ind(uint16_t l2cap_cid, BT_HDR* p_msg) {
         case HID_PAR_CONTROL_VIRTUAL_CABLE_UNPLUG:
           hidh_conn_disconnect(dhandle);
           /* Device is unplugging from us. Tell USB */
-          hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr,
-                         HID_HDEV_EVT_VC_UNPLUG, 0, NULL);
+          hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_VC_UNPLUG, 0, NULL);
           break;
 
         default:
@@ -711,19 +748,15 @@ static void hidh_l2cif_data_ind(uint16_t l2cap_cid, BT_HDR* p_msg) {
       break;
 
     case HID_TRANS_DATA:
-      evt = (hh_cb.devices[dhandle].conn.intr_cid == l2cap_cid)
-                ? HID_HDEV_EVT_INTR_DATA
-                : HID_HDEV_EVT_CTRL_DATA;
-      hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, evt, rep_type,
-                     p_msg);
+      evt = (hh_cb.devices[dhandle].conn.intr_cid == l2cap_cid) ? HID_HDEV_EVT_INTR_DATA
+                                                                : HID_HDEV_EVT_CTRL_DATA;
+      hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, evt, rep_type, p_msg);
       break;
 
     case HID_TRANS_DATAC:
-      evt = (hh_cb.devices[dhandle].conn.intr_cid == l2cap_cid)
-                ? HID_HDEV_EVT_INTR_DATC
-                : HID_HDEV_EVT_CTRL_DATC;
-      hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, evt, rep_type,
-                     p_msg);
+      evt = (hh_cb.devices[dhandle].conn.intr_cid == l2cap_cid) ? HID_HDEV_EVT_INTR_DATC
+                                                                : HID_HDEV_EVT_CTRL_DATC;
+      hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, evt, rep_type, p_msg);
       break;
 
     default:
@@ -741,9 +774,8 @@ static void hidh_l2cif_data_ind(uint16_t l2cap_cid, BT_HDR* p_msg) {
  * Returns          tHID_STATUS
  *
  ******************************************************************************/
-tHID_STATUS hidh_conn_snd_data(uint8_t dhandle, uint8_t trans_type,
-                               uint8_t param, uint16_t data, uint8_t report_id,
-                               BT_HDR* buf) {
+tHID_STATUS hidh_conn_snd_data(uint8_t dhandle, uint8_t trans_type, uint8_t param, uint16_t data,
+                               uint8_t report_id, BT_HDR* buf) {
   tHID_CONN* p_hcon = &hh_cb.devices[dhandle].conn;
   BT_HDR* p_buf;
   uint8_t* p_out;
@@ -755,20 +787,17 @@ tHID_STATUS hidh_conn_snd_data(uint8_t dhandle, uint8_t trans_type,
   uint8_t use_data = 0;
   bool blank_datc = false;
 
-  if (!BTM_IsAclConnectionUp(hh_cb.devices[dhandle].addr,
-                             BT_TRANSPORT_BR_EDR)) {
+  if (!get_btm_client_interface().peer.BTM_IsAclConnectionUp(hh_cb.devices[dhandle].addr,
+                                                             BT_TRANSPORT_BR_EDR)) {
     osi_free(buf);
-    log_counter_metrics(android::bluetooth::CodePathCounterKeyEnum::
-                            HIDH_ERR_NO_CONNECTION_AT_SEND_DATA,
-                        1);
+    bluetooth::metrics::Counter(
+            bluetooth::metrics::CounterKey::HIDH_ERR_NO_CONNECTION_AT_SEND_DATA);
     return HID_ERR_NO_CONNECTION;
   }
 
   if (p_hcon->conn_flags & HID_CONN_FLAGS_CONGESTED) {
     osi_free(buf);
-    log_counter_metrics(android::bluetooth::CodePathCounterKeyEnum::
-                            HIDH_ERR_CONGESTED_AT_FLAG_CHECK,
-                        1);
+    bluetooth::metrics::Counter(bluetooth::metrics::CounterKey::HIDH_ERR_CONGESTED_AT_FLAG_CHECK);
     return HID_ERR_CONGESTED;
   }
 
@@ -788,16 +817,16 @@ tHID_STATUS hidh_conn_snd_data(uint8_t dhandle, uint8_t trans_type,
       buf_size = HID_INTERRUPT_BUF_SIZE;
       break;
     default:
-      log_counter_metrics(android::bluetooth::CodePathCounterKeyEnum::
-                              HIDH_ERR_INVALID_PARAM_AT_SEND_DATA,
-                          1);
-      return (HID_ERR_INVALID_PARAM);
+      bluetooth::metrics::Counter(
+              bluetooth::metrics::CounterKey::HIDH_ERR_INVALID_PARAM_AT_SEND_DATA);
+      return HID_ERR_INVALID_PARAM;
   }
 
-  if (trans_type == HID_TRANS_SET_IDLE)
+  if (trans_type == HID_TRANS_SET_IDLE) {
     use_data = 1;
-  else if ((trans_type == HID_TRANS_GET_REPORT) && (param & 0x08))
+  } else if ((trans_type == HID_TRANS_GET_REPORT) && (param & 0x08)) {
     use_data = 2;
+  }
 
   do {
     if (buf == NULL || blank_datc) {
@@ -808,7 +837,7 @@ tHID_STATUS hidh_conn_snd_data(uint8_t dhandle, uint8_t trans_type,
       data_size = 0;
       bytes_copied = 0;
       blank_datc = false;
-    } else if ((buf->len > (p_hcon->rem_mtu_size - 1))) {
+    } else if (buf->len > (p_hcon->rem_mtu_size - 1)) {
       p_buf = (BT_HDR*)osi_malloc(buf_size);
 
       p_buf->offset = L2CAP_MIN_OFFSET;
@@ -848,23 +877,20 @@ tHID_STATUS hidh_conn_snd_data(uint8_t dhandle, uint8_t trans_type,
 
     /* Send the buffer through L2CAP */
     if ((p_hcon->conn_flags & HID_CONN_FLAGS_CONGESTED) ||
-        (L2CA_DataWrite(cid, p_buf) == tL2CAP_DW_RESULT::FAILED)) {
-      log_counter_metrics(android::bluetooth::CodePathCounterKeyEnum::
-                              HIDH_ERR_CONGESTED_AT_SEND_DATA,
-                          1);
-      return (HID_ERR_CONGESTED);
+        (stack::l2cap::get_interface().L2CA_DataWrite(cid, p_buf) == tL2CAP_DW_RESULT::FAILED)) {
+      bluetooth::metrics::Counter(bluetooth::metrics::CounterKey::HIDH_ERR_CONGESTED_AT_SEND_DATA);
+      return HID_ERR_CONGESTED;
     }
 
-    if (data_size)
+    if (data_size) {
       trans_type = HID_TRANS_DATAC;
-    else if (bytes_copied == (p_hcon->rem_mtu_size - 1)) {
+    } else if (bytes_copied == (p_hcon->rem_mtu_size - 1)) {
       trans_type = HID_TRANS_DATAC;
       blank_datc = true;
     }
-
   } while ((data_size != 0) || blank_datc);
 
-  return (HID_SUCCESS);
+  return HID_SUCCESS;
 }
 /*******************************************************************************
  *
@@ -880,40 +906,36 @@ tHID_STATUS hidh_conn_initiate(uint8_t dhandle) {
   tHID_HOST_DEV_CTB* p_dev = &hh_cb.devices[dhandle];
 
   if (p_dev->conn.conn_state != HID_CONN_STATE_UNUSED) {
-    log_counter_metrics(
-        android::bluetooth::CodePathCounterKeyEnum::HIDH_ERR_CONN_IN_PROCESS,
-        1);
-    return (HID_ERR_CONN_IN_PROCESS);
+    log::warn("HID-Host Connection already in progress {} state:{}", p_dev->addr,
+              p_dev->conn.state_text(p_dev->conn.conn_state));
+    bluetooth::metrics::Counter(bluetooth::metrics::CounterKey::HIDH_ERR_CONN_IN_PROCESS);
+    return HID_ERR_CONN_IN_PROCESS;
   }
 
   p_dev->conn.ctrl_cid = 0;
   p_dev->conn.intr_cid = 0;
-  p_dev->conn.disc_reason =
-      HID_L2CAP_CONN_FAIL; /* Reset initial reason for CLOSE_EVT: Connection
-                              Attempt was made but failed */
+  p_dev->conn.disc_reason = HID_L2CAP_CONN_FAIL; /* Reset initial reason for CLOSE_EVT: Connection
+                                                    Attempt was made but failed */
 
   /* We are the originator of this connection */
   p_dev->conn.conn_flags = HID_CONN_FLAGS_IS_ORIG;
 
   /* Check if L2CAP started the connection process */
-  p_dev->conn.ctrl_cid = L2CA_ConnectReqWithSecurity(
-      HID_PSM_CONTROL, p_dev->addr, BTA_SEC_AUTHENTICATE | BTA_SEC_ENCRYPT);
+  p_dev->conn.ctrl_cid = stack::l2cap::get_interface().L2CA_ConnectReqWithSecurity(
+          HID_PSM_CONTROL, p_dev->addr, BTA_SEC_AUTHENTICATE | BTA_SEC_ENCRYPT);
   if (p_dev->conn.ctrl_cid == 0) {
-    log::warn("HID-Host Originate failed");
-    hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE,
-                   HID_ERR_L2CAP_FAILED, NULL);
-    log_counter_metrics(android::bluetooth::CodePathCounterKeyEnum::
-                            HIDH_ERR_L2CAP_FAILED_AT_INITIATE,
-                        1);
+    log::warn("Control channel L2CAP connection failed {}", p_dev->addr);
+    hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE, HID_ERR_L2CAP_FAILED,
+                   NULL);
+    bluetooth::metrics::Counter(bluetooth::metrics::CounterKey::HIDH_ERR_L2CAP_FAILED_AT_INITIATE);
   } else {
     /* Transition to the next appropriate state, waiting for connection confirm
      * on control channel. */
     p_dev->conn.conn_state = HID_CONN_STATE_CONNECTING_CTRL;
-    BTM_LogHistory(kBtmLogTag, hh_cb.devices[dhandle].addr, "Connecting",
-                   "control channel");
+    BTM_LogHistory(kBtmLogTag, hh_cb.devices[dhandle].addr, "Connecting", "control channel");
   }
 
-  return (HID_SUCCESS);
+  return HID_SUCCESS;
 }
 
 /*******************************************************************************
@@ -930,19 +952,19 @@ static uint8_t find_conn_by_cid(uint16_t cid) {
   uint8_t xx;
 
   for (xx = 0; xx < kHID_HOST_MAX_DEVICES; xx++) {
-    if ((hh_cb.devices[xx].in_use) &&
+    if (hidh_in_use(hh_cb.devices[xx]) &&
         (hh_cb.devices[xx].conn.conn_state != HID_CONN_STATE_UNUSED) &&
-        ((hh_cb.devices[xx].conn.ctrl_cid == cid) ||
-         (hh_cb.devices[xx].conn.intr_cid == cid)))
+        ((hh_cb.devices[xx].conn.ctrl_cid == cid) || (hh_cb.devices[xx].conn.intr_cid == cid))) {
       break;
+    }
   }
 
-  return (xx);
+  return xx;
 }
 
 void hidh_conn_dereg(void) {
-  L2CA_Deregister(HID_PSM_CONTROL);
-  L2CA_Deregister(HID_PSM_INTERRUPT);
+  stack::l2cap::get_interface().L2CA_Deregister(HID_PSM_CONTROL);
+  stack::l2cap::get_interface().L2CA_Deregister(HID_PSM_INTERRUPT);
 }
 
 /*******************************************************************************
@@ -965,4 +987,57 @@ static void hidh_conn_retry(uint8_t dhandle) {
 #else
   hidh_try_repage(dhandle);
 #endif
+}
+
+static const char* state_text(const tHIDH_DEV_STATE& state) {
+  switch (state) {
+    CASE_RETURN_TEXT(HIDH_DEV_UNUSED);
+    CASE_RETURN_TEXT(HIDH_DEV_NO_CONN);
+    CASE_RETURN_TEXT(HIDH_DEV_CONNECTED);
+    CASE_RETURN_TEXT(HIDH_DEV_REMOVING);
+    default:
+      return "UNKNOWN";
+  }
+}
+
+#define DUMPSYS_TAG "BR/EDR HID host"
+void hidh_dump(int fd) {
+  LOG_DUMPSYS_TITLE(fd, DUMPSYS_TAG);
+  LOG_DUMPSYS(fd, "Registered:%s, SDP busy:%s", hh_cb.reg_flag ? "true" : "false",
+              hh_cb.sdp_busy ? "true" : "false");
+  for (int i = 0; i < HID_HOST_MAX_DEVICES; i++) {
+    auto& dev = hh_cb.devices[i];
+    if (hidh_in_use(dev)) {
+      LOG_DUMPSYS(fd,
+                  "Device:%s, handle:%d, state:%s, conn_state:%s, conn_flags:0x%02x, "
+                  "control_cid:0x%04x, intr_cid:0x%04x",
+                  dev.addr.ToRedactedStringForLogging().c_str(), i, state_text(dev.state),
+                  dev.conn.state_text(dev.conn.conn_state).c_str(), dev.conn.conn_flags,
+                  dev.conn.ctrl_cid, dev.conn.intr_cid);
+    }
+  }
+}
+#undef DUMPSYS_TAG
+
+bool hidh_in_use(const per_device_ctb& ctb) {
+  if (com_android_bluetooth_flags_wait_hid_disconnect_before_marking_unused()) {
+    return ctb.state != HIDH_DEV_UNUSED;
+  } else {
+    return ctb.in_use;
+  }
+}
+
+void hidh_conn_reset(uint8_t dhandle) {
+  tHID_HOST_DEV_CTB* p_dev = &hh_cb.devices[dhandle];
+  p_dev->in_use = false;
+  p_dev->addr = RawAddress::kEmpty;
+  p_dev->attr_mask = 0;
+  p_dev->state = HIDH_DEV_UNUSED;
+  p_dev->conn_tries = 0;
+  p_dev->conn.conn_state = HID_CONN_STATE_UNUSED;
+  p_dev->conn.conn_flags = 0;
+  p_dev->conn.ctrl_cid = 0;
+  p_dev->conn.intr_cid = 0;
+  p_dev->conn.rem_mtu_size = 0;
+  p_dev->conn.disc_reason = 0;
 }

@@ -4,18 +4,15 @@
 
 mod callback_transaction_manager;
 
-pub use callback_transaction_manager::{CallbackResponseError, CallbackTransactionManager};
-
+use super::ffi::AttributeBackingType;
+use super::ids::{AttHandle, ConnectionId, TransactionId, TransportIndex};
+use super::server::IndicationError;
+use crate::gatt::ffi::GattServerCallbacks;
+use crate::packets::att::AttErrorCode;
 use async_trait::async_trait;
-use log::warn;
-
-use crate::packets::AttErrorCode;
-
-use super::{
-    ffi::AttributeBackingType,
-    ids::{AttHandle, ConnectionId, TransactionId, TransportIndex},
-    server::IndicationError,
-};
+pub use callback_transaction_manager::CallbackTransactionManager;
+use cxx::UniquePtr;
+use log::{trace, warn};
 
 /// These callbacks are expected to be made available to the GattModule from
 /// JNI.
@@ -72,6 +69,7 @@ pub enum GattWriteType {
 
 /// The types of write requests (that need responses)
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub enum GattWriteRequestType {
     /// Atomic (WRITE_REQ)
     Request,
@@ -83,7 +81,8 @@ pub enum GattWriteRequestType {
 }
 
 /// Whether to commit or cancel a transaction
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(dead_code)]
 pub enum TransactionDecision {
     /// Commit all pending writes
     Execute,
@@ -166,7 +165,7 @@ impl<T: GattDatastore + ?Sized> RawGattDatastore for T {
     ) -> Result<Vec<u8>, AttErrorCode> {
         if offset != 0 {
             warn!("got read blob request for non-long attribute {handle:?}");
-            return Err(AttErrorCode::ATTRIBUTE_NOT_LONG);
+            return Err(AttErrorCode::AttributeNotLong);
         }
         self.read(tcb_idx, handle, attr_type).await
     }
@@ -183,7 +182,7 @@ impl<T: GattDatastore + ?Sized> RawGattDatastore for T {
         match write_type {
             GattWriteRequestType::Prepare { .. } => {
                 warn!("got prepare write attempt on {tcb_idx:?} to characteristic {handle:?} not supporting write_without_response");
-                Err(AttErrorCode::WRITE_REQUEST_REJECTED)
+                Err(AttErrorCode::WriteRequestRejected)
             }
             GattWriteRequestType::Request => self.write(tcb_idx, handle, attr_type, data).await,
         }
@@ -207,14 +206,96 @@ impl<T: GattDatastore + ?Sized> RawGattDatastore for T {
     }
 }
 
+/// Implementation of GattCallbacks wrapping the corresponding C++ methods
+pub struct GattCallbacksImpl(pub UniquePtr<GattServerCallbacks>);
+
+impl GattCallbacks for GattCallbacksImpl {
+    fn on_server_read(
+        &self,
+        conn_id: ConnectionId,
+        trans_id: TransactionId,
+        handle: AttHandle,
+        attr_type: AttributeBackingType,
+        offset: u32,
+    ) {
+        trace!("on_server_read ({conn_id:?}, {trans_id:?}, {handle:?}, {attr_type:?}, {offset:?}");
+        self.0.as_ref().unwrap().on_server_read(
+            conn_id.0,
+            trans_id.0,
+            handle.0,
+            attr_type,
+            offset,
+            offset != 0,
+        );
+    }
+
+    fn on_server_write(
+        &self,
+        conn_id: ConnectionId,
+        trans_id: TransactionId,
+        handle: AttHandle,
+        attr_type: AttributeBackingType,
+        write_type: GattWriteType,
+        value: &[u8],
+    ) {
+        trace!(
+            "on_server_write ({conn_id:?}, {trans_id:?}, {handle:?}, {attr_type:?}, {write_type:?}"
+        );
+        self.0.as_ref().unwrap().on_server_write(
+            conn_id.0,
+            trans_id.0,
+            handle.0,
+            attr_type,
+            match write_type {
+                GattWriteType::Request(GattWriteRequestType::Prepare { offset }) => offset,
+                _ => 0,
+            },
+            matches!(write_type, GattWriteType::Request { .. }),
+            matches!(write_type, GattWriteType::Request(GattWriteRequestType::Prepare { .. })),
+            value,
+        );
+    }
+
+    fn on_indication_sent_confirmation(
+        &self,
+        conn_id: ConnectionId,
+        result: Result<(), IndicationError>,
+    ) {
+        trace!("on_indication_sent_confirmation ({conn_id:?}, {result:?}");
+        self.0.as_ref().unwrap().on_indication_sent_confirmation(
+            conn_id.0,
+            match result {
+                Ok(()) => 0, // GATT_SUCCESS
+                _ => 133,    // GATT_ERROR
+            },
+        )
+    }
+
+    fn on_execute(
+        &self,
+        conn_id: ConnectionId,
+        trans_id: TransactionId,
+        decision: TransactionDecision,
+    ) {
+        trace!("on_execute ({conn_id:?}, {trans_id:?}, {decision:?}");
+        self.0.as_ref().unwrap().on_execute(
+            conn_id.0,
+            trans_id.0,
+            match decision {
+                TransactionDecision::Execute => true,
+                TransactionDecision::Cancel => false,
+            },
+        )
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use tokio::{sync::mpsc::error::TryRecvError, task::spawn_local};
+    use tokio::sync::mpsc::error::TryRecvError;
+    use tokio::task::spawn_local;
 
-    use crate::{
-        gatt::mocks::mock_datastore::{MockDatastore, MockDatastoreEvents},
-        utils::task::block_on_locally,
-    };
+    use crate::gatt::mocks::mock_datastore::{MockDatastore, MockDatastoreEvents};
+    use crate::utils::task::block_on_locally;
 
     use super::*;
 
@@ -270,10 +351,10 @@ mod test {
             let MockDatastoreEvents::Read(_, _, _, resp) = resp else {
                 unreachable!();
             };
-            resp.send(Err(AttErrorCode::APPLICATION_ERROR)).unwrap();
+            resp.send(Err(AttErrorCode::ApplicationError)).unwrap();
 
             // assert: got the supplied response
-            assert_eq!(pending.await.unwrap(), Err(AttErrorCode::APPLICATION_ERROR));
+            assert_eq!(pending.await.unwrap(), Err(AttErrorCode::ApplicationError));
         });
     }
 
@@ -292,7 +373,7 @@ mod test {
         ));
 
         // assert: got the correct error code
-        assert_eq!(resp, Err(AttErrorCode::ATTRIBUTE_NOT_LONG));
+        assert_eq!(resp, Err(AttErrorCode::AttributeNotLong));
         // assert: no pending events
         assert_eq!(rx.try_recv().unwrap_err(), TryRecvError::Empty);
     }
@@ -353,10 +434,10 @@ mod test {
             let MockDatastoreEvents::Write(_, _, _, _, resp) = resp else {
                 unreachable!();
             };
-            resp.send(Err(AttErrorCode::APPLICATION_ERROR)).unwrap();
+            resp.send(Err(AttErrorCode::ApplicationError)).unwrap();
 
             // assert: got the supplied response
-            assert_eq!(pending.await.unwrap(), Err(AttErrorCode::APPLICATION_ERROR));
+            assert_eq!(pending.await.unwrap(), Err(AttErrorCode::ApplicationError));
         });
     }
 
@@ -376,7 +457,7 @@ mod test {
         ));
 
         // assert: got the correct error code
-        assert_eq!(resp, Err(AttErrorCode::WRITE_REQUEST_REJECTED));
+        assert_eq!(resp, Err(AttErrorCode::WriteRequestRejected));
         // assert: no event sent up
         assert_eq!(rx.try_recv().unwrap_err(), TryRecvError::Empty);
     }

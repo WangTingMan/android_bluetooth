@@ -16,17 +16,22 @@
 
 package com.android.bluetooth.mapclient;
 
-import android.Manifest;
-import android.annotation.RequiresPermission;
+import static android.bluetooth.BluetoothDevice.TRANSPORT_BREDR;
+import static android.bluetooth.BluetoothProfile.CONNECTION_POLICY_ALLOWED;
+import static android.bluetooth.BluetoothProfile.CONNECTION_POLICY_FORBIDDEN;
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTED;
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTING;
+import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTED;
+
+import static java.util.Objects.requireNonNull;
+import static java.util.Objects.requireNonNullElseGet;
+
 import android.app.PendingIntent;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.BluetoothUuid;
-import android.bluetooth.IBluetoothMapClient;
 import android.bluetooth.SdpMasRecord;
-import android.content.AttributionSource;
-import android.content.Context;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
@@ -35,68 +40,56 @@ import android.os.Parcelable;
 import android.sysprop.BluetoothProperties;
 import android.util.Log;
 
-import com.android.bluetooth.Utils;
 import com.android.bluetooth.btservice.AdapterService;
-import com.android.bluetooth.btservice.ProfileService;
-import com.android.bluetooth.btservice.storage.DatabaseManager;
+import com.android.bluetooth.btservice.ConnectableProfile;
+import com.android.bluetooth.flags.Flags;
 import com.android.internal.annotations.VisibleForTesting;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class MapClientService extends ProfileService {
+public class MapClientService extends ConnectableProfile {
     private static final String TAG = MapClientService.class.getSimpleName();
 
     static final int MAXIMUM_CONNECTED_DEVICES = 4;
 
     private final Map<BluetoothDevice, MceStateMachine> mMapInstanceMap =
             new ConcurrentHashMap<>(1);
-    private MnsService mMnsServer;
 
-    private AdapterService mAdapterService;
-    private DatabaseManager mDatabaseManager;
-    private static MapClientService sMapClientService;
-    @VisibleForTesting private Handler mHandler;
+    private final MnsService mMnsServer;
+    private final Looper mStateMachinesLooper;
+    private final Handler mHandler;
 
-    private Looper mSmLooper;
-
-    public MapClientService(Context ctx) {
-        super(ctx);
+    public MapClientService(AdapterService adapterService) {
+        this(adapterService, null, null);
     }
 
     @VisibleForTesting
-    MapClientService(Context ctx, Looper looper, MnsService mnsServer) {
-        this(ctx);
-        mSmLooper = looper;
-        mMnsServer = mnsServer;
+    MapClientService(AdapterService adapterService, Looper looper, MnsService mnsServer) {
+        super(BluetoothProfile.MAP_CLIENT, requireNonNull(adapterService));
+        mMnsServer = requireNonNullElseGet(mnsServer, () -> new MnsService(mAdapterService, this));
+
+        if (looper == null) {
+            mHandler = new Handler(requireNonNull(Looper.getMainLooper()));
+            mStateMachinesLooper = null;
+        } else {
+            mHandler = new Handler(looper);
+
+            // MapClient is only using a common state machine looper for test.
+            // In real device, it use a thread per device connected to avoid congestion.
+            mStateMachinesLooper = looper;
+        }
+
+        removeUncleanAccounts();
+        MapClientContent.clearAllContent(mAdapterService);
     }
 
     public static boolean isEnabled() {
         return BluetoothProperties.isProfileMapClientEnabled().orElse(false);
-    }
-
-    public static synchronized MapClientService getMapClientService() {
-        if (sMapClientService == null) {
-            Log.w(TAG, "getMapClientService(): service is null");
-            return null;
-        }
-        if (!sMapClientService.isAvailable()) {
-            Log.w(TAG, "getMapClientService(): service is not available ");
-            return null;
-        }
-        return sMapClientService;
-    }
-
-    @VisibleForTesting
-    static synchronized void setMapClientService(MapClientService instance) {
-        Log.d(TAG, "setMapClientService(): set to: " + instance);
-        sMapClientService = instance;
     }
 
     @VisibleForTesting
@@ -109,15 +102,16 @@ public class MapClientService extends ProfileService {
      *
      * @return true if connection is successful, false otherwise.
      */
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_PRIVILEGED)
+    @Override
     public synchronized boolean connect(BluetoothDevice device) {
-        enforceCallingOrSelfPermission(
-                BLUETOOTH_PRIVILEGED, "Need BLUETOOTH_PRIVILEGED permission");
         if (device == null) {
             throw new IllegalArgumentException("Null device");
         }
         Log.d(TAG, "connect(device= " + device + "): devices=" + mMapInstanceMap.keySet());
-        if (getConnectionPolicy(device) == BluetoothProfile.CONNECTION_POLICY_FORBIDDEN) {
+        if (getConnectionPolicy(device) == CONNECTION_POLICY_FORBIDDEN
+                || (Flags.mapClientCheckAccessPermission()
+                        && mAdapterService.getMessageAccessPermission(device)
+                                != BluetoothDevice.ACCESS_ALLOWED)) {
             Log.w(
                     TAG,
                     "Connection not allowed: <"
@@ -149,17 +143,16 @@ public class MapClientService extends ProfileService {
             }
         }
 
-        // statemachine already exists in the map.
+        // StateMachine already exists in the map.
         int state = getConnectionState(device);
-        if (state == BluetoothProfile.STATE_CONNECTED
-                || state == BluetoothProfile.STATE_CONNECTING) {
+        if (state == STATE_CONNECTED || state == STATE_CONNECTING) {
             Log.w(TAG, "Received connect request while already connecting/connected.");
             return true;
         }
 
-        // Statemachine exists but not in connecting or connected state! it should
+        // StateMachine exists but not in connecting or connected state! it should
         // have been removed form the map. lets get rid of it and add a new one.
-        Log.d(TAG, "Statemachine exists for a device in unexpected state: " + state);
+        Log.d(TAG, "StateMachine exists for a device in unexpected state: " + state);
         mMapInstanceMap.remove(device);
         mapStateMachine.doQuit();
 
@@ -169,18 +162,20 @@ public class MapClientService extends ProfileService {
     }
 
     private synchronized void addDeviceToMapAndConnect(BluetoothDevice device) {
-        // When creating a new statemachine, its state is set to CONNECTING - which will trigger
+        // When creating a new StateMachine, its state is set to CONNECTING - which will trigger
         // connect.
         MceStateMachine mapStateMachine;
-        if (mSmLooper != null) mapStateMachine = new MceStateMachine(this, device, mSmLooper);
-        else mapStateMachine = new MceStateMachine(this, device);
+        if (mStateMachinesLooper != null) {
+            mapStateMachine =
+                    new MceStateMachine(this, device, mAdapterService, mStateMachinesLooper);
+        } else {
+            mapStateMachine = new MceStateMachine(this, device, mAdapterService);
+        }
         mMapInstanceMap.put(device, mapStateMachine);
     }
 
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_PRIVILEGED)
+    @Override
     public synchronized boolean disconnect(BluetoothDevice device) {
-        enforceCallingOrSelfPermission(
-                BLUETOOTH_PRIVILEGED, "Need BLUETOOTH_PRIVILEGED permission");
         Log.d(TAG, "disconnect(device= " + device + "): devices=" + mMapInstanceMap.keySet());
         MceStateMachine mapStateMachine = mMapInstanceMap.get(device);
         // a map state machine instance doesn't exist. maybe it is already gone?
@@ -188,8 +183,7 @@ public class MapClientService extends ProfileService {
             return false;
         }
         int connectionState = mapStateMachine.getState();
-        if (connectionState != BluetoothProfile.STATE_CONNECTED
-                && connectionState != BluetoothProfile.STATE_CONNECTING) {
+        if (connectionState != STATE_CONNECTED && connectionState != STATE_CONNECTING) {
             return false;
         }
         mapStateMachine.disconnect();
@@ -223,12 +217,11 @@ public class MapClientService extends ProfileService {
         return deviceList;
     }
 
+    @Override
     public synchronized int getConnectionState(BluetoothDevice device) {
         MceStateMachine mapStateMachine = mMapInstanceMap.get(device);
         // a map state machine instance doesn't exist yet, create a new one if we can.
-        return (mapStateMachine == null)
-                ? BluetoothProfile.STATE_DISCONNECTED
-                : mapStateMachine.getState();
+        return (mapStateMachine == null) ? STATE_DISCONNECTED : mapStateMachine.getState();
     }
 
     /**
@@ -245,39 +238,19 @@ public class MapClientService extends ProfileService {
      * @param connectionPolicy is the connection policy to set to for this profile
      * @return true if connectionPolicy is set, false on error
      */
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_PRIVILEGED)
+    @Override
     public boolean setConnectionPolicy(BluetoothDevice device, int connectionPolicy) {
         Log.v(TAG, "Saved connectionPolicy " + device + " = " + connectionPolicy);
-        enforceCallingOrSelfPermission(
-                BLUETOOTH_PRIVILEGED, "Need BLUETOOTH_PRIVILEGED permission");
 
-        if (!mDatabaseManager.setProfileConnectionPolicy(
-                device, BluetoothProfile.MAP_CLIENT, connectionPolicy)) {
+        if (!mAdapterService.setProfileConnectionPolicy(device, mProfileId, connectionPolicy)) {
             return false;
         }
-        if (connectionPolicy == BluetoothProfile.CONNECTION_POLICY_ALLOWED) {
+        if (connectionPolicy == CONNECTION_POLICY_ALLOWED) {
             connect(device);
-        } else if (connectionPolicy == BluetoothProfile.CONNECTION_POLICY_FORBIDDEN) {
+        } else if (connectionPolicy == CONNECTION_POLICY_FORBIDDEN) {
             disconnect(device);
         }
         return true;
-    }
-
-    /**
-     * Get the connection policy of the profile.
-     *
-     * <p>The connection policy can be any of: {@link BluetoothProfile#CONNECTION_POLICY_ALLOWED},
-     * {@link BluetoothProfile#CONNECTION_POLICY_FORBIDDEN}, {@link
-     * BluetoothProfile#CONNECTION_POLICY_UNKNOWN}
-     *
-     * @param device Bluetooth device
-     * @return connection policy of the device
-     */
-    @RequiresPermission(android.Manifest.permission.BLUETOOTH_PRIVILEGED)
-    public int getConnectionPolicy(BluetoothDevice device) {
-        enforceCallingOrSelfPermission(
-                BLUETOOTH_PRIVILEGED, "Need BLUETOOTH_PRIVILEGED permission");
-        return mDatabaseManager.getProfileConnectionPolicy(device, BluetoothProfile.MAP_CLIENT);
     }
 
     public synchronized boolean sendMessage(
@@ -293,37 +266,14 @@ public class MapClientService extends ProfileService {
 
     @Override
     public IProfileServiceBinder initBinder() {
-        return new Binder(this);
+        return new MapClientServiceBinder(this);
     }
 
     @Override
-    public synchronized void start() {
-        Log.d(TAG, "start()");
+    public synchronized void cleanup() {
+        Log.i(TAG, "cleanup()");
 
-        mAdapterService = AdapterService.getAdapterService();
-        mDatabaseManager =
-                Objects.requireNonNull(
-                        AdapterService.getAdapterService().getDatabase(),
-                        "DatabaseManager cannot be null when MapClientService starts");
-
-        mHandler = new Handler(Looper.getMainLooper());
-
-        if (mMnsServer == null) {
-            mMnsServer = new MnsService(this);
-        }
-
-        removeUncleanAccounts();
-        MapClientContent.clearAllContent(this);
-        setMapClientService(this);
-    }
-
-    @Override
-    public synchronized void stop() {
-        Log.d(TAG, "stop()");
-
-        if (mMnsServer != null) {
-            mMnsServer.stop();
-        }
+        mMnsServer.stop();
         for (MceStateMachine stateMachine : mMapInstanceMap.values()) {
             if (stateMachine.getState() == BluetoothAdapter.STATE_CONNECTED) {
                 stateMachine.disconnect();
@@ -333,18 +283,9 @@ public class MapClientService extends ProfileService {
         mMapInstanceMap.clear();
 
         // Unregister Handler and stop all queued messages.
-        if (mHandler != null) {
-            mHandler.removeCallbacksAndMessages(null);
-            mHandler = null;
-        }
-    }
+        mHandler.removeCallbacksAndMessages(null);
 
-    @Override
-    public void cleanup() {
-        Log.d(TAG, "cleanup");
         removeUncleanAccounts();
-        // TODO(b/72948646): should be moved to stop()
-        setMapClientService(null);
     }
 
     /**
@@ -353,8 +294,7 @@ public class MapClientService extends ProfileService {
      * @param device BluetoothDevice address of remote device
      * @param sm the state machine to clean up or {@code null} to clean up any state machine.
      */
-    @VisibleForTesting
-    public void cleanupDevice(BluetoothDevice device, MceStateMachine sm) {
+    void cleanupDevice(BluetoothDevice device, MceStateMachine sm) {
         Log.d(TAG, "cleanup(device= " + device + "): devices=" + mMapInstanceMap.keySet());
         synchronized (mMapInstanceMap) {
             MceStateMachine stateMachine = mMapInstanceMap.get(device);
@@ -377,7 +317,7 @@ public class MapClientService extends ProfileService {
         while (iterator.hasNext()) {
             Map.Entry<BluetoothDevice, MceStateMachine> profileConnection =
                     (Map.Entry) iterator.next();
-            if (profileConnection.getValue().getState() == BluetoothProfile.STATE_DISCONNECTED) {
+            if (profileConnection.getValue().getState() == STATE_DISCONNECTED) {
                 iterator.remove();
             }
         }
@@ -424,200 +364,6 @@ public class MapClientService extends ProfileService {
         }
     }
 
-    // Binder object: Must be static class or memory leak may occur
-
-    /**
-     * This class implements the IClient interface - or actually it validates the preconditions for
-     * calling the actual functionality in the MapClientService, and calls it.
-     */
-    @VisibleForTesting
-    static class Binder extends IBluetoothMapClient.Stub implements IProfileServiceBinder {
-        private MapClientService mService;
-
-        Binder(MapClientService service) {
-            Log.v(TAG, "Binder()");
-            mService = service;
-        }
-
-        @RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
-        private MapClientService getService(AttributionSource source) {
-            if (Utils.isInstrumentationTestMode()) {
-                return mService;
-            }
-            if (!Utils.checkServiceAvailable(mService, TAG)
-                    || !(getCallingUserHandle().isSystem()
-                            || Utils.checkCallerIsSystemOrActiveOrManagedUser(mService, TAG))
-                    || !Utils.checkConnectPermissionForDataDelivery(mService, source, TAG)) {
-                return null;
-            }
-            return mService;
-        }
-
-        @Override
-        public void cleanup() {
-            mService = null;
-        }
-
-        @Override
-        public boolean isConnected(BluetoothDevice device, AttributionSource source) {
-            Log.v(TAG, "isConnected()");
-
-            MapClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.getConnectionState(device) == BluetoothProfile.STATE_CONNECTED;
-        }
-
-        @Override
-        public boolean connect(BluetoothDevice device, AttributionSource source) {
-            Log.v(TAG, "connect()");
-
-            MapClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.connect(device);
-        }
-
-        @Override
-        public boolean disconnect(BluetoothDevice device, AttributionSource source) {
-            Log.v(TAG, "disconnect()");
-
-            MapClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.disconnect(device);
-        }
-
-        @Override
-        public List<BluetoothDevice> getConnectedDevices(AttributionSource source) {
-            Log.v(TAG, "getConnectedDevices()");
-
-            MapClientService service = getService(source);
-            if (service == null) {
-                return Collections.emptyList();
-            }
-
-            return service.getConnectedDevices();
-        }
-
-        @Override
-        public List<BluetoothDevice> getDevicesMatchingConnectionStates(
-                int[] states, AttributionSource source) {
-            Log.v(TAG, "getDevicesMatchingConnectionStates()");
-
-            MapClientService service = getService(source);
-            if (service == null) {
-                return Collections.emptyList();
-            }
-            return service.getDevicesMatchingConnectionStates(states);
-        }
-
-        @Override
-        public int getConnectionState(BluetoothDevice device, AttributionSource source) {
-            Log.v(TAG, "getConnectionState()");
-
-            MapClientService service = getService(source);
-            if (service == null) {
-                return BluetoothProfile.STATE_DISCONNECTED;
-            }
-
-            return service.getConnectionState(device);
-        }
-
-        @Override
-        public boolean setConnectionPolicy(
-                BluetoothDevice device, int connectionPolicy, AttributionSource source) {
-            Log.v(TAG, "setConnectionPolicy()");
-
-            MapClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            return service.setConnectionPolicy(device, connectionPolicy);
-        }
-
-        @Override
-        public int getConnectionPolicy(BluetoothDevice device, AttributionSource source) {
-            Log.v(TAG, "getConnectionPolicy()");
-
-            MapClientService service = getService(source);
-            if (service == null) {
-                return BluetoothProfile.CONNECTION_POLICY_UNKNOWN;
-            }
-
-            return service.getConnectionPolicy(device);
-        }
-
-        @Override
-        public boolean sendMessage(
-                BluetoothDevice device,
-                Uri[] contacts,
-                String message,
-                PendingIntent sentIntent,
-                PendingIntent deliveredIntent,
-                AttributionSource source) {
-            Log.v(TAG, "sendMessage()");
-
-            MapClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            Log.d(TAG, "Checking Permission of sendMessage");
-            mService.enforceCallingOrSelfPermission(
-                    Manifest.permission.SEND_SMS, "Need SEND_SMS permission");
-
-            return service.sendMessage(device, contacts, message, sentIntent, deliveredIntent);
-        }
-
-        @Override
-        public boolean getUnreadMessages(BluetoothDevice device, AttributionSource source) {
-            Log.v(TAG, "getUnreadMessages()");
-
-            MapClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-
-            mService.enforceCallingOrSelfPermission(
-                    Manifest.permission.READ_SMS, "Need READ_SMS permission");
-            return service.getUnreadMessages(device);
-        }
-
-        @Override
-        public int getSupportedFeatures(BluetoothDevice device, AttributionSource source) {
-            Log.v(TAG, "getSupportedFeatures()");
-
-            MapClientService service = getService(source);
-            if (service == null) {
-                Log.d(TAG, "in MapClientService getSupportedFeatures stub, returning 0");
-                return 0;
-            }
-            return service.getSupportedFeatures(device);
-        }
-
-        @Override
-        public boolean setMessageStatus(
-                BluetoothDevice device, String handle, int status, AttributionSource source) {
-            Log.v(TAG, "setMessageStatus()");
-
-            MapClientService service = getService(source);
-            if (service == null) {
-                return false;
-            }
-            mService.enforceCallingOrSelfPermission(
-                    Manifest.permission.READ_SMS, "Need READ_SMS permission");
-            return service.setMessageStatus(device, handle, status);
-        }
-    }
-
     public void aclDisconnected(BluetoothDevice device, int transport) {
         mHandler.post(() -> handleAclDisconnected(device, transport));
     }
@@ -625,22 +371,19 @@ public class MapClientService extends ProfileService {
     private void handleAclDisconnected(BluetoothDevice device, int transport) {
         MceStateMachine stateMachine = mMapInstanceMap.get(device);
         if (stateMachine == null) {
-            Log.e(TAG, "No Statemachine found for the device=" + device.toString());
+            Log.e(TAG, "No StateMachine found for the device=" + device);
             return;
         }
 
         Log.i(
                 TAG,
-                "Received ACL disconnection event, device="
-                        + device.toString()
-                        + ", transport="
-                        + transport);
+                "Received ACL disconnection event, device=" + device + ", transport=" + transport);
 
-        if (transport != BluetoothDevice.TRANSPORT_BREDR) {
+        if (transport != TRANSPORT_BREDR) {
             return;
         }
 
-        if (stateMachine.getState() == BluetoothProfile.STATE_CONNECTED) {
+        if (stateMachine.getState() == STATE_CONNECTED) {
             stateMachine.disconnect();
         }
     }
@@ -653,9 +396,9 @@ public class MapClientService extends ProfileService {
     private void handleSdpSearchRecordReceived(
             BluetoothDevice device, int status, Parcelable record, ParcelUuid uuid) {
         MceStateMachine stateMachine = mMapInstanceMap.get(device);
-        Log.d(TAG, "Received SDP Record, device=" + device.toString() + ", uuid=" + uuid);
+        Log.d(TAG, "Received SDP Record, device=" + device + ", uuid=" + uuid);
         if (stateMachine == null) {
-            Log.e(TAG, "No Statemachine found for the device=" + device.toString());
+            Log.e(TAG, "No StateMachine found for the device=" + device);
             return;
         }
         if (uuid.equals(BluetoothUuid.MAS)) {

@@ -19,8 +19,9 @@
 #ifndef SMP_API_TYPES_H
 #define SMP_API_TYPES_H
 
-#include <base/strings/stringprintf.h>
 #include <bluetooth/log.h>
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/ble_address_with_type.h>
 
 #include <cstdint>
 #include <string>
@@ -29,8 +30,6 @@
 #include "stack/include/bt_octets.h"
 #include "stack/include/btm_status.h"
 #include "stack/include/smp_status.h"
-#include "types/ble_address_with_type.h"
-#include "types/raw_address.h"
 
 /* SMP event type */
 typedef enum : uint8_t {
@@ -103,7 +102,7 @@ typedef enum : uint8_t {
 enum : uint8_t {
   SMP_AUTH_NO_BOND = 0x00,
   /* no MITM, No Bonding, encryption only */
-  SMP_AUTH_NB_ENC_ONLY = 0x00,  //(SMP_AUTH_MASK | BTM_AUTH_SP_NO)
+  SMP_AUTH_NB_ENC_ONLY = 0x00,  // (SMP_AUTH_MASK | BTM_AUTH_SP_NO)
   SMP_AUTH_BOND = (1u << 0),
   SMP_AUTH_UNUSED = (1u << 1),
   /* SMP Authentication requirement */
@@ -113,9 +112,8 @@ enum : uint8_t {
   SMP_H7_SUPPORT_BIT = (1u << 5),
 };
 
-#define SMP_AUTH_MASK                                                          \
-  (SMP_AUTH_BOND | SMP_AUTH_YN_BIT | SMP_SC_SUPPORT_BIT | SMP_KP_SUPPORT_BIT | \
-   SMP_H7_SUPPORT_BIT)
+#define SMP_AUTH_MASK \
+  (SMP_AUTH_BOND | SMP_AUTH_YN_BIT | SMP_SC_SUPPORT_BIT | SMP_KP_SUPPORT_BIT | SMP_H7_SUPPORT_BIT)
 
 /* Secure Connections, no MITM, no Bonding */
 #define SMP_AUTH_SC_ENC_ONLY (SMP_H7_SUPPORT_BIT | SMP_SC_SUPPORT_BIT)
@@ -146,12 +144,11 @@ enum tSMP_KEYS_BITMASK : uint8_t {
 typedef uint8_t tSMP_KEYS;
 
 constexpr tSMP_KEYS SMP_BR_SEC_DEFAULT_KEY =
-    (SMP_SEC_KEY_TYPE_ENC | SMP_SEC_KEY_TYPE_ID | SMP_SEC_KEY_TYPE_CSRK);
+        (SMP_SEC_KEY_TYPE_ENC | SMP_SEC_KEY_TYPE_ID | SMP_SEC_KEY_TYPE_CSRK);
 
 /* default security key distribution value */
 constexpr tSMP_KEYS SMP_SEC_DEFAULT_KEY =
-    (SMP_SEC_KEY_TYPE_ENC | SMP_SEC_KEY_TYPE_ID | SMP_SEC_KEY_TYPE_CSRK |
-     SMP_SEC_KEY_TYPE_LK);
+        (SMP_SEC_KEY_TYPE_ENC | SMP_SEC_KEY_TYPE_ID | SMP_SEC_KEY_TYPE_CSRK | SMP_SEC_KEY_TYPE_LK);
 
 #define SMP_SC_KEY_OUT_OF_RANGE 5 /* out of range */
 typedef uint8_t tSMP_SC_KEY_TYPE;
@@ -211,7 +208,7 @@ typedef union {
   tSMP_CMPL cmplt;
   tSMP_OOB_DATA_TYPE req_oob_type;
   tSMP_LOC_OOB_DATA loc_oob_data;
-  RawAddress id_addr;
+  tBLE_BD_ADDR id_addr_with_type;
 } tSMP_EVT_DATA;
 
 /* AES Encryption output */
@@ -225,18 +222,18 @@ typedef struct {
 /* Security Manager events - Called by the stack when Security Manager related
  * events occur.*/
 typedef tBTM_STATUS(tSMP_CALLBACK)(tSMP_EVT event, const RawAddress& bd_addr,
-                                   const tSMP_EVT_DATA* p_data);
+                                   tSMP_EVT_DATA* p_data);
 /* Security Manager SIRK verification event - Called by the stack when Security
  * Manager requires verification from CSIP.*/
 typedef tBTM_STATUS(tSMP_SIRK_CALLBACK)(const RawAddress& bd_addr);
 
-namespace fmt {
+namespace std {
 template <>
 struct formatter<tSMP_OOB_DATA_TYPE> : enum_formatter<tSMP_OOB_DATA_TYPE> {};
 template <>
 struct formatter<tSMP_SEC_LEVEL> : enum_formatter<tSMP_SEC_LEVEL> {};
 template <>
 struct formatter<tSMP_EVT> : enum_formatter<tSMP_EVT> {};
-}  // namespace fmt
+}  // namespace std
 
 #endif  // SMP_API_TYPES_H

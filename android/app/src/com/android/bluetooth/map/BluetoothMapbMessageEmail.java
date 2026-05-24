@@ -12,6 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.android.bluetooth.map;
 
 import android.bluetooth.BluetoothProfile;
@@ -45,7 +46,7 @@ public class BluetoothMapbMessageEmail extends BluetoothMapbMessage {
         if (mEmailBody == null) {
             mEmailBody = msgPart;
         } else {
-            mEmailBody += msgPart;
+            mEmailBody = mEmailBody + msgPart;
         }
     }
 

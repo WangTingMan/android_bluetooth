@@ -16,15 +16,15 @@
 
 package com.android.bluetooth.avrcpcontroller;
 
+import static java.util.Objects.requireNonNull;
+
 import android.bluetooth.BluetoothDevice;
 import android.net.Uri;
 import android.support.v4.media.MediaBrowserCompat.MediaItem;
 import android.util.Log;
 
-import com.android.bluetooth.Utils;
-import com.android.bluetooth.flags.Flags;
-
-import com.google.common.annotations.VisibleForTesting;
+import com.android.bluetooth.btservice.AdapterService;
+import com.android.internal.annotations.VisibleForTesting;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -55,6 +55,7 @@ public class BrowseTree {
     @VisibleForTesting
     final HashMap<String, BrowseNode> mBrowseMap = new HashMap<String, BrowseNode>();
 
+    private final AdapterService mAdapterService;
     private BrowseNode mCurrentBrowseNode;
     private BrowseNode mCurrentBrowsedPlayer;
     private BrowseNode mCurrentAddressedPlayer;
@@ -67,7 +68,8 @@ public class BrowseTree {
     private final HashMap<String, ArrayList<String>> mCoverArtMap =
             new HashMap<String, ArrayList<String>>();
 
-    BrowseTree(BluetoothDevice device) {
+    BrowseTree(AdapterService adapterService, BluetoothDevice device) {
+        mAdapterService = adapterService;
         if (device == null) {
             mRootNode =
                     new BrowseNode(
@@ -77,15 +79,6 @@ public class BrowseTree {
                                     .setBrowsable(true)
                                     .build());
             mRootNode.setCached(true);
-        } else if (!Flags.randomizeDeviceLevelMediaIds()) {
-            mRootNode =
-                    new BrowseNode(
-                            new AvrcpItem.Builder()
-                                    .setDevice(device)
-                                    .setUuid(ROOT + device.getAddress().toString())
-                                    .setTitle(Utils.getName(device))
-                                    .setBrowsable(true)
-                                    .build());
         } else {
             mRootNode =
                     new BrowseNode(
@@ -95,7 +88,7 @@ public class BrowseTree {
                                             ROOT
                                                     + device.getAddress().toString()
                                                     + UUID.randomUUID().toString())
-                                    .setTitle(Utils.getName(device))
+                                    .setTitle(mAdapterService.getRemoteName(device))
                                     .setBrowsable(true)
                                     .build());
         }
@@ -163,7 +156,7 @@ public class BrowseTree {
         private int mExpectedChildrenCount;
 
         BrowseNode(AvrcpItem item) {
-            Objects.requireNonNull(item, "Cannot have a browse node with a null item");
+            requireNonNull(item);
             mItem = item;
         }
 
@@ -182,14 +175,11 @@ public class BrowseTree {
         }
 
         BrowseNode(BluetoothDevice device) {
-            mIsPlayer = true;
-            String playerKey = PLAYER_PREFIX + device.getAddress().toString();
-
             AvrcpItem.Builder aid = new AvrcpItem.Builder();
             aid.setDevice(device);
-            aid.setUuid(playerKey);
-            aid.setDisplayableName(Utils.getName(device));
-            aid.setTitle(Utils.getName(device));
+            aid.setUuid(ROOT + device.getAddress().toString() + UUID.randomUUID().toString());
+            aid.setDisplayableName(mAdapterService.getRemoteName(device));
+            aid.setTitle(mAdapterService.getRemoteName(device));
             aid.setBrowsable(true);
             mItem = aid.build();
         }
@@ -304,10 +294,11 @@ public class BrowseTree {
         }
 
         synchronized void setCached(boolean cached) {
-            Log.d(TAG, "Set Cache" + cached + "Node" + toString());
+            Log.d(TAG, "Set cached=" + cached + ", node=" + toString());
             mCached = cached;
             if (!cached) {
                 for (BrowseNode child : mChildren) {
+                    child.setCached(false);
                     mBrowseMap.remove(child.getID());
                     indicateCoverArtUnused(child.getID(), child.getCoverArtUuid());
                 }
@@ -353,19 +344,23 @@ public class BrowseTree {
         }
 
         @Override
-        public boolean equals(Object other) {
-            if (!(other instanceof BrowseNode)) {
+        public boolean equals(Object obj) {
+            if (!(obj instanceof BrowseNode other)) {
                 return false;
             }
-            BrowseNode otherNode = (BrowseNode) other;
-            return getID().equals(otherNode.getID());
+            return getID().equals(other.getID());
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(getID());
         }
 
         public synchronized void toTreeString(int depth, StringBuilder sb) {
             for (int i = 0; i <= depth; i++) {
                 sb.append("  ");
             }
-            sb.append(toString() + "\n");
+            sb.append(toString()).append("\n");
             for (BrowseNode node : mChildren) {
                 node.toTreeString(depth + 1, sb);
             }
@@ -373,11 +368,13 @@ public class BrowseTree {
 
         @Override
         public synchronized String toString() {
-            return "[Id: "
+            return "[id="
                     + getID()
-                    + " Name: "
+                    + ", name="
                     + getMediaItem().getDescription().getTitle()
-                    + " Size: "
+                    + ", cached="
+                    + isCached()
+                    + ", size="
                     + mChildren.size()
                     + "]";
         }
@@ -520,9 +517,9 @@ public class BrowseTree {
     /** Dump the state of the AVRCP browse tree */
     public void dump(StringBuilder sb) {
         mRootNode.toTreeString(0, sb);
-        sb.append("\n  Image handles in use (" + mCoverArtMap.size() + "):");
+        sb.append("\n  Image handles in use (").append(mCoverArtMap.size()).append("):");
         for (String handle : mCoverArtMap.keySet()) {
-            sb.append("\n    " + handle);
+            sb.append("\n    ").append(handle);
         }
         sb.append("\n");
     }

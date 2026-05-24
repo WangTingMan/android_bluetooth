@@ -55,6 +55,13 @@ class MediaPlayer(val context: Context) : MediaPlayerImplBase(), Closeable {
         }
     }
 
+    override fun playUpdated(request: Empty, responseObserver: StreamObserver<Empty>) {
+        grpcUnary<Empty>(scope, responseObserver) {
+            MediaPlayerBrowserService.instance.playUpdated()
+            Empty.getDefaultInstance()
+        }
+    }
+
     override fun stop(request: Empty, responseObserver: StreamObserver<Empty>) {
         grpcUnary<Empty>(scope, responseObserver) {
             MediaPlayerBrowserService.instance.stop()
@@ -111,9 +118,16 @@ class MediaPlayer(val context: Context) : MediaPlayerImplBase(), Closeable {
         }
     }
 
+    override fun resetQueue(request: Empty, responseObserver: StreamObserver<Empty>) {
+        grpcUnary<Empty>(scope, responseObserver) {
+            MediaPlayerBrowserService.instance.resetQueue()
+            Empty.getDefaultInstance()
+        }
+    }
+
     override fun getShuffleMode(
         request: Empty,
-        responseObserver: StreamObserver<GetShuffleModeResponse>
+        responseObserver: StreamObserver<GetShuffleModeResponse>,
     ) {
         grpcUnary(scope, responseObserver) {
             val mode: Int = MediaPlayerBrowserService.instance.getShuffleMode()
@@ -130,7 +144,7 @@ class MediaPlayer(val context: Context) : MediaPlayerImplBase(), Closeable {
 
     override fun setShuffleMode(
         request: SetShuffleModeRequest,
-        responseObserver: StreamObserver<Empty>
+        responseObserver: StreamObserver<Empty>,
     ) {
         grpcUnary(scope, responseObserver) {
             when (request.mode!!) {

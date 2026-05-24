@@ -16,11 +16,11 @@
 
 #pragma once
 
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/uuid.h>
 #include <stddef.h>
 
 #include "bluetooth.h"
-#include "bluetooth/uuid.h"
-#include "raw_address.h"
 
 #include <cutils/bitops.h>
 
@@ -42,32 +42,65 @@ typedef enum {
   BTSOCK_L2CAP_LE = 4
 } btsock_type_t;
 
+typedef enum {
+  BTSOCK_ERROR_NONE = 0,
+  BTSOCK_ERROR_SERVER_START_FAILURE = 1,
+  BTSOCK_ERROR_CLIENT_INIT_FAILURE = 2,
+  BTSOCK_ERROR_LISTEN_FAILURE = 3,
+  BTSOCK_ERROR_CONNECTION_FAILURE = 4,
+  BTSOCK_ERROR_OPEN_FAILURE = 5,
+  BTSOCK_ERROR_OFFLOAD_SERVER_NOT_ACCEPTING = 6,
+  BTSOCK_ERROR_OFFLOAD_HAL_OPEN_FAILURE = 7,
+  BTSOCK_ERROR_SEND_TO_APP_FAILURE = 8,
+  BTSOCK_ERROR_RECEIVE_DATA_FAILURE = 9,
+  BTSOCK_ERROR_READ_SIGNALED_FAILURE = 10,
+  BTSOCK_ERROR_WRITE_SIGNALED_FAILURE = 11,
+  BTSOCK_ERROR_SEND_SCN_FAILURE = 12,
+  BTSOCK_ERROR_SCN_ALLOCATION_FAILURE = 13,
+  BTSOCK_ERROR_ADD_SDP_FAILURE = 14,
+  BTSOCK_ERROR_SDP_DISCOVERY_FAILURE = 15,
+} btsock_error_code_t;
+
+/**
+ * Data path used for Bluetooth socket communication.
+ *
+ * NOTE: The values must be same as:
+ *    - BluetoothSocketSettings.DATA_PATH_NO_OFFLOAD = 0
+ *    - BluetoothSocketSettings.DATA_PATH_HARDWARE_OFFLOAD = 1
+ */
+typedef enum {
+  BTSOCK_DATA_PATH_NO_OFFLOAD = 0,
+  BTSOCK_DATA_PATH_HARDWARE_OFFLOAD = 1,
+} btsock_data_path_t;
+
 /** Represents the standard BT SOCKET interface. */
 #pragma pack(1)
 typedef struct {
-  short size;
+  int16_t size;
   RawAddress bd_addr;
   int channel;
   int status;
 
   // The writer must make writes using a buffer of this maximum size
   // to avoid loosing data. (L2CAP only)
-  unsigned short max_tx_packet_size;
+  uint16_t max_tx_packet_size;
 
   // The reader must read using a buffer of at least this size to avoid
   // loosing data. (L2CAP only)
-  unsigned short max_rx_packet_size;
+  uint16_t max_rx_packet_size;
 
   // The connection uuid. (L2CAP only)
   uint64_t conn_uuid_lsb;
   uint64_t conn_uuid_msb;
 
+  // Socket ID in connected state
+  uint64_t socket_id;
+
 #ifdef _MSC_VER
   int connect_id;
 #endif
 
-} sock_connect_signal_t;
-#pragma pack()
+} /*__attribute__((packed))*/ sock_connect_signal_t;
 
 #ifdef _MSC_VER
 typedef struct
@@ -89,6 +122,12 @@ typedef void (*bt_sock_callback_t)(bt_sock_callback_type_t, int, void*, int);
 #endif
 
 typedef struct {
+  uint16_t size;
+  uint16_t is_accepting;
+} /*__attribute__((packed))*/ sock_accept_signal_t;
+#pragma pack()
+
+typedef struct {
   /** set to size of this struct*/
   size_t size;
 
@@ -102,8 +141,9 @@ typedef struct {
    * socket. This is used for traffic accounting purposes.
    */
   bt_status_t (*listen)(btsock_type_t type, const char* service_name,
-                        const bluetooth::Uuid* service_uuid, int channel,
-                        int* sock_fd, int flags, int callingUid);
+                        const bluetooth::Uuid* service_uuid, int channel, int* sock_fd, int flags,
+                        int callingUid, btsock_data_path_t data_path, const char* socket_name,
+                        uint64_t hub_id, uint64_t endpoint_id, int max_rx_packet_size);
 
   /**
    * Connect to a RFCOMM UUID channel of remote device, It returns the socket fd
@@ -112,9 +152,10 @@ typedef struct {
    * which is requesting the socket. This is used for traffic accounting
    * purposes.
    */
-  bt_status_t (*connect)(const RawAddress* bd_addr, btsock_type_t type,
-                         const bluetooth::Uuid* uuid, int channel, int* sock_fd,
-                         int flags, int callingUid);
+  bt_status_t (*connect)(const RawAddress* bd_addr, btsock_type_t type, const bluetooth::Uuid* uuid,
+                         int channel, int* sock_fd, int flags, int callingUid,
+                         btsock_data_path_t data_path, const char* socket_name, uint64_t hub_id,
+                         uint64_t endpoint_id, int max_rx_packet_size);
 
   /**
    * Set the LE Data Length value to this connected peer to the
@@ -130,10 +171,9 @@ typedef struct {
    * This API allows the host to start the control request while it works as an
    * RFCOMM server.
    */
-  bt_status_t (*control_req)(uint8_t dlci, const RawAddress& bd_addr,
-                             uint8_t modem_signal, uint8_t break_signal,
-                             uint8_t discard_buffers, uint8_t break_signal_seq,
-                             bool fc);
+  bt_status_t (*control_req)(uint8_t dlci, const RawAddress& bd_addr, uint8_t modem_signal,
+                             uint8_t break_signal, uint8_t discard_buffers,
+                             uint8_t break_signal_seq, bool fc);
 
   /**
    * Disconnect all RFCOMM and L2CAP socket connections with the associated
@@ -149,16 +189,15 @@ typedef struct {
   /**
    * Get L2CAP remote channel ID with the associated connection uuid.
    */
-  bt_status_t (*get_l2cap_remote_cid)(bluetooth::Uuid& conn_uuid,
-                                      uint16_t* cid);
+  bt_status_t (*get_l2cap_remote_cid)(bluetooth::Uuid& conn_uuid, uint16_t* cid);
 
 #ifdef _MSC_VER
 
-  void (*set_bt_sock_callback)(bt_sock_callback_t callback);
+void (*set_bt_sock_callback)(bt_sock_callback_t callback);
 
-  void (*send_data_to_remote)(int connect_id, std::shared_ptr<std::vector<uint8_t>> a_data);
+void (*send_data_to_remote)(int connect_id, std::shared_ptr<std::vector<uint8_t>> a_data);
 
-  void (*disconnect_rfc_by_connect_id)(int connect_id);
+void (*disconnect_rfc_by_connect_id)(int connect_id);
 #endif
 
 } btsock_interface_t;
@@ -168,9 +207,12 @@ __END_DECLS
 #if __has_include(<bluetooth/log.h>)
 #include <bluetooth/log.h>
 
-namespace fmt {
+namespace std {
 template <>
 struct formatter<btsock_type_t> : enum_formatter<btsock_type_t> {};
-}  // namespace fmt
+
+template <>
+struct formatter<btsock_data_path_t> : enum_formatter<btsock_data_path_t> {};
+}  // namespace std
 
 #endif  // __has_include(<bluetooth/log.h>)

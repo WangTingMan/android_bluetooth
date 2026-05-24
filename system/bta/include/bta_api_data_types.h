@@ -18,14 +18,15 @@
 
 #pragma once
 
-#include <base/strings/stringprintf.h>
 #include <bluetooth/log.h>
+#include <bluetooth/types/address.h>
+#include <bluetooth/types/ble_address_with_type.h>
 
 #include <cstdint>
 #include <string>
 
 #include "macros.h"
-#include "types/raw_address.h"
+#include "stack/btm/btm_sec_int_types.h"
 
 /*****************************************************************************
  *  Constants and data types
@@ -50,20 +51,22 @@ inline std::string bta_status_text(const tBTA_STATUS& status) {
     CASE_RETURN_TEXT(BTA_NO_RESOURCES);
     CASE_RETURN_TEXT(BTA_WRONG_MODE);
     default:
-      return base::StringPrintf("UNKNOWN[%d]", status);
+      return std::format("UNKNOWN[{}]", static_cast<uint8_t>(status));
   }
 }
 
 typedef struct {
   RawAddress pairing_bda;
   RawAddress id_addr;
+  tBLE_ADDR_TYPE id_addr_type;
 } tBTA_DM_PROC_ID_ADDR;
 
 typedef struct {
   RawAddress bd_addr;
+  tBTM_KEY_MISSING_REASON reason;
 } tBTA_DM_KEY_MISSING;
 
-namespace fmt {
+namespace std {
 template <>
 struct formatter<tBTA_STATUS> : enum_formatter<tBTA_STATUS> {};
-}  // namespace fmt
+}  // namespace std

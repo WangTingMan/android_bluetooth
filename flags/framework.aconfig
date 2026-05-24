@@ -1,68 +1,73 @@
 package: "com.android.bluetooth.flags"
-container: "com.android.btservices"
+container: "com.android.bt"
 
 flag {
-    name: "override_context_to_specify_device_id"
+    name: "set_component_available_fix"
     namespace: "bluetooth"
-    description: "In Bluetooth Manager, override the context with createDeviceContext to pin a specific DeviceId"
-    bug: "349657939"
+    description: "Ensure the state in PackageManager has DISABLED to ENABLED to trigger PACKAGE_CHANGED"
+    bug: "391084450"
     metadata {
         purpose: PURPOSE_BUGFIX
     }
 }
 
 flag {
-    name: "support_metadata_device_types_apis"
+    name: "fix_started_module_race"
     is_exported: true
     namespace: "bluetooth"
-    description: "Support more device types in bt device metadata"
-    bug: "289584302"
-}
-
-flag {
-    name: "support_exclusive_manager"
-    is_exported: true
-    namespace: "bluetooth"
-    description: "Support setting/retrieving the exclusive manager app for a BluetoothDevice"
-    bug: "319716512"
-}
-
-flag {
-    name: "key_missing_broadcast"
-    is_exported: true
-    namespace: "bluetooth"
-    description: "Broadcast when remote device it lost bond"
-    bug: "311447399"
-}
-
-flag {
-    name: "keep_stopped_media_browser_service"
-    namespace: "bluetooth"
-    description: "Do not start stopped media browser services"
-    bug: "314855224"
-}
-
-flag {
-    name: "identity_address_null_if_unknown"
-    namespace: "bluetooth"
-    description: "Return null for identity address if identity address is not known"
-    bug: "317120534"
-}
-
-flag {
-    name: "get_address_type_api"
-    is_exported: true
-    namespace: "bluetooth"
-    description: "Change visibility of BluetoothDevice#getAddressType API to public"
-    bug: "321120941"
-}
-
-flag {
-    name: "remove_address_map_on_unbond"
-    namespace: "bluetooth"
-    description: "Removes the address map when the bond is removed"
-    bug: "335465028"
+    description: "Fix race in modifying and accessing started modules"
+    bug: "394488590"
     metadata {
         purpose: PURPOSE_BUGFIX
     }
+}
+
+flag {
+    name: "fix_unhandled_bqr_subevent"
+    namespace: "bluetooth"
+    description: "Fix Unhandled BQR subevent on bqr report"
+    bug: "397854116"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "same_handler_for_all_modules"
+    namespace: "bluetooth"
+    description: "Update all modules to use the same handler"
+    bug: "398195386"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "hci_instance_name_use_injected"
+    namespace: "bluetooth"
+    description: "Inject service manager bluetooth hci instance name"
+    bug: "413484664"
+}
+
+flag {
+    name: "add_profile_as_intent_extra"
+    is_exported: true
+    namespace: "bluetooth"
+    description: "Add Profile as intent extra"
+    bug: "419074085"
+}
+
+flag {
+    name: "add_bond_loss_reason"
+    namespace: "bluetooth"
+    description: "Add bond loss reason to ACTION_KEY_MISSING Intent"
+    bug: "421377117"
+}
+
+flag {
+    name: "key_missing_count_api"
+    is_exported: true
+    namespace: "bluetooth"
+    description: "Promote getKeyMissingCount as public API"
+    bug: "421357557"
 }

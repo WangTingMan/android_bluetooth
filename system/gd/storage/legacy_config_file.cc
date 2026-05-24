@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@
 
 #include "common/strings.h"
 #include "os/files.h"
-#include "os/log.h"
 #include "storage/device.h"
 
 namespace bluetooth {
@@ -32,7 +31,7 @@ namespace storage {
 
 LegacyConfigFile::LegacyConfigFile(std::string path) : path_(std::move(path)) {
   log::assert_that(!path_.empty(), "assert failed: !path_.empty()");
-};
+}
 
 std::optional<ConfigCache> LegacyConfigFile::Read(size_t temp_devices_capacity) {
   log::assert_that(!path_.empty(), "assert failed: !path_.empty()");

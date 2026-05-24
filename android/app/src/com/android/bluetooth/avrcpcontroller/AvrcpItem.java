@@ -269,33 +269,37 @@ public class AvrcpItem {
             return true;
         }
 
-        if (!(o instanceof AvrcpItem)) {
+        if (!(o instanceof AvrcpItem other)) {
             return false;
         }
 
-        AvrcpItem other = ((AvrcpItem) o);
         return Objects.equals(mUuid, other.getUuid())
                 && Objects.equals(mDevice, other.getDevice())
-                && Objects.equals(mUid, other.getUid())
-                && Objects.equals(mItemType, other.getItemType())
-                && Objects.equals(mType, other.getType())
+                && mUid == other.getUid()
+                && mItemType == other.getItemType()
+                && mType == other.getType()
                 && Objects.equals(mTitle, other.getTitle())
                 && Objects.equals(mDisplayableName, other.getDisplayableName())
                 && Objects.equals(mArtistName, other.getArtistName())
                 && Objects.equals(mAlbumName, other.getAlbumName())
-                && Objects.equals(mTrackNumber, other.getTrackNumber())
-                && Objects.equals(mTotalNumberOfTracks, other.getTotalNumberOfTracks())
+                && mTrackNumber == other.getTrackNumber()
+                && mTotalNumberOfTracks == other.getTotalNumberOfTracks()
                 && Objects.equals(mGenre, other.getGenre())
-                && Objects.equals(mPlayingTime, other.getPlayingTime())
+                && mPlayingTime == other.getPlayingTime()
                 && Objects.equals(mCoverArtHandle, other.getCoverArtHandle())
-                && Objects.equals(mPlayable, other.isPlayable())
-                && Objects.equals(mBrowsable, other.isBrowsable())
+                && mPlayable == other.isPlayable()
+                && mBrowsable == other.isBrowsable()
                 && Objects.equals(mImageUri, other.getCoverArtLocation());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(mUuid);
     }
 
     /** Builder for an AvrcpItem */
     public static class Builder {
-        private static final String TAG = "AvrcpItem.Builder";
+        private static final String TAG = AvrcpItem.TAG + "." + Builder.class.getSimpleName();
 
         // Attribute ID Values from AVRCP Specification
         private static final int MEDIA_ATTRIBUTE_TITLE = 0x01;
@@ -307,7 +311,7 @@ public class AvrcpItem {
         private static final int MEDIA_ATTRIBUTE_PLAYING_TIME = 0x07;
         private static final int MEDIA_ATTRIBUTE_COVER_ART_HANDLE = 0x08;
 
-        private AvrcpItem mAvrcpItem = new AvrcpItem();
+        private final AvrcpItem mAvrcpItem = new AvrcpItem();
 
         /**
          * Initialize all relevant AvrcpItem internals from the AVRCP specification defined set of
@@ -323,42 +327,34 @@ public class AvrcpItem {
             for (int i = 0; i < attributeCount; i++) {
                 Log.d(TAG, attrIds[i] + " = " + attrMap[i]);
                 switch (attrIds[i]) {
-                    case MEDIA_ATTRIBUTE_TITLE:
-                        mAvrcpItem.mTitle = attrMap[i];
-                        break;
-                    case MEDIA_ATTRIBUTE_ARTIST_NAME:
-                        mAvrcpItem.mArtistName = attrMap[i];
-                        break;
-                    case MEDIA_ATTRIBUTE_ALBUM_NAME:
-                        mAvrcpItem.mAlbumName = attrMap[i];
-                        break;
-                    case MEDIA_ATTRIBUTE_TRACK_NUMBER:
+                    case MEDIA_ATTRIBUTE_TITLE -> mAvrcpItem.mTitle = attrMap[i];
+                    case MEDIA_ATTRIBUTE_ARTIST_NAME -> mAvrcpItem.mArtistName = attrMap[i];
+                    case MEDIA_ATTRIBUTE_ALBUM_NAME -> mAvrcpItem.mAlbumName = attrMap[i];
+                    case MEDIA_ATTRIBUTE_TRACK_NUMBER -> {
                         try {
                             mAvrcpItem.mTrackNumber = Long.valueOf(attrMap[i]);
                         } catch (java.lang.NumberFormatException e) {
                             // If Track Number doesn't parse, leave it unset
                         }
-                        break;
-                    case MEDIA_ATTRIBUTE_TOTAL_TRACK_NUMBER:
+                    }
+                    case MEDIA_ATTRIBUTE_TOTAL_TRACK_NUMBER -> {
                         try {
                             mAvrcpItem.mTotalNumberOfTracks = Long.valueOf(attrMap[i]);
                         } catch (java.lang.NumberFormatException e) {
                             // If Total Track Number doesn't parse, leave it unset
                         }
-                        break;
-                    case MEDIA_ATTRIBUTE_GENRE:
-                        mAvrcpItem.mGenre = attrMap[i];
-                        break;
-                    case MEDIA_ATTRIBUTE_PLAYING_TIME:
+                    }
+                    case MEDIA_ATTRIBUTE_GENRE -> mAvrcpItem.mGenre = attrMap[i];
+                    case MEDIA_ATTRIBUTE_PLAYING_TIME -> {
                         try {
                             mAvrcpItem.mPlayingTime = Long.valueOf(attrMap[i]);
                         } catch (java.lang.NumberFormatException e) {
                             // If Playing Time doesn't parse, leave it unset
                         }
-                        break;
-                    case MEDIA_ATTRIBUTE_COVER_ART_HANDLE:
-                        mAvrcpItem.mCoverArtHandle = parseImageHandle(attrMap[i]);
-                        break;
+                    }
+                    case MEDIA_ATTRIBUTE_COVER_ART_HANDLE ->
+                            mAvrcpItem.mCoverArtHandle = parseImageHandle(attrMap[i]);
+                    default -> {} // Nothing to do
                 }
             }
             return this;
