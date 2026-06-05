@@ -78,7 +78,21 @@ future_t* device_iot_config_module_init(void) {
   if (device_iot_config_is_factory_reset()) {
     device_iot_config_delete_files();
   }
-
+#ifdef _MSC_VER
+  char buffer[BUILD_SANITY_PROPERTY_VALUE_MAX] = { 0 };
+  int size = osi_property_get( "persist.bluetooth.bt_stack_path", buffer, nullptr );
+  std::string original_path = buffer;
+  original_path.append( "/bt_remote_dev_info.conf" );
+  config = config_new( original_path.c_str() );
+  device_iot_config_source = ORIGINAL;
+  if (!config) {
+    log::warn( "Unable to load config file: {}; using backup.", IOT_CONFIG_FILE_PATH );
+    original_path = buffer;
+    original_path.append( "/bt_remote_dev_info.bak" );
+    config = config_new( original_path.c_str() );
+    device_iot_config_source = BACKUP;
+  }
+#else
   config = config_new(IOT_CONFIG_FILE_PATH);
   device_iot_config_source = ORIGINAL;
   if (!config) {
@@ -86,7 +100,7 @@ future_t* device_iot_config_module_init(void) {
     config = config_new(IOT_CONFIG_BACKUP_PATH);
     device_iot_config_source = BACKUP;
   }
-
+#endif
   if (!config) {
     log::error("Unable to load bak file; creating empty config.");
     config = config_new_empty();

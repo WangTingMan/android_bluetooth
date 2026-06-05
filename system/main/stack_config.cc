@@ -68,7 +68,7 @@ static future_t* init() {
 #endif  // defined(__ANDROID__)
 #ifdef _MSC_VER
   char buffer[BUILD_SANITY_PROPERTY_VALUE_MAX] = { 0 };
-  int size = osi_property_get( "persist.bluetooth.bt_stack_path", buffer, nullptr );
+  int size = osi_property_get( "persist.bluetooth.bt_stack_config_path", buffer, nullptr );
   if( size > 0 )
   {
     path = buffer;
