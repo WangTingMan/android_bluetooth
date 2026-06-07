@@ -668,7 +668,7 @@ class LeShimAclConnection : public ShimAclConnection,
 public:
   LeShimAclConnection(SendDataUpwards send_data_upwards, OnDisconnect on_disconnect,
                       const shim::acl_le_link_interface_t& interface, os::Handler* handler,
-                      std::unique_ptr<hci::acl_manager::LeAclConnection> connection,
+                      std::shared_ptr<hci::acl_manager::LeAclConnection> connection,
                       std::chrono::time_point<std::chrono::system_clock> creation_time)
       : ShimAclConnection(connection->GetHandle(), send_data_upwards, handler,
                           connection->GetAclQueueEnd(), creation_time),
@@ -779,7 +779,7 @@ public:
 private:
   OnDisconnect on_disconnect_;
   const shim::acl_le_link_interface_t interface_;
-  std::unique_ptr<hci::acl_manager::LeAclConnection> connection_;
+  std::shared_ptr<hci::acl_manager::LeAclConnection> connection_;
 };
 
 struct shim::Acl::impl {
@@ -825,7 +825,11 @@ struct shim::Acl::impl {
 
   void EnqueueLePacket(HciHandle handle, std::unique_ptr<packet::RawBuilder> packet) {
     log::assert_that(IsLeAcl(handle), "handle {} is not a LE connection", handle);
+#ifdef _MSC_VER
+    Stack::GetInstance()->HandleOutgoingLEAclPacket( handle, std::move( packet ) );
+#else
     handle_to_le_connection_map_[handle]->EnqueuePacket(std::move(packet));
+#endif
   }
 
   void DisconnectClassicConnections(std::promise<void> promise) {
@@ -1449,7 +1453,7 @@ void shim::Acl::OnConnectFail(hci::Address address, hci::ErrorCode reason, bool 
 }
 
 void shim::Acl::OnLeConnectSuccess(hci::AddressWithType address_with_type,
-                                   std::unique_ptr<hci::acl_manager::LeAclConnection> connection) {
+                                   std::shared_ptr<hci::acl_manager::LeAclConnection> connection) {
   log::assert_that(connection != nullptr, "assert failed: connection != nullptr");
   auto handle = connection->GetHandle();
 

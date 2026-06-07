@@ -55,7 +55,7 @@ public:
 
   // hci::acl_manager::LeConnectionCallbacks
   void OnLeConnectSuccess(hci::AddressWithType,
-                          std::unique_ptr<hci::acl_manager::LeAclConnection>) override;
+                          std::shared_ptr<hci::acl_manager::LeAclConnection>) override;
   void OnLeConnectFail(hci::AddressWithType, hci::ErrorCode reason) override;
   void OnLeLinkDisconnected(uint16_t handle, hci::ErrorCode reason);
   void GetConnectionLocalAddress(uint16_t handle, bool ota_address,

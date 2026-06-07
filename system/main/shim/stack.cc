@@ -387,6 +387,10 @@ void Stack::HandleOutgoingClassicAclPacket( uint16_t handle, std::unique_ptr<pac
 {
   pimpl_->round_robin_scheduler_.ScheduleOutgoingAclPacket( handle, std::move( packet ) );
 }
+void Stack::HandleOutgoingLEAclPacket( uint16_t handle, std::unique_ptr<packet::RawBuilder> packet )
+{
+  pimpl_->round_robin_scheduler_.ScheduleOutgoingAclPacket( handle, std::move( packet ) );
+}
 #endif
 
 void Stack::handle_start_up(std::promise<void> promise) {

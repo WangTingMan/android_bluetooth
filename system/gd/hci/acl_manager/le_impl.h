@@ -130,14 +130,14 @@ inline std::string connectability_state_machine_text(const ConnectabilityState& 
 
 struct le_acl_connection {
   le_acl_connection(AddressWithType remote_address,
-                    std::unique_ptr<LeAclConnection> pending_connection,
+                    std::shared_ptr<LeAclConnection> pending_connection,
                     AclConnection::QueueDownEnd* queue_down_end, os::Handler* handler)
       : remote_address_(remote_address),
         pending_connection_(std::move(pending_connection)),
         assembler_(new acl_manager::assembler(remote_address, queue_down_end, handler)) {}
   ~le_acl_connection() {}
   AddressWithType remote_address_;
-  std::unique_ptr<LeAclConnection> pending_connection_;
+  std::shared_ptr<LeAclConnection> pending_connection_;
   std::shared_ptr<acl_manager::assembler> assembler_;
   LeConnectionManagementCallbacks* le_connection_management_callbacks_ = nullptr;
 };
@@ -284,7 +284,7 @@ private:
               le_connection_management_callbacks;
     }
 
-    std::unique_ptr<LeAclConnection> record_peripheral_data_and_extract_pending_connection(
+    std::shared_ptr<LeAclConnection> record_peripheral_data_and_extract_pending_connection(
             uint16_t handle, DataAsPeripheral data) {
       std::unique_lock<std::mutex> lock(le_acl_connections_guard_);
       auto connection = le_acl_connections_.find(handle);
@@ -713,7 +713,7 @@ public:
         le_client_handler_->Post(common::BindOnce(&LeConnectionCallbacks::OnLeConnectSuccess,
                                                   common::Unretained(le_client_callbacks_),
                                                   connection->GetRemoteAddress(),
-                                                  std::move(connection)));
+                                                  (connection)));
         return;
       }
 
@@ -722,7 +722,7 @@ public:
       // This is added to handle the LTK and LE Advertising Set Terminated events in the same
       // order in cases where LTK comes very close to LE Advertising Set Terminated event.
       le_client_callbacks_->OnLeConnectSuccess(connection->GetRemoteAddress(),
-                                                std::move(connection));
+                                                (connection));
     }
   }
 

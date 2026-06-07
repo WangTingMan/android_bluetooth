@@ -61,18 +61,6 @@ public:
     m_incoming_packets.push_back( packet );
     dequeue_and_route_acl_packet_to_connection();
   }
-
-  void HandleOutgoingAclPacket( uint16_t handle,
-    std::unique_ptr<packet::RawBuilder> packet )
-  {
-    /*
-    GetHandler()->Post( common::BindOnce( &RoundRobinScheduler::ScheduleOutgoingAclPacket,
-      common::Unretained( pimpl_->round_robin_scheduler_ ),
-      handle,
-      std::move( packet ) ) );
-      */
-  }
-
 #endif
 
 private:

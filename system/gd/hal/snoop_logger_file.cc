@@ -31,6 +31,10 @@
 using bluetooth::os::fake_timer::fake_timerfd_get_clock;
 #endif
 
+#ifdef _MSC_VER
+#include <android/log.h>
+#endif
+
 namespace bluetooth::hal {
 
 #ifdef __ANDROID__
@@ -63,6 +67,11 @@ SnoopLoggerFile::SnoopLoggerFile(std::filesystem::path snoop_log_path, int max_p
 void SnoopLoggerFile::OpenNextSnoopLogFile() {
   CloseCurrentSnoopLogFile();
 
+#ifdef _MSC_VER
+  std::string snoop_file_name = snoop_log_path_.string();
+  snoop_file_name = __rotate_file( snoop_file_name, 10 );
+#endif
+
   auto last_file_path = get_last_log_path(snoop_log_path_);
 
 #ifdef __ANDROID__
@@ -88,7 +97,11 @@ void SnoopLoggerFile::OpenNextSnoopLogFile() {
     }
   }
   // do not use std::ios::app as we want override the existing file
+#ifdef _MSC_VER
+  btsnoop_ostream_.open( snoop_file_name, std::ios::binary | std::ios::out );
+#else
   btsnoop_ostream_.open(snoop_log_path_.string(), std::ios::binary | std::ios::out);
+#endif
 
 #ifdef USE_FAKE_TIMERS
   file_creation_time = fake_timerfd_get_clock();

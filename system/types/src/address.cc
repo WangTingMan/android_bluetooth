@@ -38,7 +38,9 @@ std::string RawAddress::ToRedactedStringForLogging() const {
   if (*this == RawAddress::kAny || *this == RawAddress::kEmpty) {
     return ToString();
   }
-
+#ifdef _MSC_VER
+  return ToString();
+#endif
   return std::format("xx:xx:xx:xx:{:02x}:{:02x}", address[4], address[5]);
 }
 

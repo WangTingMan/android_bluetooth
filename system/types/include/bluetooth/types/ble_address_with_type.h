@@ -115,7 +115,11 @@ struct tBLE_BD_ADDR {
   }
 
   std::string ToRedactedStringForLogging() const {
+#ifdef _MSC_VER
+    return bda.ToString() + "[" + AddressTypeText( type ) + "]";
+#else
     return bda.ToRedactedStringForLogging() + "[" + AddressTypeText(type) + "]";
+#endif
   }
 
   bool operator==(const tBLE_BD_ADDR rhs) const { return rhs.type == type && rhs.bda == bda; }

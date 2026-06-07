@@ -89,6 +89,7 @@ public:
 
 #ifdef _MSC_VER
   void HandleOutgoingClassicAclPacket( uint16_t handle, std::unique_ptr<packet::RawBuilder> packet );
+  void HandleOutgoingLEAclPacket( uint16_t handle, std::unique_ptr<packet::RawBuilder> packet );
 #endif
 
 private:
