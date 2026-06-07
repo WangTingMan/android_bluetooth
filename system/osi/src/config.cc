@@ -304,11 +304,13 @@ bool config_save(const config_t& config, const std::string& filename) {
     goto error;
   }
 
+#ifndef _MSC_VER
   dir_fd = open(directoryname.c_str(), O_RDONLY);
   if (dir_fd < 0) {
     log::error("unable to open dir '{}': {}", directoryname, strerror(errno));
     goto error;
   }
+#endif
 
   fp = fopen(temp_filename.c_str(), "wt");
   if (!fp) {
@@ -367,11 +369,11 @@ bool config_save(const config_t& config, const std::string& filename) {
   if (fsync(dir_fd) < 0) {
     log::warn("unable to fsync dir '{}': {}", directoryname, strerror(errno));
   }
-#endif
   if (close(dir_fd) < 0) {
     log::error("unable to close dir '{}': {}", directoryname, strerror(errno));
     goto error;
   }
+#endif
 
   return true;
 

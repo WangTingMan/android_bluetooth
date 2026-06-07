@@ -216,10 +216,26 @@ void device_iot_config_write(uint16_t event, UNUSED_ATTR char* p_param) {
     device_iot_config_set_modified_time();
   }
 
+#ifdef _MSC_VER
+  char buffer[BUILD_SANITY_PROPERTY_VALUE_MAX] = { 0 };
+  int size = osi_property_get( "persist.bluetooth.bt_stack_path", buffer, nullptr );
+  std::string original_path = buffer;
+  std::string bak_path = buffer;
+  bak_path.append( "/bt_remote_dev_info.bak" );
+  original_path.append( "/bt_remote_dev_info.conf" );
+#endif
+
+#ifdef _MSC_VER
+  rename( original_path.c_str(), bak_path.c_str() );
+  device_iot_config_restrict_device_num( *config );
+  device_iot_config_sections_sort_by_entry_key( *config, device_iot_config_compare_key );
+  config_save( *config, original_path.c_str() );
+#else
   rename(IOT_CONFIG_FILE_PATH, IOT_CONFIG_BACKUP_PATH);
   device_iot_config_restrict_device_num(*config);
   device_iot_config_sections_sort_by_entry_key(*config, device_iot_config_compare_key);
   config_save(*config, IOT_CONFIG_FILE_PATH);
+#endif
 }
 
 void device_iot_config_sections_sort_by_entry_key(config_t& config, compare_func comp) {

@@ -46,8 +46,10 @@ void vlog(Level level, char const* tag, source_location location, std::string_vi
   // In order to have consistent logs we include it manually in the log
   // message.
   truncating_buffer<kBufferSize> buffer;
+#ifndef _MSC_VER
   std::format_to(std::back_insert_iterator(buffer), "{}:{} {}: ", file_name, location.line,
                  location.function_name);
+#endif
   std::vformat_to(std::back_insert_iterator(buffer), fmt, vargs);
 
   // Send message to liblog.
@@ -56,8 +58,8 @@ void vlog(Level level, char const* tag, source_location location, std::string_vi
           .buffer_id = LOG_ID_MAIN,
           .priority = static_cast<android_LogPriority>(level),
           .tag = tag,
-          .file = nullptr,
-          .line = 0,
+          .file = location.file_name,
+          .line = static_cast<uint32_t>( location.line ),
           .message = buffer.c_str(),
   };
   __android_log_write_log_message(&message);
