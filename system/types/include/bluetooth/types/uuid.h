@@ -23,6 +23,18 @@
 #include <array>
 #include <string>
 
+#ifndef LIBBLUETOOTH_API
+#ifdef _MSC_VER
+#if defined(LIBBLUETOOTH_IMPLEMENTATION)
+#define LIBBLUETOOTH_API __declspec(dllexport)
+#else
+#define LIBBLUETOOTH_API __declspec(dllimport)
+#endif  // defined(LIBBLUETOOTH_IMPLEMENTATION)
+#else
+#define LIBBLUETOOTH_API
+#endif
+#endif
+
 namespace bluetooth {
 
 // This class is representing Bluetooth UUIDs across whole stack.
@@ -33,7 +45,7 @@ namespace bluetooth {
 // 3. Bytes representing UUID coming from lower layer, HCI packets, are Little
 //    Endian.
 // 4. UUID in storage is always string.
-class Uuid final {
+class LIBBLUETOOTH_API Uuid final {
 public:
   static constexpr size_t kNumBytes128 = 16;
   static constexpr size_t kNumBytes32 = 4;

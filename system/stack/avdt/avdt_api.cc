@@ -976,6 +976,42 @@ uint16_t AVDT_GetL2CapChannel(uint8_t handle) {
   return lcid;
 }
 
+#ifdef _MSC_VER
+std::string avdtp_signal_type_to_string( uint16_t a_type )
+{
+    switch( a_type )
+    {
+    case AVDT_SIG_DISCOVER:
+        return "AVDTP_DISCOVER";
+    case AVDT_SIG_GETCAP:
+        return "AVDTP_GET_CAPABILITIES";
+    case AVDT_SIG_SETCONFIG:
+        return "AVDTP_SET_CONFIGURATION";
+    case AVDT_SIG_GETCONFIG:
+        return "AVDTP_GET_CONFIGURATION";
+    case AVDT_SIG_RECONFIG:
+        return "AVDTP_RECONFIGURE";
+    case AVDT_SIG_OPEN:
+        return "AVDTP_OPEN";
+    case AVDT_SIG_START:
+        return "AVDTP_START";
+    case AVDT_SIG_CLOSE:
+        return "AVDTP_CLOSE";
+    case AVDT_SIG_SUSPEND:
+        return "AVDTP_SUSPEND";
+    case AVDT_SIG_ABORT:
+        return "AVDTP_ABORT";
+    case AVDT_SIG_SECURITY:
+        return "AVDTP_SECURITY_CONTROL";
+    case AVDT_SIG_GET_ALLCAP:
+        return "AVDTP_GET_ALL_CAPABILITIES";
+    case AVDT_SIG_DELAY_RPT:
+        return "AVDTP_DELAYREPORT";
+    }
+    return "Unknown AVDTP command";
+}
+#endif
+
 void stack_debug_avdtp_api_dump(int fd) {
   dprintf(fd, "\nAVDTP Stack State:\n");
   dprintf(fd, "  AVDTP signalling L2CAP channel MTU: %d\n", avdtp_cb.rcb.ctrl_mtu);

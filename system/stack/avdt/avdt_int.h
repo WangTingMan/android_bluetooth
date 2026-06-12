@@ -964,6 +964,10 @@ void avdt_ccb_rsp_ccb_timer_timeout(void* data);
 void avdt_scb_transport_channel_timer_timeout(void* data);
 void avdt_init_delay_report_timer_timeout(void* data);
 
+#ifdef _MSC_VER
+std::string avdtp_signal_type_to_string( uint16_t a_type );
+#endif
+
 /*****************************************************************************
  * macros
  ****************************************************************************/

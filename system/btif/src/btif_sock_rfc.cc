@@ -612,7 +612,13 @@ static bool send_app_scn(rfc_slot_t* slot) {
 #ifdef _MSC_VER
   if (s_sock_callback)
   {
-    s_sock_callback( RFCOMM_SCN_NOTIFICATION, slot->app_uid, &slot->scn, sizeof( slot->scn ) );
+    rfcomm_port_result_t listen_result;
+    listen_result.port = slot->scn;
+    listen_result.listen_uuid = slot->service_uuid;
+    listen_result.is_local = slot->f.server;
+    listen_result.remote_addr = slot->addr;
+    s_sock_callback( RFCOMM_SCN_NOTIFICATION, slot->app_uid, &listen_result,
+      sizeof( rfcomm_port_result_t ) );
     return true;
   }
   return false;
@@ -643,6 +649,7 @@ static bool send_app_connect_signal(int fd, const RawAddress* addr, int channel,
   {
     cs.connect_id = handle_id;
     s_sock_callback( SOCK_CONNECTION_SIGNAL, app_id, &cs, sizeof( cs ) );
+    /*use sock_send_fd to send connect signal message and the socketpair fd information*/
     return true;
   }
   return false;
@@ -651,8 +658,8 @@ static bool send_app_connect_signal(int fd, const RawAddress* addr, int channel,
   if (send_fd == INVALID_FD) {
     return sock_send_all(fd, (const uint8_t*)&cs, sizeof(cs)) == sizeof(cs);
   }
-#endif
   return sock_send_fd(fd, (const uint8_t*)&cs, sizeof(cs), send_fd) == sizeof(cs);
+#endif
 }
 
 static void on_cl_rfc_init(tBTA_JV_RFCOMM_CL_INIT* p_init, uint32_t id) {
@@ -970,12 +977,6 @@ static uint64_t btif_rfc_sock_generate_socket_id() {
 
 static void on_rfc_close(tBTA_JV_RFCOMM_CLOSE* /* p_close */, uint32_t id) {
   log::verbose("id:{}", id);
-#ifdef _MSC_VER
-  if (s_sock_callback)
-  {
-    s_sock_callback( SOCK_DISCONNECT_SIGNAL, id, nullptr, 0 );
-  }
-#endif
   std::unique_lock<std::recursive_mutex> lock(slot_lock);
 
   // rfc_handle already closed when receiving rfcomm close event from stack.
@@ -990,6 +991,16 @@ static void on_rfc_close(tBTA_JV_RFCOMM_CLOSE* /* p_close */, uint32_t id) {
           slot->f.server ? android::bluetooth::SOCKET_ROLE_LISTEN
                          : android::bluetooth::SOCKET_ROLE_CONNECTION,
           0, android::bluetooth::SOCKET_ERROR_NONE, slot->data_path);
+#ifdef _MSC_VER
+  if( s_sock_callback )
+  {
+    socket_disconnect_signal_t disconnect_signal;
+    disconnect_signal.uuid = slot->service_uuid;
+    disconnect_signal.socket_type = BTSOCK_RFCOMM;
+    disconnect_signal.remote_addr = slot->addr;
+    s_sock_callback( SOCK_DISCONNECT_SIGNAL, id, &disconnect_signal, sizeof( socket_disconnect_signal_t ) );
+  }
+#endif
   cleanup_rfc_slot(slot, BTSOCK_ERROR_NONE);
 }
 
@@ -1261,7 +1272,7 @@ typedef enum {
 } sent_status_t;
 
 #ifdef _MSC_VER
-static sent_status_t send_data_to_app( int fd, BT_HDR* p_buf, int connect_id ) {
+static sent_status_t send_data_to_app( int fd, BT_HDR* p_buf, rfc_slot_t* slot ) {
 #else
 static sent_status_t send_data_to_app(int fd, BT_HDR* p_buf) {
 #endif
@@ -1273,16 +1284,18 @@ static sent_status_t send_data_to_app(int fd, BT_HDR* p_buf) {
   data_to_app.sock_type = BTSOCK_RFCOMM;
   data_to_app.data = p_buf->data + p_buf->offset;
   data_to_app.size = p_buf->len;
+  data_to_app.uuid = slot->service_uuid;
+  data_to_app.remote_device = slot->addr;
+  data_to_app.remote_is_server = slot->f.server;
   if (s_sock_callback)
   {
-    s_sock_callback( SOCK_RECEIVED_DATA_FROM_REMOTE, connect_id, &data_to_app, sizeof( data_to_app ) );
+    s_sock_callback( SOCK_RECEIVED_DATA_FROM_REMOTE, slot->id, &data_to_app, sizeof( data_to_app ) );
     sent = p_buf->len;
   }
   if (p_buf->len == 0) {
     return SENT_ALL;
   }
 #else
-
   ssize_t sent;
   OSI_NO_INTR(sent = send(fd, p_buf->data + p_buf->offset, p_buf->len, MSG_DONTWAIT));
 #endif
@@ -1312,7 +1325,7 @@ static bool flush_incoming_que_on_wr_signal(rfc_slot_t* slot) {
   while (!list_is_empty(slot->incoming_queue)) {
     BT_HDR* p_buf = (BT_HDR*)list_front(slot->incoming_queue);
 #ifdef _MSC_VER
-    switch (send_data_to_app( slot->fd, p_buf, slot->id )) {
+    switch (send_data_to_app( slot->fd, p_buf, slot )) {
 #else
     switch (send_data_to_app( slot->fd, p_buf )) {
 #endif
@@ -1351,7 +1364,9 @@ static bool btsock_rfc_read_signaled_on_connected_socket(int /* fd */, int flags
   }
   // Make sure there's data pending in case the peer closed the socket.
   int size = 0;
-#ifndef _MSC_VER
+#ifdef _MSC_VER
+  BTA_JvRfcommWrite( slot->rfc_handle, slot->id );
+#else
   if (!(flags & SOCK_THREAD_FD_EXCEPTION) || (ioctl(slot->fd, FIONREAD, &size) == 0 && size)) {
     BTA_JvRfcommWrite(slot->rfc_handle, slot->id);
   }
@@ -1362,7 +1377,8 @@ static bool btsock_rfc_read_signaled_on_connected_socket(int /* fd */, int flags
 static bool btsock_rfc_read_signaled_on_listen_socket(int fd, int /* flags */, uint32_t /* id */,
                                                       rfc_slot_t* slot) {
   int size = 0;
-#ifndef _MSC_VER
+#ifdef _MSC_VER
+#else
   bool ioctl_success = ioctl(slot->fd, FIONREAD, &size) == 0;
   if (ioctl_success && size) {
     sock_accept_signal_t accept_signal = {};
@@ -1449,7 +1465,7 @@ int bta_co_rfc_data_incoming(uint32_t id, BT_HDR* p_buf) {
 
   if (list_is_empty(slot->incoming_queue)) {
 #ifdef _MSC_VER
-    switch (send_data_to_app( slot->fd, p_buf, slot->id )) {
+    switch (send_data_to_app( slot->fd, p_buf, slot )) {
 #else
     switch (send_data_to_app( slot->fd, p_buf )) {
 #endif
@@ -1543,18 +1559,39 @@ bt_status_t btsock_rfc_disconnect(const RawAddress* bd_addr) {
 }
 
 #ifdef _MSC_VER
-bt_status_t btsock_rfc_write_buffer_to_send( uint32_t id, std::shared_ptr<std::vector<uint8_t>> a_data )
+bt_status_t btsock_rfc_write_buffer_to_send( uint32_t& id, sock_send_data_t const& a_data )
 {
+  rfc_slot_t* slot = nullptr;
+  bool found = false;
   std::unique_lock<std::recursive_mutex> lock( slot_lock );
-  rfc_slot_t* slot = find_rfc_slot_by_id( id );
-  if (!slot)
+  for( size_t i = 0; i < ARRAY_SIZE( rfc_slots ); ++i ) {
+    slot = rfc_slots + i;
+    if( slot->addr != a_data.remote_device )
+    {
+      continue;
+    }
+
+    if( slot->service_uuid != a_data.uuid )
+    {
+      continue;
+    }
+
+    if( slot->f.server == a_data.remote_is_server )
+    {
+      found = true;
+      id = slot->id;
+      break;
+    }
+  }
+
+  if (!found )
   {
-    log::error( "Cannot find such slot with id {}", id );
+    log::error( "Cannot find such slot with uuid {}. remote {}", a_data.uuid, a_data.remote_device );
     return BT_STATUS_SOCKET_ERROR;
   }
 
   std::lock_guard locker( slot->m_mutex );
-  slot->buffers_to_send.emplace_back( std::move( a_data ) );
+  slot->buffers_to_send.emplace_back( a_data.data );
   return BT_STATUS_SUCCESS;
 }
 uint32_t btsock_rfc_get_size_for_buffer_to_send( uint32_t id )
@@ -1639,5 +1676,26 @@ void btsock_rfc_disconnect_by_connect_id( uint32_t connect_id )
   std::unique_lock<std::recursive_mutex> lock( slot_lock );
   rfc_slot_t* slot = find_rfc_slot_by_id( connect_id );
   cleanup_rfc_slot( slot, BTSOCK_ERROR_NONE );
+}
+void btsock_rfc_server_listen_start( const bluetooth::Uuid& uuid, sock_accept_signal_t const& a_signal )
+{
+  bool found = false;
+  rfc_slot_t* target_slot = nullptr;
+  std::unique_lock<std::recursive_mutex> lock( slot_lock );
+  for( size_t i = 0; i < ARRAY_SIZE( rfc_slots ); ++i ) {
+    target_slot = rfc_slots + i;
+    if( ( target_slot->service_uuid == uuid ) &&
+        ( target_slot->f.server ) ){
+      btsock_rfc_read_signaled_on_listen_socket( target_slot->listen_fd, 0, 0, target_slot );
+      target_slot->is_accepting = a_signal.is_accepting;
+      found = true;
+      break;
+    }
+  }
+
+  if( !found )
+  {
+    log::error("cannot found such rfcomm uuid {} port listened on local", uuid);
+  }
 }
 #endif

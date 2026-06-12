@@ -54,8 +54,9 @@ void on_btsocket_rfc_opened_complete(uint64_t socket_id, bool success);
 void on_btsocket_rfc_close(uint64_t socket_id);
 
 #ifdef _MSC_VER
-bt_status_t btsock_rfc_write_buffer_to_send( uint32_t id, std::shared_ptr<std::vector<uint8_t>> a_data );
+bt_status_t btsock_rfc_write_buffer_to_send( uint32_t& id, sock_send_data_t const& a_data );
 void btsock_rfc_disconnect_by_connect_id( uint32_t connect_id );
+void btsock_rfc_server_listen_start( const bluetooth::Uuid& uuid, sock_accept_signal_t const& a_signal );
 #endif
 
 #endif

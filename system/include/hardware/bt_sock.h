@@ -102,13 +102,55 @@ typedef struct {
 
 } /*__attribute__((packed))*/ sock_connect_signal_t;
 
+typedef struct {
+  uint16_t size;
+  uint16_t is_accepting;
+} /*__attribute__((packed))*/ sock_accept_signal_t;
+
 #ifdef _MSC_VER
 typedef struct
 {
   btsock_type_t sock_type;
+  RawAddress remote_device;
+  bluetooth::Uuid uuid; /* the rfcomm's uuid when sock_type is rfcomm type*/
+  bool remote_is_server;
+
   uint8_t* data;
   uint32_t size;
 } sock_received_data_t;
+
+typedef struct
+{
+  btsock_type_t sock_type;
+  RawAddress remote_device;
+  bluetooth::Uuid uuid; /* the rfcomm's uuid when sock_type is rfcomm type*/
+  bool remote_is_server;
+
+  std::shared_ptr<std::vector<uint8_t>> data;
+} sock_send_data_t;
+
+typedef struct
+{
+  Uuid listen_uuid;
+  uint16_t port;
+  bool is_local;
+  RawAddress remote_addr;
+} rfcomm_port_result_t;
+
+typedef struct
+{
+  btsock_type_t socket_type;
+  bluetooth::Uuid uuid;
+
+  sock_accept_signal_t socket_accept;
+} socket_accept_started_signal_t;
+
+typedef struct
+{
+  btsock_type_t socket_type;
+  RawAddress remote_addr;
+  bluetooth::Uuid uuid;
+} socket_disconnect_signal_t;
 
 typedef enum
 {
@@ -118,13 +160,8 @@ typedef enum
   SOCK_RECEIVED_DATA_FROM_REMOTE
 } bt_sock_callback_type_t;
 
-typedef void (*bt_sock_callback_t)(bt_sock_callback_type_t, int, void*, int);
+typedef void ( *bt_sock_callback_t )( bt_sock_callback_type_t, int, void*, int );
 #endif
-
-typedef struct {
-  uint16_t size;
-  uint16_t is_accepting;
-} /*__attribute__((packed))*/ sock_accept_signal_t;
 #pragma pack()
 
 typedef struct {
@@ -195,7 +232,9 @@ typedef struct {
 
 void (*set_bt_sock_callback)(bt_sock_callback_t callback);
 
-void (*send_data_to_remote)(int connect_id, std::shared_ptr<std::vector<uint8_t>> a_data);
+void (*send_listen_accept_signal)( socket_accept_started_signal_t* a_accept_start );
+
+void (*send_data_to_remote)(int connect_id, sock_send_data_t const& a_data);
 
 void (*disconnect_rfc_by_connect_id)(int connect_id);
 #endif

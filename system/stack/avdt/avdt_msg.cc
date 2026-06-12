@@ -1370,7 +1370,9 @@ void avdt_msg_send_rsp(AvdtpCcb* p_ccb, uint8_t sig_id, tAVDT_MSG* p_params) {
   /* set up buf pointer and offset */
   p_buf->offset = AVDT_MSG_OFFSET;
   p_start = p = (uint8_t*)(p_buf + 1) + p_buf->offset;
-
+#ifdef _MSC_VER
+  log::info( "send avdtp response, sig: {}", avdtp_signal_type_to_string( sig_id ) );
+#endif
   /* execute parameter building function to build message */
   (*avdt_msg_bld_rsp[sig_id - 1])(&p, p_params);
 
@@ -1530,11 +1532,17 @@ void avdt_msg_ind(AvdtpCcb* p_ccb, BT_HDR* p_buf) {
       evt = avdt_msg_rej_2_evt[sig - 1];
       msg.hdr.err_code = AVDT_ERR_NSC;
       msg.hdr.err_param = 0;
+#ifdef _MSC_VER
+      log::info( "receive avdtp command: {}", avdtp_signal_type_to_string( sig ) );
+#endif
     }
   } else /* not a general reject */
   {
     /* get and verify signal */
     AVDT_MSG_PRS_SIG(p, sig);
+#ifdef _MSC_VER
+    log::info( "receive avdtp command: {}", avdtp_signal_type_to_string( sig ) );
+#endif
     msg.hdr.sig_id = sig;
     if ((sig == 0) || (sig > AVDT_SIG_MAX)) {
       log::warn("Dropping msg sig={} msg_type:{}", sig, msg_type);

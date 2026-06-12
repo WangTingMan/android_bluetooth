@@ -65,7 +65,8 @@ static bt_status_t btsock_get_l2cap_remote_cid(Uuid& conn_uuid, uint16_t* cid);
 
 #ifdef _MSC_VER
 static void set_bt_sock_callback( bt_sock_callback_t callback );
-static void send_data_to_remote( int a_id, std::shared_ptr<std::vector<uint8_t>> a_data );
+static void send_listen_accept_signal( socket_accept_started_signal_t* a_accept_start );
+static void send_data_to_remote( int a_id, sock_send_data_t const& a_data );
 static void disconnect_rfc_by_connect_id( int connect_id );
 bt_sock_callback_t s_sock_callback = nullptr;
 #endif
@@ -85,6 +86,7 @@ const btsock_interface_t* btif_sock_get_interface(void) {
           btsock_get_l2cap_remote_cid,
 #ifdef _MSC_VER
           set_bt_sock_callback,
+          send_listen_accept_signal,
           send_data_to_remote,
           disconnect_rfc_by_connect_id
 #endif
@@ -331,11 +333,33 @@ void set_bt_sock_callback( bt_sock_callback_t callback )
 {
   s_sock_callback = callback;
 }
-void send_data_to_remote( int a_id, std::shared_ptr<std::vector<uint8_t>> a_data )
+
+void send_listen_accept_signal( socket_accept_started_signal_t* a_accept_start )
 {
-  btsock_rfc_write_buffer_to_send( a_id, a_data );
-  btsock_signaled( 2, BTSOCK_RFCOMM, SOCK_THREAD_FD_RD, a_id );
+  switch( a_accept_start->socket_type )
+  {
+  case BTSOCK_RFCOMM:
+    btsock_rfc_server_listen_start(a_accept_start->uuid, a_accept_start->socket_accept);
+    break;
+  default:
+    break;
+  }
 }
+
+void send_data_to_remote( int a_id, sock_send_data_t const& a_data )
+{
+  uint32_t detail_id = 0;
+  switch( a_data.sock_type )
+  {
+  case BTSOCK_RFCOMM:
+    btsock_rfc_write_buffer_to_send( detail_id, a_data );
+    btsock_signaled( 2, BTSOCK_RFCOMM, SOCK_THREAD_FD_RD, detail_id );
+    break;
+  default:
+    break;
+  }
+}
+
 void disconnect_rfc_by_connect_id( int connect_id )
 {
   do_in_main_thread( base::Bind( &btsock_rfc_disconnect_by_connect_id, connect_id ) );
