@@ -61,6 +61,10 @@ using namespace bluetooth;
 int sock_send_all(int sock_fd, const uint8_t* buf, int len) {
   int s = len;
 
+#ifdef _MSC_VER
+  log::fatal( "error! you should not invoke this API to send data!" );
+  return s;
+#endif
   while (s) {
     ssize_t ret = 0;
 #ifndef _MSC_VER

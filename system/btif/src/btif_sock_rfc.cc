@@ -248,7 +248,9 @@ static rfc_slot_t* alloc_rfc_slot(const RawAddress* addr, const char* name, cons
   }
 
   int fds[2] = {INVALID_FD, INVALID_FD};
-#ifndef _MSC_VER
+#ifdef _MSC_VER
+  fds[0] = fds[1] = 0x1F; /*we just assign a fake value here*/
+#else
   if (socketpair(AF_LOCAL, SOCK_STREAM, 0, fds) == -1) {
     log::error("error creating socketpair: {}", strerror(errno));
     return NULL;
@@ -577,7 +579,9 @@ static void cleanup_rfc_slot(rfc_slot_t* slot, btsock_error_code_t error_code) {
   }
 
   if (slot->app_fd != INVALID_FD) {
+#ifndef _MSC_VER
     close(slot->app_fd);
+#endif
     slot->app_fd = INVALID_FD;
   }
 
