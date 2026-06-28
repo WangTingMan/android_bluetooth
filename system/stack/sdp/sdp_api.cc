@@ -1129,7 +1129,11 @@ void SDP_DumpConnectionControlBlock(int fd, const tCONN_CB& conn_cb) {
 
   const uint64_t remaining_ms = alarm_get_remaining_ms(conn_cb.sdp_conn_timer);
   if (remaining_ms) {
+  #ifdef _MSC_VER
+    LOG_DUMPSYS(fd, "  timer_set:%lld ms", static_cast<long long>(remaining_ms));
+  #else
     LOG_DUMPSYS(fd, "  timer_set:%Lu ms", static_cast<long long>(remaining_ms));
+  #endif
   }
   if (conn_cb.num_handles >= kMaxSdpRecords) {
     LOG_DUMPSYS(fd, "  WARNING - Number handles:%hu exceeds max handles:%u", conn_cb.num_handles,

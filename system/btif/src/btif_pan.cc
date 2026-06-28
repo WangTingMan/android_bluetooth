@@ -653,7 +653,7 @@ static inline bool should_forward(tETH_HDR* hdr) {
   return false;
 }
 
-static int forward_bnep(tETH_HDR* eth_hdr, BT_HDR* hdr) {
+int forward_bnep(tETH_HDR* eth_hdr, BT_HDR* hdr) {
   int broadcast = eth_hdr->h_dest.address[0] & 1;
 
   // Find the right connection to send this frame over.
@@ -855,139 +855,6 @@ static void btu_exec_tap_fd_read( int fd )
   log::warn( "should not invoke this function." );
 }
 
-void route_ip_packet_to_remote
-  (
-  tETH_HDR*   a_ethernet_header,
-  const char* a_ip_packet,
-  uint16_t    a_size
-  )
-{
-  if( a_size < 1 )
-  {
-    return;
-  }
-
-  btpan_cb.congest_packet_size = 0;
-  // Don't occupy BTU context too long, avoid buffer overruns and
-  // give other profiles a chance to run by limiting the amount of memory
-  // PAN can use.
-  BT_HDR* buffer = ( BT_HDR* )osi_malloc( PAN_BUF_SIZE );
-  buffer->offset = PAN_MINIMUM_OFFSET;
-  buffer->len = PAN_BUF_SIZE - sizeof( BT_HDR ) - buffer->offset;
-
-  uint8_t* packet = ( uint8_t* )buffer + sizeof( BT_HDR ) + buffer->offset;
-
-  // If we don't have an undelivered packet left over, pull one from the TAP
-  // driver.
-  // We save it in the congest_packet right away in case we can't deliver it
-  // in this
-  // attempt.
-  if( !btpan_cb.congest_packet_size )
-  {
-    uint8_t* p = btpan_cb.congest_packet;
-    memcpy( p, a_ethernet_header, sizeof( tETH_HDR ) );
-    p += sizeof( tETH_HDR );
-    memcpy( p, a_ip_packet, a_size );
-    btpan_cb.congest_packet_size = sizeof( tETH_HDR ) + a_size;
-  }
-
-  memcpy( packet, btpan_cb.congest_packet,
-    MIN( btpan_cb.congest_packet_size, buffer->len ) );
-  buffer->len = MIN( btpan_cb.congest_packet_size, buffer->len );
-
-  if( buffer->len > sizeof( tETH_HDR ) && should_forward( ( tETH_HDR* )packet ) )
-  {
-    // Extract the ethernet header from the buffer since the PAN_WriteBuf
-    // inside
-    // forward_bnep can't handle two pointers that point inside the same GKI
-    // buffer.
-    tETH_HDR hdr;
-    memcpy( &hdr, packet, sizeof( tETH_HDR ) );
-
-    // Skip the ethernet header.
-    buffer->len -= sizeof( tETH_HDR );
-    buffer->offset += sizeof( tETH_HDR );
-    if( forward_bnep( &hdr, buffer ) != FORWARD_CONGEST )
-      btpan_cb.congest_packet_size = 0;
-  }
-  else
-  {
-    log::warn( "dropping packet of length {}", buffer->len );
-    btpan_cb.congest_packet_size = 0;
-    osi_free( buffer );
-  }
-}
-
-void route_ip_packet_to_remote_with_type
-  (
-  int         a_virtual_net_id,
-  uint16_t    a_packet_type,
-  const char* a_ip_packet,
-  uint16_t    a_size
-  )
-{
-  tETH_HDR ethernet_header;
-  memset( &ethernet_header, 0x00, sizeof( tETH_HDR ) );
-  bool try_to_replace_mac = false;
-  if( a_packet_type != ETH_P_ARP )
-  {
-    if( a_size < 20 )
-    {
-      log::error( "the IP packet must at leat 20 bytes long!" );
-      return;
-    }
-
-    uint8_t version = ( a_ip_packet[0] >> 4 ) & 0x0F;
-    if( version == 4 )
-    {
-      ethernet_header.h_proto = htons( ETH_P_IP );
-      try_to_replace_mac = true;
-    }
-    else if( version == 6 )
-    {
-      ethernet_header.h_proto = htons( ETH_P_IPV6 );
-    }
-    else
-    {
-      log::error( "wrong IP packet!" );
-      return;
-    }
-  }
-  else
-  {
-    ethernet_header.h_proto = htons( ETH_P_ARP );
-    log::error( "route an ARP to remote device!" );
-  }
-
-  bool found = false;
-  for( int i = 0; i < MAX_PAN_CONNS; ++i )
-  {
-    if( btpan_cb.conns[i].virtual_net_id == a_virtual_net_id )
-    {
-      found = true;
-      auto local_address = bluetooth::ToRawAddress( bluetooth::shim::GetController()->GetMacAddress() );
-      ethernet_header.h_src = local_address;
-      ethernet_header.h_dest = btpan_cb.conns[i].peer;
-      break;
-    }
-  }
-
-  if( try_to_replace_mac )
-  {
-    uint8_t virtual_net_mac_addr[RawAddress::kLength] = { 0 };
-    uint8_t virtual_net_mac_addr_retrieved[RawAddress::kLength] = { 0 };
-    int status = replace_mac_for_ip_packet( ( uint8_t* )a_ip_packet, a_size, ethernet_header.h_src.address.data(),
-      RawAddress::kLength, virtual_net_mac_addr, RawAddress::kLength );
-    if( status == 0 )
-    {
-      status = retrieve_virtual_net_mac( a_virtual_net_id, virtual_net_mac_addr_retrieved, RawAddress::kLength );
-    }
-  }
-
-  route_ip_packet_to_remote( &ethernet_header, a_ip_packet, a_size );
-
-  release_packet( a_virtual_net_id, a_packet_type, a_ip_packet );
-}
 #endif
 
 static void btif_pan_close_all_conns() {
