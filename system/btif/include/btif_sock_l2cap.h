@@ -44,4 +44,8 @@ bool btsock_l2cap_in_use(uint64_t socket_id);
 void on_btsocket_l2cap_opened_complete(uint64_t socket_id, bool success);
 void on_btsocket_l2cap_close(uint64_t socket_id);
 
+#ifdef _MSC_VER
+bt_status_t btsock_l2cap_write_buffer_to_send( uint32_t& id, sock_send_data_t const& a_data );
+#endif
+
 #endif

@@ -56,6 +56,12 @@
 #define ssize_t int64_t
 #endif
 
+#ifdef _MSC_VER
+static uint32_t btsock_rfc_get_size_for_buffer_to_send( uint32_t id );
+static uint32_t btsock_rfc_copy_buffer_to_send( uint32_t id, uint8_t* buffer, uint32_t size );
+extern bt_sock_callback_t s_sock_callback;
+#endif
+
 using namespace bluetooth;
 
 struct packet {
@@ -103,6 +109,10 @@ typedef struct l2cap_socket {
   uint64_t endpoint_id;          // ID of the hub end point
   bool is_accepting;             // is app accepting on server socket?
   uint64_t connection_start_time_ms;  // Timestamp when the connection state started
+#ifdef _MSC_VER
+  std::recursive_mutex m_mutex;
+  std::vector<std::shared_ptr<std::vector<uint8_t>>> buffers_to_send;
+#endif
 } l2cap_socket;
 
 static void btsock_l2cap_server_listen(l2cap_socket* sock);
@@ -118,6 +128,8 @@ static uid_set_t* uid_set = NULL;
 static int pth = -1;
 
 static void btsock_l2cap_cbk(tBTA_JV_EVT event, tBTA_JV* p_data, uint32_t l2cap_socket_id);
+uint32_t btsock_l2cap_get_size_for_buffer_to_send( uint32_t id );
+uint32_t btsock_l2cap_copy_buffer_to_send( uint32_t id, uint8_t* buffer, uint32_t a_size );
 
 /* TODO: Consider to remove this buffer, as we have a buffer in l2cap as well,
  * and we risk a buffer overflow with this implementation if the socket data is not
@@ -287,9 +299,9 @@ static void btsock_l2cap_free_l(l2cap_socket* sock, btsock_error_code_t error_co
   }
 
 #ifndef _MSC_VER
-  shutdown(sock->our_fd, SHUT_RDWR);
+  shutdown( sock->our_fd, SHUT_RDWR );
+  close( sock->our_fd );
 #endif
-  close(sock->our_fd);
   if (sock->app_fd != -1) {
     close(sock->app_fd);
   } else {
@@ -297,7 +309,11 @@ static void btsock_l2cap_free_l(l2cap_socket* sock, btsock_error_code_t error_co
   }
 
   while (packet_get_head_l(sock, &buf, NULL)) {
-    osi_free(buf);
+#ifdef _MSC_VER
+    delete sock;
+#else
+    osi_free(sock);
+#endif
   }
 
   // lower-level close() should be idempotent... so let's call it and see...
@@ -329,10 +345,10 @@ static l2cap_socket* btsock_l2cap_alloc_l(const char* name, const RawAddress* ad
                                           int flags) {
   unsigned security = 0;
   int fds[2];
-  l2cap_socket* sock = (l2cap_socket*)osi_calloc(sizeof(*sock));
 #ifdef _MSC_VER
-  int sock_type = 0;
+  l2cap_socket* sock = new l2cap_socket;
 #else
+  l2cap_socket* sock = ( l2cap_socket* )osi_calloc( sizeof( *sock ) );
   int sock_type = SOCK_SEQPACKET;
 #endif
 
@@ -422,7 +438,11 @@ static l2cap_socket* btsock_l2cap_alloc_l(const char* name, const RawAddress* ad
   return sock;
 
 fail_sockpair:
+#ifdef _MSC_VER
+  delete sock;
+#else
   osi_free(sock);
+#endif
   return NULL;
 }
 
@@ -445,12 +465,31 @@ bt_status_t btsock_l2cap_cleanup() {
 
 static inline bool send_app_psm_or_chan_l(l2cap_socket* sock) {
   log::info("Sending l2cap socket socket_id:{} channel:{}", sock->id, sock->channel);
+#ifdef _MSC_VER
+  l2cap_socket_listen_result_t listen;
+  listen.psm = sock->channel;
+  listen.is_br_edr = !sock->is_le_coc;
+  s_sock_callback( SOCK_L2CAP_LISTEN_STARTED, sock->app_uid, &listen, sizeof( l2cap_socket_listen_result_t ) );
+  return true;
+#endif
   return sock_send_all(sock->our_fd, (const uint8_t*)&sock->channel, sizeof(sock->channel)) ==
          sizeof(sock->channel);
 }
 
 static bool send_app_err_code(l2cap_socket* sock, tBTA_JV_L2CAP_REASON code) {
   log::info("Sending l2cap failure reason socket_id:{} reason code:{}", sock->id, code);
+#ifdef _MSC_VER
+  if( !sock->connected )
+  {
+    socket_disconnect_signal_t disc;
+    disc.socket_type = sock->is_le_coc ? BTSOCK_L2CAP_LE : BTSOCK_L2CAP;
+    disc.remote_addr = sock->addr;
+    disc.psm = sock->channel;
+    disc.psm_at_local = sock->server;
+    s_sock_callback( SOCK_DISCONNECT_SIGNAL, sock->app_uid, &disc, sizeof(disc));
+    return true;
+  }
+#endif
   int err_channel = 0;
   if (sock_send_all(sock->our_fd, (const uint8_t*)&err_channel, sizeof(err_channel)) !=
       sizeof(err_channel)) {
@@ -485,7 +524,7 @@ static uint64_t uuid_msb(const Uuid& uuid) {
 
 static bool send_app_connect_signal(int fd, const RawAddress* addr, int channel, int status,
                                     int send_fd, uint16_t rx_mtu, uint16_t tx_mtu,
-                                    const Uuid& conn_uuid, uint64_t socket_id) {
+                                    const Uuid& conn_uuid, uint64_t socket_id, l2cap_socket* sock) {
   sock_connect_signal_t cs;
   cs.size = sizeof(cs);
   cs.bd_addr = *addr;
@@ -496,6 +535,17 @@ static bool send_app_connect_signal(int fd, const RawAddress* addr, int channel,
   cs.conn_uuid_lsb = uuid_lsb(conn_uuid);
   cs.conn_uuid_msb = uuid_msb(conn_uuid);
   cs.socket_id = socket_id;
+#ifdef _MSC_VER
+  if( s_sock_callback )
+  {
+    cs.connect_id = sock->id;
+    cs.socket_type = sock->is_le_coc ? BTSOCK_L2CAP_LE : BTSOCK_L2CAP;
+    cs.uuid = conn_uuid;
+    s_sock_callback( SOCK_CONNECTION_SIGNAL, fd, &cs, sizeof( cs ) );
+    /*use sock_send_fd to send connect signal message and the socketpair fd information*/
+    return true;
+  }
+#endif
   if (send_fd != -1) {
     if (sock_send_fd(fd, (const uint8_t*)&cs, sizeof(cs), send_fd) == sizeof(cs)) {
       return true;
@@ -622,7 +672,7 @@ static void on_srv_l2cap_psm_connect_l(tBTA_JV_L2CAP_OPEN* p_open, l2cap_socket*
   btsock_thread_add_fd(pth, sock->our_fd, BTSOCK_L2CAP, SOCK_THREAD_FD_EXCEPTION, sock->id);
   btsock_thread_add_fd(pth, accept_rs->our_fd, BTSOCK_L2CAP, SOCK_THREAD_FD_RD, accept_rs->id);
   send_app_connect_signal(sock->our_fd, &accept_rs->addr, sock->channel, 0, accept_rs->app_fd,
-                          sock->rx_mtu, p_open->tx_mtu, accept_rs->conn_uuid, accept_rs->socket_id);
+                          sock->rx_mtu, p_open->tx_mtu, accept_rs->conn_uuid, accept_rs->socket_id, sock);
   accept_rs->app_fd = -1;  // The fd is closed after sent to app in send_app_connect_signal()
   // But for some reason we still leak a FD - either the server socket
   // one or the accept socket one.
@@ -647,7 +697,7 @@ static void on_cl_l2cap_psm_connect_l(tBTA_JV_L2CAP_OPEN* p_open, l2cap_socket* 
   }
 
   if (!send_app_connect_signal(sock->our_fd, &sock->addr, sock->channel, 0, -1, sock->rx_mtu,
-                               p_open->tx_mtu, sock->conn_uuid, sock->socket_id)) {
+                               p_open->tx_mtu, sock->conn_uuid, sock->socket_id, sock)) {
     log::error("Unable to connect l2cap socket to application socket_id:{}", sock->id);
     return;
   }
@@ -1065,7 +1115,15 @@ static bool flush_incoming_que_on_wr_signal_l(l2cap_socket* sock) {
 
   while (packet_get_head_l(sock, &buf, &len)) {
     ssize_t sent = 0;
-#ifndef _MSC_VER
+#ifdef _MSC_VER
+    sock_received_data_t receive_ = {};
+    receive_.data = buf;
+    receive_.size = len;
+    receive_.sock_type = sock->is_le_coc ? BTSOCK_L2CAP_LE : BTSOCK_L2CAP;
+    receive_.remote_device = sock->addr;
+    receive_.remote_is_server = !sock->server;
+    s_sock_callback( SOCK_RECEIVED_DATA_FROM_REMOTE, sock->our_fd, &receive_, sizeof( receive_ ) );
+#else
     OSI_NO_INTR(sent = send(sock->our_fd, buf, len, MSG_DONTWAIT));
 #endif
     int saved_errno = errno;
@@ -1108,8 +1166,11 @@ static bool btsock_l2cap_read_signaled_on_connected_socket(int fd, int flags, ui
   }
   int size = 0;
 #ifdef _MSC_VER
+  bool ioctl_success = 0;
+  size = btsock_l2cap_get_size_for_buffer_to_send( user_id );
 #else
   bool ioctl_success = ioctl(sock->our_fd, FIONREAD, &size) == 0;
+#endif
   if (!(flags & SOCK_THREAD_FD_EXCEPTION) || (ioctl_success && size)) {
     /* FIONREAD return number of bytes that are immediately available for
       reading, might be bigger than awaiting packet.
@@ -1123,8 +1184,14 @@ static bool btsock_l2cap_read_signaled_on_connected_socket(int fd, int flags, ui
     /* The socket is created with SOCK_SEQPACKET, hence we read one message
      * at the time. */
     ssize_t count;
+#ifdef _MSC_VER
+    count = size;
+    uint8_t* buf = get_l2cap_sdu_start_ptr( buffer );
+    count = btsock_l2cap_copy_buffer_to_send( user_id, buf, count );
+#else
     OSI_NO_INTR(count = recv(fd, get_l2cap_sdu_start_ptr(buffer), size,
                              MSG_NOSIGNAL | MSG_DONTWAIT | MSG_TRUNC));
+#endif
     if (count > sock->tx_mtu) {
       /* This can't happen thanks to check in BluetoothSocket.java but leave
        * this in case this socket is ever used anywhere else*/
@@ -1141,7 +1208,6 @@ static bool btsock_l2cap_read_signaled_on_connected_socket(int fd, int flags, ui
     // will take care of freeing buffer
     BTA_JvL2capWrite(sock->handle, PTR_TO_UINT(buffer), buffer, user_id);
   }
-#endif
   return true;
 }
 
@@ -1151,13 +1217,20 @@ static bool btsock_l2cap_read_signaled_on_listen_socket(int fd, int /* flags */,
                                                         l2cap_socket* sock) {
   int size = 0;
 #ifdef _MSC_VER
+  bool ioctl_success = 0;
 #else
   bool ioctl_success = ioctl(sock->our_fd, FIONREAD, &size) == 0;
+#endif
   if (ioctl_success && size) {
     sock_accept_signal_t accept_signal = {};
     ssize_t count;
+#ifdef _MSC_VER
+    count = 0;
+    // TODO
+#else
     OSI_NO_INTR(count = recv(fd, reinterpret_cast<uint8_t*>(&accept_signal), sizeof(accept_signal),
                              MSG_NOSIGNAL | MSG_DONTWAIT | MSG_TRUNC));
+#endif
     if (count != sizeof(accept_signal) || count != accept_signal.size) {
       log::error("Unexpected count: {}, sizeof(accept_signal): {}, accept_signal.size: {}", count,
                  sizeof(accept_signal), accept_signal.size);
@@ -1166,7 +1239,6 @@ static bool btsock_l2cap_read_signaled_on_listen_socket(int fd, int /* flags */,
     sock->is_accepting = accept_signal.is_accepting;
     log::info("Server socket: {}, is_accepting: {}", sock->id, sock->is_accepting);
   }
-#endif
   return true;
 }
 
@@ -1203,14 +1275,18 @@ void btsock_l2cap_signaled(int fd, int flags, uint32_t user_id) {
       btsock_thread_add_fd(pth, sock->our_fd, BTSOCK_L2CAP, SOCK_THREAD_FD_WR, sock->id);
     }
   }
-#ifndef _MSC_VER
+
   if (drop_it || (flags & SOCK_THREAD_FD_EXCEPTION)) {
+#ifdef _MSC_VER
+    btsock_l2cap_free_l( sock, error_code );
+#else
     int size = 0;
     if (drop_it || ioctl(sock->our_fd, FIONREAD, &size) != 0 || size == 0) {
       btsock_l2cap_free_l(sock, error_code);
     }
-  }
 #endif
+  }
+
 }
 
 bt_status_t btsock_l2cap_disconnect(const RawAddress* bd_addr) {
@@ -1307,7 +1383,7 @@ void on_btsocket_l2cap_opened_complete(uint64_t socket_id, bool success) {
   // If the socket was accepted from listen socket, use listen_fd.
   if (sock->listen_fd != -1) {
     send_app_connect_signal(sock->listen_fd, &sock->addr, sock->channel, 0, sock->app_fd,
-                            sock->rx_mtu, sock->tx_mtu, sock->conn_uuid, sock->socket_id);
+                            sock->rx_mtu, sock->tx_mtu, sock->conn_uuid, sock->socket_id, sock);
     // The fd is closed after sent to app in send_app_connect_signal()
     sock->app_fd = -1;
   } else {
@@ -1316,7 +1392,7 @@ void on_btsocket_l2cap_opened_complete(uint64_t socket_id, bool success) {
       return;
     }
     if (!send_app_connect_signal(sock->our_fd, &sock->addr, sock->channel, 0, -1, sock->rx_mtu,
-                                 sock->tx_mtu, sock->conn_uuid, sock->socket_id)) {
+                                 sock->tx_mtu, sock->conn_uuid, sock->socket_id, sock)) {
       log::error("Unable to connect l2cap socket to application socket_id:{}", sock->id);
       return;
     }
@@ -1462,3 +1538,97 @@ static void on_srv_l2cap_psm_connect_offload_l(tBTA_JV_L2CAP_OPEN* p_open, l2cap
   // start monitoring the socketpair to get call back when app is accepting on server socket
   btsock_thread_add_fd(pth, sock->our_fd, BTSOCK_L2CAP, SOCK_THREAD_FD_RD, sock->id);
 }
+
+#ifdef _MSC_VER
+bt_status_t btsock_l2cap_write_buffer_to_send( uint32_t& id, sock_send_data_t const& a_data )
+{
+  bt_status_t status = BT_STATUS_SUCCESS;
+  l2cap_socket* sock = nullptr;
+  bluetooth::Uuid uuid;
+  uuid = a_data.uuid;
+  sock = btsock_l2cap_find_by_conn_uuid_l( uuid );
+
+  if( sock )
+  {
+    std::lock_guard locker( sock->m_mutex );
+    sock->buffers_to_send.emplace_back( a_data.data );
+  }
+  return status;
+}
+
+uint32_t btsock_l2cap_get_size_for_buffer_to_send( uint32_t id )
+{
+  l2cap_socket* sock = btsock_l2cap_find_by_id_l( id );
+  if (!sock)
+  {
+    return 0;
+  }
+
+  uint32_t size = 0;
+  std::lock_guard locker( sock->m_mutex );
+  for (auto& packet : sock->buffers_to_send)
+  {
+     size += packet->size();
+  }
+  return size;
+}
+
+uint32_t btsock_l2cap_copy_buffer_to_send( uint32_t id, uint8_t* buffer, uint32_t a_size )
+{
+  l2cap_socket* sock = btsock_l2cap_find_by_id_l( id );
+  if (!sock)
+  {
+    return 0;
+  }
+
+  uint32_t copied_size = 0;
+  uint32_t size_need = a_size;
+  uint8_t* buffer_to_copy = buffer;
+  std::lock_guard locker( sock->m_mutex );
+  for (auto& ele : sock->buffers_to_send)
+  {
+    if (size_need <= 0)
+    {
+      break;
+    }
+
+    std::shared_ptr<std::vector<uint8_t>> buffer_ele = ele;
+    if (buffer_ele->size() <= size_need)
+    {
+      memcpy( buffer_to_copy, buffer_ele->data(), buffer_ele->size() );
+      copied_size += buffer_ele->size();
+      size_need -= buffer_ele->size();
+      buffer_to_copy += buffer_ele->size();
+      buffer_ele->clear();
+      continue;
+    }
+
+    if (buffer_ele->size() > size_need)
+    {
+      memcpy( buffer_to_copy, buffer_ele->data(), size_need );
+      copied_size += size_need;
+      size_need = 0;
+      buffer_to_copy += size_need;
+
+      auto buffer_it = buffer_ele->begin();
+      std::advance( buffer_it, size_need );
+      buffer_ele->erase( buffer_ele->begin(), buffer_it );
+      break;
+    }
+  }
+
+  std::vector<std::shared_ptr<std::vector<uint8_t>>> buffers_to_send_exchange;
+  for (auto& ele : sock->buffers_to_send)
+  {
+    if (!ele->empty())
+    {
+      buffers_to_send_exchange.push_back( ele );
+    }
+  }
+
+  sock->buffers_to_send.swap( buffers_to_send_exchange );
+
+  return copied_size;
+}
+
+#endif

@@ -652,6 +652,7 @@ static bool send_app_connect_signal(int fd, const RawAddress* addr, int channel,
   if (s_sock_callback)
   {
     cs.connect_id = handle_id;
+    cs.socket_type = BTSOCK_RFCOMM;
     s_sock_callback( SOCK_CONNECTION_SIGNAL, app_id, &cs, sizeof( cs ) );
     /*use sock_send_fd to send connect signal message and the socketpair fd information*/
     return true;
@@ -1442,7 +1443,12 @@ void btsock_rfc_signaled(int fd, int flags, uint32_t id) {
 
   if (need_close || (flags & SOCK_THREAD_FD_EXCEPTION)) {
     // Clean up if there's no data pending.
-#ifndef _MSC_VER
+#ifdef _MSC_VER
+    if (slot->f.doing_sdp_request) {
+      BTA_JvCancelDiscovery( slot->id );
+    }
+    cleanup_rfc_slot( slot, error_code );
+#else
     if (need_close || ioctl(slot->fd, FIONREAD, &size) != 0 || !size) {
       if (slot->f.doing_sdp_request) {
         BTA_JvCancelDiscovery(slot->id);

@@ -22,6 +22,7 @@
 #include "hal_version_manager.h"
 #include "hardware/bt_av.h"
 #include "hidl/a2dp_encoding_hidl.h"
+#include <android-base/properties.h>
 
 namespace bluetooth {
 namespace audio {
@@ -173,6 +174,14 @@ void set_audio_low_latency_mode_allowed(bool allowed) {
 // Check if OPUS codec is supported
 bool is_opus_supported() {
   // OPUS codec was added after HIDL HAL was frozen
+#ifdef _MSC_VER
+  if( android::base::GetBoolProperty( "persist.bluetooth.use_soft_audio_path_only", true ) )
+  {
+    /* we do not use HIDL/AIDL on windows now. */
+    log::info("we do not use HIDL/AIDL on windows now.");
+    return osi_property_get_bool( "persist.bluetooth.opus.enabled", false );
+  }
+#endif
   if (HalVersionManager::GetHalTransport() == BluetoothAudioHalTransport::AIDL) {
     return true;
   }
@@ -183,6 +192,14 @@ namespace provider {
 
 // Lookup the codec info in the list of supported offloaded sink codecs.
 std::optional<btav_a2dp_codec_index_t> sink_codec_index(const uint8_t* p_codec_info) {
+#ifdef _MSC_VER
+  if( android::base::GetBoolProperty( "persist.bluetooth.use_soft_audio_path_only", true ) )
+  {
+    /* we do not use HIDL/AIDL on windows now. */
+    log::info( "we do not use HIDL/AIDL on windows now." );
+    return std::nullopt;
+  }
+#endif
   return (HalVersionManager::GetHalTransport() == BluetoothAudioHalTransport::AIDL)
                  ? aidl::a2dp::provider::sink_codec_index(p_codec_info)
                  : std::nullopt;
@@ -210,6 +227,15 @@ std::optional<const char*> codec_index_str(btav_a2dp_codec_index_t codec_index) 
 // Return true if the codec is supported for the session type
 // A2DP_HARDWARE_ENCODING_DATAPATH or A2DP_HARDWARE_DECODING_DATAPATH.
 bool supports_codec(btav_a2dp_codec_index_t codec_index) {
+#ifdef _MSC_VER
+  if( android::base::GetBoolProperty( "persist.bluetooth.use_soft_audio_path_only", true ) )
+  {
+    /* we do not use HIDL/AIDL on windows now. */
+    log::info( "we do not use HIDL/AIDL on windows now." );
+    return false;
+  }
+#endif
+
   return (HalVersionManager::GetHalTransport() == BluetoothAudioHalTransport::AIDL)
                  ? aidl::a2dp::provider::supports_codec(codec_index)
                  : false;

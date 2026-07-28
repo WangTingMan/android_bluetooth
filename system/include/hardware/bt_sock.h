@@ -98,6 +98,8 @@ typedef struct {
 
 #ifdef _MSC_VER
   int connect_id;
+  btsock_type_t socket_type;
+  bluetooth::Uuid uuid;
 #endif
 
 } /*__attribute__((packed))*/ sock_connect_signal_t;
@@ -149,12 +151,25 @@ typedef struct
 {
   btsock_type_t socket_type;
   RawAddress remote_addr;
+
+  /* for RFCOMM */
   bluetooth::Uuid uuid;
+
+  /* for L2CAP */
+  uint16_t psm;
+  bool psm_at_local;
 } socket_disconnect_signal_t;
+
+typedef struct
+{
+  uint16_t psm;
+  bool is_br_edr;
+} l2cap_socket_listen_result_t;
 
 typedef enum
 {
   RFCOMM_SCN_NOTIFICATION,
+  SOCK_L2CAP_LISTEN_STARTED,
   SOCK_CONNECTION_SIGNAL,
   SOCK_DISCONNECT_SIGNAL,
   SOCK_RECEIVED_DATA_FROM_REMOTE

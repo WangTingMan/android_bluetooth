@@ -348,12 +348,17 @@ void send_listen_accept_signal( socket_accept_started_signal_t* a_accept_start )
 
 void send_data_to_remote( int a_id, sock_send_data_t const& a_data )
 {
-  uint32_t detail_id = 0;
+  uint32_t detail_id = a_id;
   switch( a_data.sock_type )
   {
   case BTSOCK_RFCOMM:
     btsock_rfc_write_buffer_to_send( detail_id, a_data );
     btsock_signaled( 2, BTSOCK_RFCOMM, SOCK_THREAD_FD_RD, detail_id );
+    break;
+  case BTSOCK_L2CAP:
+  case BTSOCK_L2CAP_LE:
+    btsock_l2cap_write_buffer_to_send(detail_id, a_data);
+    btsock_signaled( 2, a_data.sock_type, SOCK_THREAD_FD_RD, detail_id );
     break;
   default:
     break;
